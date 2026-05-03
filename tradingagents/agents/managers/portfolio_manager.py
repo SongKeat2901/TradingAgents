@@ -10,6 +10,9 @@ back gracefully to free-text generation.
 
 from __future__ import annotations
 
+import json as _json
+import re as _re
+
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
 from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
@@ -107,6 +110,52 @@ If revision after one self-correction loop still fails, see the push-back \
 retry rules in the next section."""
 
 
+_RETRY_DIRECTIVE = """
+
+# Push-back retry (Pass 3 — substantive disagreement)
+
+If after self-correction your draft still has a substantive disagreement \
+with upstream synthesis (Research Manager's investment plan or Risk team's \
+debate), emit a structured retry signal as the LAST line of your output, \
+in this exact format on its own line:
+
+PM_RETRY_SIGNAL: {"target": "research_manager", "feedback": "<≤200-word specific instruction>"}
+
+Or:
+
+PM_RETRY_SIGNAL: {"target": "risk_team", "feedback": "<≤200-word specific instruction>"}
+
+The feedback should be specific, e.g., "Bull case scenarios assume Azure \
+≥32% but no analyst quantified what AI capex ROI would have to be for that \
+to clear; have RM re-do scenarios with explicit ROI hurdle."
+
+Hard cap: max 1 retry per run. If state.pm_retries == 1, you cannot push \
+back further; you must accept the best-available output and note remaining \
+concerns in decision.md under "Caveats from PM."
+
+Do NOT emit PM_RETRY_SIGNAL on the first pass unless you genuinely cannot \
+ship the report. The signal triggers re-running upstream nodes (~3-4 extra \
+LLM calls); use sparingly."""
+
+
+def _parse_retry_signal(text: str) -> dict | None:
+    """Look for `PM_RETRY_SIGNAL: {...}` on the last lines of the report."""
+    m = _re.search(
+        r"^PM_RETRY_SIGNAL:\s*(\{.+?\})\s*$",
+        text,
+        flags=_re.MULTILINE,
+    )
+    if not m:
+        return None
+    try:
+        sig = _json.loads(m.group(1))
+        if sig.get("target") in ("research_manager", "risk_team"):
+            return sig
+    except _json.JSONDecodeError:
+        return None
+    return None
+
+
 def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
@@ -147,7 +196,7 @@ def create_portfolio_manager(llm):
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _MANDATED_SECTIONS + _QC_CHECKLIST
+Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _MANDATED_SECTIONS + _QC_CHECKLIST + _RETRY_DIRECTIVE
 
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,
@@ -170,9 +219,15 @@ Be decisive and ground every conclusion in specific evidence from the analysts.{
             "count": risk_debate_state["count"],
         }
 
-        return {
+        retry_signal = _parse_retry_signal(final_trade_decision)
+        out = {
             "risk_debate_state": new_risk_debate_state,
             "final_trade_decision": final_trade_decision,
         }
+        if retry_signal and state.get("pm_retries", 0) < 1:
+            out["pm_feedback"] = retry_signal["feedback"]
+            out["pm_retries"] = state.get("pm_retries", 0) + 1
+            out["pm_retry_target"] = retry_signal["target"]
+        return out
 
     return portfolio_manager_node

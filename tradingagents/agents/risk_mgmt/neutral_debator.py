@@ -1,3 +1,18 @@
+_PM_FEEDBACK_HANDLER = """
+
+# Handling PM feedback (when re-invoked on retry)
+
+If state.pm_feedback is set and non-empty, this is your second pass after \
+the PM disagreed with your first investment plan. You must:
+
+1. Quote the PM's feedback verbatim at the top of your revised plan, in a \
+"## Addressing PM feedback" section.
+2. Specifically address each concern raised. If the PM said "scenarios \
+need explicit ROI hurdle," your scenarios must now include an explicit \
+ROI hurdle.
+3. Acknowledge what changed in your revised plan vs the first draft.
+
+Do not silently ignore the feedback. Do not produce an identical plan."""
 
 
 def create_neutral_debator(llm):
@@ -16,6 +31,12 @@ def create_neutral_debator(llm):
 
         trader_decision = state["trader_investment_plan"]
 
+        pm_feedback = state.get("pm_feedback", "")
+        feedback_block = (
+            f"\n\nPM_FEEDBACK_FROM_PRIOR_PASS:\n{pm_feedback}\n"
+            if pm_feedback else ""
+        )
+
         prompt = f"""As the Neutral Risk Analyst, your role is to provide a balanced perspective, weighing both the potential benefits and risks of the trader's decision or plan. You prioritize a well-rounded approach, evaluating the upsides and downsides while factoring in broader market trends, potential economic shifts, and diversification strategies.Here is the trader's decision:
 
 {trader_decision}
@@ -28,7 +49,7 @@ Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
 Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the conservative analyst: {current_conservative_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting."""
+Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting.{feedback_block}""" + _PM_FEEDBACK_HANDLER
 
         response = llm.invoke(prompt)
 

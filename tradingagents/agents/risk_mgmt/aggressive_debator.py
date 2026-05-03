@@ -1,3 +1,18 @@
+_PM_FEEDBACK_HANDLER = """
+
+# Handling PM feedback (when re-invoked on retry)
+
+If state.pm_feedback is set and non-empty, this is your second pass after \
+the PM disagreed with your first investment plan. You must:
+
+1. Quote the PM's feedback verbatim at the top of your revised plan, in a \
+"## Addressing PM feedback" section.
+2. Specifically address each concern raised. If the PM said "scenarios \
+need explicit ROI hurdle," your scenarios must now include an explicit \
+ROI hurdle.
+3. Acknowledge what changed in your revised plan vs the first draft.
+
+Do not silently ignore the feedback. Do not produce an identical plan."""
 
 
 def create_aggressive_debator(llm):
@@ -16,6 +31,12 @@ def create_aggressive_debator(llm):
 
         trader_decision = state["trader_investment_plan"]
 
+        pm_feedback = state.get("pm_feedback", "")
+        feedback_block = (
+            f"\n\nPM_FEEDBACK_FROM_PRIOR_PASS:\n{pm_feedback}\n"
+            if pm_feedback else ""
+        )
+
         prompt = f"""As the Aggressive Risk Analyst, your role is to actively champion high-reward, high-risk opportunities, emphasizing bold strategies and competitive advantages. When evaluating the trader's decision or plan, focus intently on the potential upside, growth potential, and innovative benefits—even when these come with elevated risk. Use the provided market data and sentiment analysis to strengthen your arguments and challenge the opposing views. Specifically, respond directly to each point made by the conservative and neutral analysts, countering with data-driven rebuttals and persuasive reasoning. Highlight where their caution might miss critical opportunities or where their assumptions may be overly conservative. Here is the trader's decision:
 
 {trader_decision}
@@ -28,7 +49,7 @@ Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
 Here is the current conversation history: {history} Here are the last arguments from the conservative analyst: {current_conservative_response} Here are the last arguments from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting."""
+Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting.{feedback_block}""" + _PM_FEEDBACK_HANDLER
 
         response = llm.invoke(prompt)
 

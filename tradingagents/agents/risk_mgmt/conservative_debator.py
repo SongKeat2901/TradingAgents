@@ -1,3 +1,18 @@
+_PM_FEEDBACK_HANDLER = """
+
+# Handling PM feedback (when re-invoked on retry)
+
+If state.pm_feedback is set and non-empty, this is your second pass after \
+the PM disagreed with your first investment plan. You must:
+
+1. Quote the PM's feedback verbatim at the top of your revised plan, in a \
+"## Addressing PM feedback" section.
+2. Specifically address each concern raised. If the PM said "scenarios \
+need explicit ROI hurdle," your scenarios must now include an explicit \
+ROI hurdle.
+3. Acknowledge what changed in your revised plan vs the first draft.
+
+Do not silently ignore the feedback. Do not produce an identical plan."""
 
 
 def create_conservative_debator(llm):
@@ -16,6 +31,12 @@ def create_conservative_debator(llm):
 
         trader_decision = state["trader_investment_plan"]
 
+        pm_feedback = state.get("pm_feedback", "")
+        feedback_block = (
+            f"\n\nPM_FEEDBACK_FROM_PRIOR_PASS:\n{pm_feedback}\n"
+            if pm_feedback else ""
+        )
+
         prompt = f"""As the Conservative Risk Analyst, your primary objective is to protect assets, minimize volatility, and ensure steady, reliable growth. You prioritize stability, security, and risk mitigation, carefully assessing potential losses, economic downturns, and market volatility. When evaluating the trader's decision or plan, critically examine high-risk elements, pointing out where the decision may expose the firm to undue risk and where more cautious alternatives could secure long-term gains. Here is the trader's decision:
 
 {trader_decision}
@@ -28,7 +49,7 @@ Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
 Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting."""
+Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting.{feedback_block}""" + _PM_FEEDBACK_HANDLER
 
         response = llm.invoke(prompt)
 

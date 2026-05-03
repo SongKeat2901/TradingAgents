@@ -9,6 +9,22 @@ from tradingagents.agents.utils.structured import (
     invoke_structured_or_freetext,
 )
 
+_PM_FEEDBACK_HANDLER = """
+
+# Handling PM feedback (when re-invoked on retry)
+
+If state.pm_feedback is set and non-empty, this is your second pass after \
+the PM disagreed with your first investment plan. You must:
+
+1. Quote the PM's feedback verbatim at the top of your revised plan, in a \
+"## Addressing PM feedback" section.
+2. Specifically address each concern raised. If the PM said "scenarios \
+need explicit ROI hurdle," your scenarios must now include an explicit \
+ROI hurdle.
+3. Acknowledge what changed in your revised plan vs the first draft.
+
+Do not silently ignore the feedback. Do not produce an identical plan."""
+
 
 def create_research_manager(llm):
     structured_llm = bind_structured(llm, ResearchPlan, "Research Manager")
@@ -18,6 +34,12 @@ def create_research_manager(llm):
         history = state["investment_debate_state"].get("history", "")
 
         investment_debate_state = state["investment_debate_state"]
+
+        pm_feedback = state.get("pm_feedback", "")
+        feedback_block = (
+            f"\n\nPM_FEEDBACK_FROM_PRIOR_PASS:\n{pm_feedback}\n"
+            if pm_feedback else ""
+        )
 
         prompt = f"""As the Research Manager and debate facilitator, your role is to critically evaluate this round of debate and deliver a clear, actionable investment plan for the trader.
 
@@ -37,7 +59,7 @@ Commit to a clear stance whenever the debate's strongest arguments warrant one; 
 ---
 
 **Debate History:**
-{history}"""
+{history}{feedback_block}""" + _PM_FEEDBACK_HANDLER
 
         investment_plan = invoke_structured_or_freetext(
             structured_llm,
