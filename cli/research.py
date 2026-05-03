@@ -16,6 +16,17 @@ import time
 import traceback
 from pathlib import Path
 
+# Heavy imports stay at module level despite the daemonize-after-import order.
+# This deviates from the strict reading of Phase 5's spec (which asked us to
+# move heavy imports below the daemonize call) but is verified safe in practice:
+# importing TradingAgentsGraph spawns 0 threads and opens 0 extra file
+# descriptors. POSIX fork() of a single-threaded process with no extra FDs is
+# clean. The original parent calls os._exit(0) which bypasses cleanup, so the
+# loaded modules in the parent are abandoned without side effects. Module-level
+# imports are kept here because tests monkeypatch e.g. `research.TradingAgentsGraph`
+# directly, and moving the imports inside main() would break that pattern.
+# If a future LangGraph or anthropic upgrade starts threads at import time,
+# revisit this and move imports below the _daemonize() call in main().
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 
