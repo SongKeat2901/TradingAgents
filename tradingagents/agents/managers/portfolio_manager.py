@@ -20,6 +20,51 @@ from tradingagents.agents.utils.structured import (
     invoke_structured_or_freetext,
 )
 
+_MANDATED_SECTIONS = """
+
+# Mandatory sections in your decision.md (Quant Research Rebuild — 2026-05-03)
+
+Your decision.md MUST start with these two sections in this order:
+
+## Inputs to this decision
+
+- **Reference price:** $<reference_price> (<reference_price_source>)
+- **Peers compared:** <ticker list with one-line rationale per peer>
+- **Past decisions referenced:** <ticker> <date> (<rating>; outcome <±X>%, alpha <±Y>%) \
+  — invoked to argue <…>
+- **Memory-log lessons applied:** <bullets with source line refs>
+- **Catalysts in window:** <upcoming events with dates>
+- **Data freshness:** <financials period>, <news through date>
+
+## 12-Month Scenario Analysis
+
+| Scenario | Probability | 12-Mo Price Target | Return | Key drivers |
+|---|---:|---:|---:|---|
+| Bull | <pct>% | $<price> | <±pct>% | <named events / metrics> |
+| Base | <pct>% | $<price> | <±pct>% | <named events / metrics> |
+| Bear | <pct>% | $<price> | <±pct>% | <named events / metrics> |
+
+**Expected Value:** <calculation> = $<EV> (<±pct>% from spot $<spot>)
+**Rating implication:** <BUY/HOLD/SELL> (<one-line bridge from EV to rating>)
+
+After these two sections, continue with the existing memo format (synthesis, \
+trading plan, what you're rejecting, etc.).
+
+# Hard rules for the scenario table
+
+- Probabilities must sum to exactly 100%.
+- All three price targets must be specific dollar values, not ranges.
+- Each scenario lists at least one named, falsifiable catalyst (not narrative).
+- Rating must logically derive from EV.
+
+# Hard rules for the Inputs section
+
+- Reference price must equal the value in raw/reference.json.
+- Past-decision citations must include the actual rating and outcome.
+- Stakeholder reading the decision.md cold (without analyst reports) must \
+be able to understand the framing from the Inputs section alone.
+"""
+
 
 def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
@@ -61,7 +106,7 @@ def create_portfolio_manager(llm):
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}"""
+Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _MANDATED_SECTIONS
 
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,
