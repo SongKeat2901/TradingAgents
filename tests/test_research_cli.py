@@ -282,4 +282,57 @@ def test_pacing_seconds_default_3(tmp_path):
     parser = build_parser()
     ns = parser.parse_args(["--ticker", "X", "--date", "2024-01-01",
                             "--output-dir", str(tmp_path)])
-    assert ns.pacing_seconds == 3
+    assert ns.pacing_seconds == 3.0
+    assert isinstance(ns.pacing_seconds, float)
+
+
+def test_graph_skips_rate_limiter_when_pacing_zero(tmp_path, monkeypatch):
+    """pacing_seconds=0 must NOT set rate_limiter in kwargs (preserves
+    ChatAnthropic's default rate_limiter=None behaviour)."""
+    from tradingagents.default_config import DEFAULT_CONFIG
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+    # Stub the heavy parts: graph setup + LLM constructor.
+    captured_kwargs: list[dict] = []
+
+    def fake_create_llm_client(provider, model, base_url=None, **kwargs):
+        captured_kwargs.append(dict(kwargs))
+        class _Stub:
+            def get_llm(self): return object()
+        return _Stub()
+
+    monkeypatch.setattr(
+        "tradingagents.graph.trading_graph.create_llm_client",
+        fake_create_llm_client,
+    )
+
+    # Stub TradingMemoryLog and graph compilation so init doesn't blow up.
+    monkeypatch.setattr(
+        "tradingagents.graph.trading_graph.TradingMemoryLog",
+        lambda config: object(),
+    )
+
+    class _StubSetup:
+        def __init__(self, *a, **kw): pass
+        def setup_graph(self, *a, **kw):
+            class _W:
+                def compile(self, *a, **kw): return object()
+            return _W()
+
+    monkeypatch.setattr("tradingagents.graph.trading_graph.GraphSetup", _StubSetup)
+
+    config = DEFAULT_CONFIG.copy()
+    config["llm_provider"] = "claude_code"
+    config["pacing_seconds"] = 0  # explicit opt-out
+    config["data_cache_dir"] = str(tmp_path / "cache")
+    config["results_dir"] = str(tmp_path / "results")
+
+    TradingAgentsGraph(config=config)
+
+    # Both create_llm_client calls received the same kwargs dict; assert
+    # neither got a rate_limiter key.
+    assert len(captured_kwargs) == 2  # deep + quick
+    for kw in captured_kwargs:
+        assert "rate_limiter" not in kw, (
+            f"pacing_seconds=0 must not inject rate_limiter, got {kw!r}"
+        )

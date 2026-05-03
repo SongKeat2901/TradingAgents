@@ -212,6 +212,9 @@ class ClaudeCodeClient(BaseLLMClient):
         llm_kwargs: dict[str, Any] = {
             "model": self.model,
             "api_key": "claude-code-oauth",
+            # Without this the Anthropic SDK enforces streaming for any call
+            # whose worst-case duration exceeds 10 minutes. Trading agent
+            # reports comfortably fit in 8K tokens.
             "max_tokens": 8192,
             # Phase 5: absorb transient 429s with the Anthropic SDK's built-in
             # exponential backoff. Callers can still override via kwargs.

@@ -161,7 +161,10 @@ class TradingAgentsGraph:
                     "claude_code_openclaw_profile_name", "anthropic:default"
                 )
                 pacing = self.config.get("pacing_seconds", 0)
-                if pacing and pacing > 0:
+                if pacing > 0:
+                    # langchain_core is already loaded transitively via
+                    # langchain_anthropic; lazy-imported here only because
+                    # the constructor is the only call site in this file.
                     from langchain_core.rate_limiters import InMemoryRateLimiter
                     kwargs["rate_limiter"] = InMemoryRateLimiter(
                         requests_per_second=1.0 / float(pacing),
