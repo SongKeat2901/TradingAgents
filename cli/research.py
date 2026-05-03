@@ -7,11 +7,7 @@ interactive use, see cli/main.py.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import time
-import traceback
-from pathlib import Path
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,8 +21,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--deep", default="claude-sonnet-4-6", help="Deep-think model id.")
     p.add_argument("--quick", default="claude-haiku-4-5", help="Quick-think model id.")
-    p.add_argument("--debate-rounds", type=int, default=1)
-    p.add_argument("--risk-rounds", type=int, default=1)
+    p.add_argument(
+        "--debate-rounds", type=int, default=1,
+        help="Number of bull-bear debate rounds.",
+    )
+    p.add_argument(
+        "--risk-rounds", type=int, default=1,
+        help="Number of risk discussion rounds.",
+    )
 
     p.add_argument(
         "--token-source", choices=("keychain", "openclaw_profile"), default="keychain",

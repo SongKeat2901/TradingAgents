@@ -9,8 +9,9 @@ def test_help_includes_required_flags(capsys):
     from cli.research import build_parser
 
     parser = build_parser()
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["--help"])
+    assert exc_info.value.code == 0
     out = capsys.readouterr().out
     for flag in ("--ticker", "--date", "--output-dir", "--token-source",
                  "--openclaw-profile-path", "--openclaw-profile-name",
