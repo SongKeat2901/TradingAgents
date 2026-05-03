@@ -145,10 +145,51 @@ def _build_config(args: argparse.Namespace) -> dict:
     return config
 
 
+_OPENCLAW_CONFIG_PATH = Path.home() / ".openclaw" / "openclaw.json"
+
+
+def _auto_discover_telegram_from_openclaw() -> tuple[str | None, str | None]:
+    """If running on an OpenClaw host (~/.openclaw/openclaw.json exists), read
+    the bot token and the first configured group chat_id from it. Returns
+    (bot_token, chat_id), each possibly None.
+
+    The OpenClaw trader agent's synth-bash often drops --telegram-notify and
+    omits the TRADINGRESEARCH_BOT_TOKEN env var. This auto-discovery makes
+    the binary resilient to that — when run on the trueknot host, posting to
+    Telegram works even if the caller forgot the explicit args.
+    """
+    if not _OPENCLAW_CONFIG_PATH.exists():
+        return None, None
+    try:
+        cfg = json.loads(_OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, None
+    channels = cfg.get("channels", {})
+    telegram = channels.get("telegram", {})
+    accounts = telegram.get("accounts", {})
+    bot_token = (accounts.get("default") or {}).get("botToken")
+    groups = telegram.get("groups", {})
+    # Prefer the first explicitly-keyed group (skip the wildcard "*" key
+    # which OpenClaw uses to mean "any group").
+    chat_id = next((k for k in groups if k != "*"), None)
+    return bot_token, chat_id
+
+
 def _telegram_args(args: argparse.Namespace) -> tuple[str, str] | None:
-    """Return (bot_token, chat_id) if both are available, else None."""
+    """Return (bot_token, chat_id) if both are available, else None.
+
+    Resolution order:
+    1. CLI --telegram-notify + env TRADINGRESEARCH_BOT_TOKEN (explicit caller).
+    2. Auto-discover from ~/.openclaw/openclaw.json (OpenClaw deployment).
+    """
     chat_id = args.telegram_notify
     bot_token = os.environ.get("TRADINGRESEARCH_BOT_TOKEN")
+    if chat_id and bot_token:
+        return bot_token, chat_id
+
+    auto_token, auto_chat = _auto_discover_telegram_from_openclaw()
+    bot_token = bot_token or auto_token
+    chat_id = chat_id or auto_chat
     if chat_id and bot_token:
         return bot_token, chat_id
     return None

@@ -1,5 +1,7 @@
 """Tests for the headless tradingresearch CLI."""
 
+import json
+
 import pytest
 
 pytestmark = pytest.mark.unit
@@ -165,7 +167,8 @@ def _stub_state(ticker, date):
 
 
 def test_telegram_notify_skipped_without_env(tmp_path, monkeypatch):
-    """If --telegram-notify is set but env var is missing, no notify call happens."""
+    """If --telegram-notify is set but env var is missing AND no openclaw
+    auto-discovery, no notify call happens."""
     import cli.research as research
 
     class FakeGraph:
@@ -180,6 +183,10 @@ def test_telegram_notify_skipped_without_env(tmp_path, monkeypatch):
     monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
     monkeypatch.setattr(research, "notify_success", boom_notify)
     monkeypatch.delenv("TRADINGRESEARCH_BOT_TOKEN", raising=False)
+    # Point openclaw config path at a non-existent file so auto-discovery
+    # returns (None, None) — keeps this test isolated from any real
+    # ~/.openclaw/openclaw.json on the host.
+    monkeypatch.setattr(research, "_OPENCLAW_CONFIG_PATH", tmp_path / "no.json")
 
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
@@ -188,6 +195,79 @@ def test_telegram_notify_skipped_without_env(tmp_path, monkeypatch):
     ])
     assert rc == 0
     assert notify_calls == []
+
+
+def test_telegram_auto_discovers_from_openclaw_config(tmp_path, monkeypatch):
+    """If no --telegram-notify and no env, but ~/.openclaw/openclaw.json has a
+    bot token + group, the binary discovers them and posts on completion."""
+    import cli.research as research
+
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d): return _stub_state(t, d), "BUY"
+
+    captured = []
+
+    def fake_notify(bot_token, chat_id, output_dir, decision):
+        captured.append((bot_token, chat_id, decision))
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(research, "notify_success", fake_notify)
+    monkeypatch.delenv("TRADINGRESEARCH_BOT_TOKEN", raising=False)
+
+    fake_cfg = tmp_path / "openclaw.json"
+    fake_cfg.write_text(json.dumps({
+        "channels": {
+            "telegram": {
+                "accounts": {"default": {"botToken": "BOT_AUTO"}},
+                "groups": {"-100AUTO": {}, "*": {}},  # wildcard skipped
+            }
+        }
+    }), encoding="utf-8")
+    monkeypatch.setattr(research, "_OPENCLAW_CONFIG_PATH", fake_cfg)
+
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path / "out"),
+        # No --telegram-notify; no TRADINGRESEARCH_BOT_TOKEN env.
+    ])
+    assert rc == 0
+    assert captured == [("BOT_AUTO", "-100AUTO", "BUY")]
+
+
+def test_telegram_explicit_args_override_openclaw_auto_discovery(tmp_path, monkeypatch):
+    """Explicit --telegram-notify and env var take precedence over auto-discovery."""
+    import cli.research as research
+
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d): return _stub_state(t, d), "BUY"
+
+    captured = []
+
+    def fake_notify(bot_token, chat_id, output_dir, decision):
+        captured.append((bot_token, chat_id))
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(research, "notify_success", fake_notify)
+    monkeypatch.setenv("TRADINGRESEARCH_BOT_TOKEN", "BOT_EXPLICIT")
+
+    fake_cfg = tmp_path / "openclaw.json"
+    fake_cfg.write_text(json.dumps({
+        "channels": {"telegram": {
+            "accounts": {"default": {"botToken": "BOT_AUTO"}},
+            "groups": {"-100AUTO": {}},
+        }}
+    }), encoding="utf-8")
+    monkeypatch.setattr(research, "_OPENCLAW_CONFIG_PATH", fake_cfg)
+
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path / "out"),
+        "--telegram-notify", "-100EXPLICIT",
+    ])
+    assert rc == 0
+    assert captured == [("BOT_EXPLICIT", "-100EXPLICIT")]
 
 
 def test_telegram_notify_success_path(tmp_path, monkeypatch):
