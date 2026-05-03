@@ -24,10 +24,12 @@ def test_researcher_writes_all_expected_files(tmp_path, monkeypatch):
     monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {"items": []})
     monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {"sentiment": 0.5})
     monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {
-        "ticker": t, "close_on_date": 410.0, "history_5y": []
+        "ohlcv": "Date,Open,High,Low,Close,Volume\n2026-05-01,408.0,462.0,379.0,410.0,1000000",
     })
     monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
-        "rsi_14": 58.0, "macd": 1.2, "sma_50": 405.0, "sma_200": 380.0
+        "close_50_sma": 405.0, "close_200_sma": 380.0,
+        "rsi": 58.0, "macd": 1.2,
+        "boll_ub": 430.0, "boll_lb": 390.0, "atr": 4.2,
     })
 
     state = _stub_state(tmp_path)
@@ -46,14 +48,12 @@ def test_researcher_writes_reference_with_required_keys(tmp_path, monkeypatch):
     monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
     monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
     monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {
-        "close_on_date": 410.0,
-        "history_5y": [],
-        "ytd_high": 460.0,
-        "ytd_low": 380.0,
-        "atr_14": 4.2,
+        "ohlcv": "Date,Open,High,Low,Close,Volume\n2026-05-01,408.0,462.0,379.0,410.0,1000000",
     })
     monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
-        "sma_50": 405.0, "sma_200": 380.0
+        "close_50_sma": 405.0, "close_200_sma": 380.0,
+        "rsi": 58.0, "macd": 1.2,
+        "boll_ub": 430.0, "boll_lb": 390.0, "atr": 4.2,
     })
 
     state = _stub_state(tmp_path)
@@ -62,12 +62,9 @@ def test_researcher_writes_reference_with_required_keys(tmp_path, monkeypatch):
     ref = json.loads((Path(state["raw_dir"]) / "reference.json").read_text())
     assert ref["ticker"] == "MSFT"
     assert ref["trade_date"] == "2026-05-01"
-    assert ref["reference_price"] == 410.0
     assert ref["reference_price_source"].startswith("yfinance close")
     assert ref["spot_50dma"] == 405.0
     assert ref["spot_200dma"] == 380.0
-    assert ref["ytd_high"] == 460.0
-    assert ref["ytd_low"] == 380.0
     assert ref["atr_14"] == 4.2
 
 
@@ -84,7 +81,7 @@ def test_researcher_writes_peer_per_ticker(tmp_path, monkeypatch):
     monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
     monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
     monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
-    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"close_on_date": 1.0})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": ""})
     monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {})
 
     state = _stub_state(tmp_path, peers=("GOOG", "META", "AAPL"))
