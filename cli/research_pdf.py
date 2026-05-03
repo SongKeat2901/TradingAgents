@@ -268,6 +268,14 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 </div>
 
+<h1>PM Pre-flight Brief</h1>
+<div class="section-pretitle">Run mandate, business-model classification, peer set, framing.</div>
+{pm_brief_html}
+
+<h1>Technical Setup</h1>
+<div class="section-pretitle">Major historical levels, volume zones, trading playbook.</div>
+{technicals_html}
+
 <h1>Portfolio Manager — Final Decision</h1>
 <div class="section-pretitle">Synthesizes all preceding analysis into a single actionable verdict.</div>
 {decision_html}
@@ -339,6 +347,14 @@ def _format_date_human(date: str) -> str:
         return date
 
 
+def render_md_from_path(path: Path) -> str:
+    """Render markdown from an arbitrary path; returns '(missing)' if absent."""
+    if not path.exists():
+        return "<em>(missing)</em>"
+    text = path.read_text(encoding="utf-8")
+    return markdown.markdown(text, extensions=["tables", "fenced_code"])
+
+
 def build_research_pdf(
     output_dir: str, ticker: str, date: str, decision: str
 ) -> Path:
@@ -363,12 +379,17 @@ def build_research_pdf(
 
     decision_short = _summarize_decision(decision_md_text or decision)
 
+    pm_brief_html = render_md_from_path(out / "raw" / "pm_brief.md")
+    technicals_html = render_md_from_path(out / "raw" / "technicals.md")
+
     html = _HTML_TEMPLATE.format(
         ticker=ticker,
         date=date,
         date_human=_format_date_human(date),
         decision_short=decision_short,
         generated_at=_dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        pm_brief_html=pm_brief_html,
+        technicals_html=technicals_html,
         decision_html=render_md("decision.md"),
         debate_risk_html=render_md("debate_risk.md"),
         debate_bull_bear_html=render_md("debate_bull_bear.md"),
