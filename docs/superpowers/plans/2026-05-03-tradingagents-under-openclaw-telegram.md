@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extend the TradingAgents fork so it can run as a headless OpenClaw skill on Farm 1 mini under the existing TrueKnot profile, by adding (a) an `openclaw_profile` token source for the `claude_code` provider and (b) a non-interactive `tradingresearch` CLI that emits a final decision JSON plus per-analyst report files.
+**Goal:** Extend the TradingAgents fork so it can run as a headless OpenClaw skill on the trueknot Mac Mini (`192.168.10.20`, user `trueknot`) under the trader agent, by adding (a) an `openclaw_profile` token source for the `claude_code` provider — alongside the existing keychain source — and (b) a non-interactive `tradingresearch` CLI that emits a final decision JSON plus per-analyst report files.
 
 **Architecture:** Reuses everything in `tradingagents/` unchanged (graph, agents, dataflows). Extends `tradingagents/llm_clients/claude_code_client.py` to read OAuth from OpenClaw's `auth-profiles.json` instead of (or alongside) the macOS keychain. Adds `cli/research.py` as a second console script (parallel to the existing interactive `cli/main.py`), which builds a `TradingAgentsGraph` with the right config, runs `propagate()`, streams node-completion lines to stdout, and writes report files to a caller-provided output directory.
 
@@ -385,7 +385,7 @@ After the existing `"anthropic_effort": None,` line in `tradingagents/default_co
     # Claude Code OAuth: where to read the access token from.
     # "keychain" — macOS keychain (default; for local dev on the user's MacBook).
     # "openclaw_profile" — read from an OpenClaw auth-profiles.json file
-    #   (used when running as a TrueKnot OpenClaw skill on Farm 1 mini).
+    #   (used when running as a TrueKnot OpenClaw skill on trueknot@192.168.10.20).
     "claude_code_token_source": "keychain",
     "claude_code_openclaw_profile_path": None,
     "claude_code_openclaw_profile_name": "anthropic:default",
@@ -1322,53 +1322,77 @@ git tag phase1-openclaw-cli
 
 ## Phase 2-4 Deployment Runbook (not TDD tasks)
 
-These steps happen on Farm 1 mini and in OpenClaw config. They aren't testable in the TDD sense — they are SSH operations. Execute manually after Phase 1 ships and the smoke test passes.
+These steps happen on the trueknot Mac Mini (`192.168.10.20`, user `trueknot`) and in the trader agent's workspace. They aren't testable in the TDD sense — they are SSH + filesystem operations. Execute manually after Phase 1 ships and the smoke test passes.
 
-### Phase 2 — Deploy CLI to mini
+### Phase 2 — Deploy CLI to trueknot@10.20
 
 ```bash
 # from MacBook
-ssh mini
+ssh macmini-trueknot
 
-# on mini (user gs)
-mkdir -p ~/local/src && cd ~/local/src
-git clone https://github.com/SongKeat2901/TradingAgents.git
-cd TradingAgents
-git checkout feat/claude-code-oauth
+# on the Mac Mini, as user trueknot
+git clone https://github.com/SongKeat2901/TradingAgents.git ~/tradingagents
+cd ~/tradingagents
 python3.13 -m venv .venv
 .venv/bin/pip install -e .
 
 # Symlink the binary into PATH
-ln -sf ~/local/src/TradingAgents/.venv/bin/tradingresearch ~/local/bin/tradingresearch
+mkdir -p ~/local/bin
+ln -sf ~/tradingagents/.venv/bin/tradingresearch ~/local/bin/tradingresearch
 
 # Verify
-tradingresearch --help
+~/local/bin/tradingresearch --help
 
-# Locate auth-profiles.json (one of these exists)
-ls ~/.openclaw-trueknot/auth-profiles.json 2>/dev/null || \
-    find ~/.openclaw-trueknot/agents -name auth-profiles.json
-
-# Smoke test with the real production profile
-tradingresearch --ticker SPY --date 2024-05-10 \
-    --output-dir /tmp/smoke-spy \
-    --token-source openclaw_profile \
-    --openclaw-profile-path ~/.openclaw-trueknot/auth-profiles.json
+# Smoke against the host's keychain-written ~/.claude/.credentials.json
+# (default --token-source=keychain; the Linux-fallback reader handles it).
+~/local/bin/tradingresearch --ticker SPY --date 2024-05-10 \
+    --output-dir /tmp/smoke-spy
 cat /tmp/smoke-spy/decision.md
 ```
 
-### Phase 3 — TrueKnot skill scaffolding
+If the keychain path fails inside a daemon-spawned subprocess (Lesson #2 territory in OpenClawOps), fall back to:
 
-On mini, create `/Users/gs/.openclaw-trueknot/workspace/skills/trading-research/SKILL.md` per the spec (copy from `docs/superpowers/specs/2026-05-03-tradingagents-under-openclaw-telegram-design.md` section "Component 3"). Append the `## Trading Research` block to `/Users/gs/.openclaw-trueknot/workspace/TOOLS.md` next to the existing `trueknot-*` entries. Do not overwrite TOOLS.md — append only.
+```bash
+~/local/bin/tradingresearch --ticker SPY --date 2024-05-10 \
+    --output-dir /tmp/smoke-spy \
+    --token-source openclaw_profile \
+    --openclaw-profile-path ~/.openclaw/auth-profiles.json
+```
+
+If `~/.openclaw/auth-profiles.json` doesn't exist, look under `~/.openclaw/agents/<agent>/agent/auth-profiles.json` (per-agent layout).
+
+### Phase 3 — Trader agent skill scaffolding
+
+On the same host, create the new skill in the trader agent's workspace (NOT the admin's):
+
+```bash
+mkdir -p ~/.openclaw/workspace/skills/trading-research
+cat > ~/.openclaw/workspace/skills/trading-research/SKILL.md <<'MD'
+# Trading Research
+Emoji: 📊
+... (copy from spec section "Component 3") ...
+MD
+```
+
+Append a `## Trading Research` block to `~/.openclaw/workspace/TOOLS.md` next to the existing `## IBKR Trader` and `## IBKR Fund` entries. **Append only — do not overwrite TOOLS.md**. Do not touch `~/.openclaw/workspace-admin/` (admin agent territory).
 
 ### Phase 4 — Telegram trigger
 
-The TrueKnot Telegram daemon is already running. From a Telegram chat the bot is in:
+The trader agent is already on Telegram (`@TrueKnotBot`, supergroup `-1003753140043`). Send a message in that group:
 
 ```
 research SPY 2024-05-10
 ```
 
-The parent agent reads SKILL.md, runs `tradingresearch`, posts decision.md inline + attaches the analyst .md files. Tune progress-line cadence and decision.md format if needed; both are pure-data changes (no recompile of the daemon).
+The trader agent reads the new SKILL.md (may need a daemon kickstart on first deploy if the workspace cache is stale), runs `tradingresearch`, posts decision.md inline + attaches the analyst .md files.
+
+Daemon kickstart (if the new skill isn't picked up):
+
+```bash
+ssh macmini-superqsp "sudo launchctl kickstart -k system/com.trueknot.openclaw.gateway"
+```
+
+Tune progress-line cadence and decision.md format if needed; both are pure-data changes (no recompile of the daemon).
 
 ---
 
