@@ -15,7 +15,8 @@ def test_help_includes_required_flags(capsys):
     out = capsys.readouterr().out
     for flag in ("--ticker", "--date", "--output-dir", "--token-source",
                  "--openclaw-profile-path", "--openclaw-profile-name",
-                 "--deep", "--quick", "--debate-rounds", "--risk-rounds"):
+                 "--deep", "--quick", "--debate-rounds", "--risk-rounds",
+                 "--telegram-notify"):
         assert flag in out, f"flag {flag} missing from --help"
 
 
@@ -134,3 +135,130 @@ def test_unexpected_error_exits_2(tmp_path, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "graph blew up" in err
     assert "Traceback" in err
+
+
+def _stub_state(ticker, date):
+    return {
+        "company_of_interest": ticker,
+        "trade_date": date,
+        "market_report": "m",
+        "sentiment_report": "s",
+        "news_report": "n",
+        "fundamentals_report": "f",
+        "investment_debate_state": {
+            "bull_history": "b", "bear_history": "be", "judge_decision": "j",
+        },
+        "risk_debate_state": {
+            "aggressive_history": "a", "neutral_history": "ne",
+            "conservative_history": "c", "judge_decision": "PM: BUY",
+        },
+        "final_trade_decision": "BUY",
+    }
+
+
+def test_telegram_notify_skipped_without_env(tmp_path, monkeypatch):
+    """If --telegram-notify is set but env var is missing, no notify call happens."""
+    import cli.research as research
+
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d): return _stub_state(t, d), "BUY"
+
+    notify_calls = []
+
+    def boom_notify(*a, **kw):
+        notify_calls.append(("success", a, kw))
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(research, "notify_success", boom_notify)
+    monkeypatch.delenv("TRADINGRESEARCH_BOT_TOKEN", raising=False)
+
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path / "out"),
+        "--telegram-notify", "-100123",
+    ])
+    assert rc == 0
+    assert notify_calls == []
+
+
+def test_telegram_notify_success_path(tmp_path, monkeypatch):
+    """When env var + flag both set, notify_success runs after the JSON line."""
+    import cli.research as research
+
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d): return _stub_state(t, d), "BUY"
+
+    notify_calls = []
+
+    def fake_notify(bot_token, chat_id, output_dir, decision):
+        notify_calls.append((bot_token, chat_id, output_dir, decision))
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(research, "notify_success", fake_notify)
+    monkeypatch.setenv("TRADINGRESEARCH_BOT_TOKEN", "BOT_FAKE")
+
+    out = tmp_path / "out"
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(out),
+        "--telegram-notify", "-100123",
+    ])
+    assert rc == 0
+    assert notify_calls == [("BOT_FAKE", "-100123", str(out), "BUY")]
+
+
+def test_telegram_notify_auth_error_path(tmp_path, monkeypatch):
+    """Auth error still triggers notify_failure when telegram args are present."""
+    import cli.research as research
+    from tradingagents.llm_clients.claude_code_client import ClaudeCodeAuthError
+
+    class BoomGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, *a, **kw): raise ClaudeCodeAuthError("token expired")
+
+    notify_calls = []
+
+    def fake_notify_failure(bot_token, chat_id, ticker, date, summary):
+        notify_calls.append((bot_token, chat_id, ticker, date, summary))
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", BoomGraph)
+    monkeypatch.setattr(research, "notify_failure", fake_notify_failure)
+    monkeypatch.setenv("TRADINGRESEARCH_BOT_TOKEN", "BOT_FAKE")
+
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path),
+        "--telegram-notify", "-100",
+    ])
+    assert rc == 1
+    assert len(notify_calls) == 1
+    assert notify_calls[0][0] == "BOT_FAKE"
+    assert notify_calls[0][1] == "-100"
+    assert "token expired" in notify_calls[0][4]
+
+
+def test_telegram_send_failure_does_not_change_exit_code(tmp_path, monkeypatch, capsys):
+    """If Telegram itself is unreachable, the CLI still returns the right exit code."""
+    import cli.research as research
+
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d): return _stub_state(t, d), "BUY"
+
+    def angry_notify(*a, **kw):
+        raise research.TelegramSendError("network down")
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(research, "notify_success", angry_notify)
+    monkeypatch.setenv("TRADINGRESEARCH_BOT_TOKEN", "BOT_FAKE")
+
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path / "out"),
+        "--telegram-notify", "-100",
+    ])
+    assert rc == 0  # success exit even though notify failed
+    err = capsys.readouterr().err
+    assert "telegram notify failed" in err
