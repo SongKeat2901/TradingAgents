@@ -123,6 +123,48 @@ def test_get_oauth_token_missing_name_raises():
         )
 
 
+def test_keychain_falls_back_to_credentials_file_on_darwin(tmp_path, monkeypatch):
+    """On macOS hosts where the keychain entry is missing but
+    ~/.claude/.credentials.json exists (e.g. OpenClawOps Lesson #2 setups),
+    the keychain source must fall through to the file rather than fail."""
+    import tradingagents.llm_clients.claude_code_client as mod
+
+    fake_creds = tmp_path / "credentials.json"
+    fake_creds.write_text(json.dumps({
+        "claudeAiOauth": {
+            "accessToken": "sk-ant-oat01-fallback",
+        },
+    }), encoding="utf-8")
+
+    monkeypatch.setattr(mod, "_LINUX_CREDS_PATH", fake_creds)
+    monkeypatch.setattr(mod.platform, "system", lambda: "Darwin")
+
+    def boom():
+        raise ClaudeCodeAuthError("keychain entry not found")
+
+    monkeypatch.setattr(mod, "_read_macos_keychain", boom)
+
+    assert get_oauth_token(source="keychain") == "sk-ant-oat01-fallback"
+
+
+def test_keychain_failure_with_no_fallback_file_reraises(tmp_path, monkeypatch):
+    """If keychain fails AND the fallback file does not exist, the original
+    keychain error must propagate (otherwise the user gets a misleading
+    'file not found' instead of the real keychain reason)."""
+    import tradingagents.llm_clients.claude_code_client as mod
+
+    monkeypatch.setattr(mod, "_LINUX_CREDS_PATH", tmp_path / "nope.json")
+    monkeypatch.setattr(mod.platform, "system", lambda: "Darwin")
+
+    def boom():
+        raise ClaudeCodeAuthError("keychain locked")
+
+    monkeypatch.setattr(mod, "_read_macos_keychain", boom)
+
+    with pytest.raises(ClaudeCodeAuthError, match="keychain locked"):
+        get_oauth_token(source="keychain")
+
+
 def test_client_uses_openclaw_source(tmp_path, monkeypatch):
     from tradingagents.llm_clients.claude_code_client import ClaudeCodeClient
 

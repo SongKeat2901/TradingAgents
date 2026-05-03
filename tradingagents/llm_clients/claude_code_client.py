@@ -114,14 +114,24 @@ def get_oauth_token(
 
     source:
       - "keychain"          (default) — macOS keychain via `security` (Linux
-                            falls back to ~/.claude/.credentials.json).
+                            falls back to ~/.claude/.credentials.json). On
+                            macOS, if the keychain read fails (e.g. headless
+                            host with no GUI session, or Lesson-#2 setups
+                            that write only to ~/.claude/.credentials.json),
+                            we transparently fall back to the file.
       - "openclaw_profile"  — read from an OpenClaw auth-profiles.json file
                             on the same host. Requires openclaw_profile_path
                             and openclaw_profile_name.
     """
     if source == "keychain":
         if platform.system() == "Darwin":
-            creds = _read_macos_keychain()
+            try:
+                creds = _read_macos_keychain()
+            except ClaudeCodeAuthError:
+                if _LINUX_CREDS_PATH.exists():
+                    creds = _read_linux_creds()
+                else:
+                    raise
         else:
             creds = _read_linux_creds()
         oauth = creds.get("claudeAiOauth") or creds
