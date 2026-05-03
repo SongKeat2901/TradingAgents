@@ -60,6 +60,45 @@ def test_daemonize_second_fork_grandparent_exits(monkeypatch, tmp_path):
     assert setsid_called == [True]
 
 
+def test_daemonize_grandchild_setsid_and_redirects(monkeypatch, tmp_path):
+    """First fork=0 (in-child), setsid called, second fork=0 (in-grandchild),
+    grandchild reaches the dup2 block and redirects 0/1/2 to log/devnull.
+
+    This is the only path that actually exercises the FD-redirect code in
+    _daemonize; the prior tests only cover the fast-exit branches.
+    """
+    from cli.research import _daemonize
+
+    log = tmp_path / "subdir" / "out.log"  # parent dir does not exist; mkdir must run
+    fork_returns = iter([0, 0])  # child path on both forks
+    setsid_called = []
+    opened_paths: list[str] = []
+    dup2_targets: list[tuple[int, int]] = []
+    closed_fds: list[int] = []
+
+    monkeypatch.setattr(os, "fork", lambda: next(fork_returns))
+    monkeypatch.setattr(os, "setsid", lambda: setsid_called.append(True))
+
+    fd_alloc = iter([100, 101])  # large enough fds to avoid stdio collision
+
+    def fake_open(path, flags, mode=0o644):
+        opened_paths.append(str(path))
+        return next(fd_alloc)
+
+    monkeypatch.setattr(os, "open", fake_open)
+    monkeypatch.setattr(os, "dup2", lambda src, dst: dup2_targets.append((src, dst)))
+    monkeypatch.setattr(os, "close", lambda fd: closed_fds.append(fd))
+    monkeypatch.setattr(os, "_exit", lambda c: (_ for _ in ()).throw(SystemExit(c)))
+
+    _daemonize(str(log))
+
+    assert setsid_called == [True]
+    assert opened_paths[0] == str(log)
+    assert opened_paths[1] == os.devnull
+    assert sorted(dst for _, dst in dup2_targets) == [0, 1, 2]
+    assert sorted(closed_fds) == sorted([100, 101])
+
+
 def test_daemonize_skipped_when_no_daemonize_set(tmp_path, monkeypatch):
     """If --no-daemonize is set, main() must not call _daemonize."""
     import cli.research as research
