@@ -202,6 +202,19 @@ class ClaudeCodeClient(BaseLLMClient):
 
     def get_llm(self) -> Any:
         self.warn_if_unknown_model()
+
+        # Phase 5 finding: the direct-API + OAuth-bearer path (ChatAnthropic)
+        # hits a tight per-minute rate limit on Sonnet/Opus that the
+        # claude-CLI subprocess path does NOT hit. For deep judges (no tool
+        # calls), shell out to `claude -p` instead.
+        if self.kwargs.get("via_cli"):
+            from .claude_cli_chat_model import ClaudeCliChatModel
+            cli_kwargs: dict[str, Any] = {"model": self.model}
+            for key in ("cli_path", "timeout_seconds"):
+                if key in self.kwargs:
+                    cli_kwargs[key] = self.kwargs[key]
+            return ClaudeCliChatModel(**cli_kwargs)
+
         token = get_oauth_token(
             source=self.kwargs.get("token_source", "keychain"),
             openclaw_profile_path=self.kwargs.get("openclaw_profile_path"),

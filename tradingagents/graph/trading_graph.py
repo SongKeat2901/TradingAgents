@@ -83,15 +83,25 @@ class TradingAgentsGraph:
         if self.callbacks:
             llm_kwargs["callbacks"] = self.callbacks
 
-        # Phase 5 (post-burst-429-fix): apply a per-call cooldown to the deep
-        # client only, so each Sonnet/Opus call is preceded by enough idle to
-        # let the per-minute output-tokens bucket fully refill. Quick client
-        # (Haiku) does not get this cooldown — it's already paced by the
-        # shared rate_limiter and Haiku's per-minute bucket is roomier.
+        # Phase 5 (post-empirical-discovery): the deep judges hit Anthropic's
+        # tight per-minute rate limit on the direct-API + OAuth-bearer path.
+        # The claude-CLI subprocess path uses a different (looser) bucket.
+        # Route deep calls through the CLI when llm_provider is claude_code.
+        # Analysts (quick client, Haiku) stay on ChatAnthropic — they need
+        # bind_tools() for yfinance/alpha_vantage and have never 429'd.
         deep_llm_kwargs = dict(llm_kwargs)
-        deep_cooldown = float(self.config.get("deep_cooldown_seconds", 0))
-        if deep_cooldown > 0:
-            deep_llm_kwargs["pre_invoke_sleep_seconds"] = deep_cooldown
+        if self.config.get("llm_provider") == "claude_code" and self.config.get(
+            "deep_via_cli", True
+        ):
+            deep_llm_kwargs["via_cli"] = True
+            deep_cli_path = self.config.get("claude_code_cli_path")
+            if deep_cli_path:
+                deep_llm_kwargs["cli_path"] = deep_cli_path
+        else:
+            # Legacy ChatAnthropic path — keep the per-call cooldown safety.
+            deep_cooldown = float(self.config.get("deep_cooldown_seconds", 0))
+            if deep_cooldown > 0:
+                deep_llm_kwargs["pre_invoke_sleep_seconds"] = deep_cooldown
 
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],

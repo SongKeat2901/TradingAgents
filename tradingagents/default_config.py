@@ -37,10 +37,20 @@ DEFAULT_CONFIG = {
     # Subscription-OAuth users on Anthropic typically need 3-5s to stay under
     # output-tokens-per-minute burst limits.
     "pacing_seconds": 30.0,
-    # Additional sleep before each deep-model call. Lets per-minute
-    # output-tokens bucket fully refill before Research Manager / Portfolio
-    # Manager fire. Stacks on top of pacing_seconds.
+    # Additional sleep before each deep-model call (only used when deep
+    # is on the ChatAnthropic path — see deep_via_cli below).
     "deep_cooldown_seconds": 90.0,
+    # Phase 5: route the deep judges (Research Manager, Portfolio Manager)
+    # through `claude -p` subprocess instead of langchain_anthropic
+    # ChatAnthropic. Empirically the only path that doesn't 429 on Sonnet/
+    # Opus via subscription OAuth. Quick client (Haiku) stays on
+    # ChatAnthropic so analysts retain bind_tools() for yfinance/alpha_vantage.
+    "deep_via_cli": True,
+    # Optional override for the claude CLI path. Defaults to PATH lookup.
+    # On the trueknot host claude is at
+    # /Users/trueknot/.nvm/versions/node/v24.14.1/bin/claude — set this
+    # in the env there if it's not on PATH for the daemon subprocess.
+    "claude_code_cli_path": None,
 
     # WARNING: do not set both deep_think_llm and quick_think_llm to the same
     # Sonnet variant on subscription auth — that doubles burst risk on the
