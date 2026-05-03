@@ -264,7 +264,7 @@ def test_telegram_explicit_args_override_openclaw_auto_discovery(tmp_path, monke
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path / "out"),
-        "--telegram-notify", "-100EXPLICIT",
+        "--telegram-notify=-100EXPLICIT",  # use = form because the value starts with "-"
     ])
     assert rc == 0
     assert captured == [("BOT_EXPLICIT", "-100EXPLICIT")]
