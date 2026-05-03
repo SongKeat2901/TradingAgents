@@ -30,6 +30,11 @@ dependencies = [
     "tqdm>=4.67.1",
     "typing-extensions>=4.14.0",
     "yfinance>=0.2.63",
+    # Phase 5 PDF report generation for the Telegram attachment.
+    # weasyprint also needs cairo + pango at the OS level; on macOS:
+    #   brew install cairo pango
+    "markdown>=3.5",
+    "weasyprint>=60.0",
 ]
 
 [project.scripts]
