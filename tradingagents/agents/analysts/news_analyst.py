@@ -1,61 +1,81 @@
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+"""News analyst — refactored to read raw/ + mandate catalyst magnitudes."""
+
+from __future__ import annotations
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
-    get_global_news,
     get_language_instruction,
-    get_news,
 )
-from tradingagents.dataflows.config import get_config
+from tradingagents.agents.utils.raw_data import format_for_prompt
+
+
+_SYSTEM = """\
+You are a senior news / macro analyst writing the news section of an equity \
+research report on $TICKER for trade date $DATE.
+
+You have been given news.json (ticker-specific + global), reference.json, \
+and pm_brief.md. NO tool calls — the data is in front of you.
+
+Required sections (verbatim headers):
+
+## Material catalysts (with magnitude estimates)
+
+For every material catalyst in news.json, build a magnitude chain:
+
+| Catalyst | Direction | Mechanism | Magnitude estimate | Confidence |
+|---|---|---|---|---|
+| <event> | Bull/Bear | <how it propagates to stock> | <±$X target price impact OR ±Y% multiple shift> | High/Med/Low |
+
+Examples of valid mechanisms: "Fed cut → +1% to S&P fair value via duration \
+math → +$5 SPY upside"; "Q4 earnings beat → +$0.20 EPS → at 22x P/E, +$4.4 \
+per share". Vague claims like "this is positive for the stock" are not \
+acceptable.
+
+## Cross-references with peers
+
+If any peer ticker (from pm_brief.md) is mentioned in the news context, cite \
+it — these are the read-throughs ("AAPL's iPhone disclosure on April 28 \
+implies $TICKER's similar segment will print Y% growth").
+
+## Macro / global context
+
+What broader trend frames this run's catalyst set? E.g., "rates expected to \
+hold; AI capex cycle; consumer sentiment near 50-year low."
+
+Every claim must cite a specific item from news.json or global news. No \
+narrative without a source."""
 
 
 def create_news_analyst(llm):
     def news_analyst_node(state):
-        current_date = state["trade_date"]
-        instrument_context = build_instrument_context(state["company_of_interest"])
+        ticker = state["company_of_interest"]
+        date = state["trade_date"]
+        raw_dir = state["raw_dir"]
+        instrument_context = build_instrument_context(ticker)
 
-        tools = [
-            get_news,
-            get_global_news,
+        context = format_for_prompt(
+            raw_dir,
+            files=["pm_brief.md", "reference.json", "news.json"],
+        )
+
+        messages = [
+            SystemMessage(
+                content=_SYSTEM.replace("$TICKER", ticker).replace("$DATE", date)
+                + "\n" + get_language_instruction()
+            ),
+            HumanMessage(
+                content=f"For your reference: {instrument_context}\n\n{context}\n\n"
+                f"Write the news analyst's report."
+            ),
         ]
-
-        system_message = (
-            "You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(query, start_date, end_date) for company-specific or targeted news searches, and get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
-            + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
-            + get_language_instruction()
-        )
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a helpful AI assistant, collaborating with other assistants."
-                    " Use the provided tools to progress towards answering the question."
-                    " If you are unable to fully answer, that's OK; another assistant with different tools"
-                    " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
-                    " You have access to the following tools: {tool_names}.\n{system_message}"
-                    "For your reference, the current date is {current_date}. {instrument_context}",
-                ),
-                MessagesPlaceholder(variable_name="messages"),
-            ]
-        )
-
-        prompt = prompt.partial(system_message=system_message)
-        prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
-        prompt = prompt.partial(current_date=current_date)
-        prompt = prompt.partial(instrument_context=instrument_context)
-
-        chain = prompt | llm.bind_tools(tools)
-        result = chain.invoke(state["messages"])
-
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            report = result.content
+        result = llm.invoke(messages)
+        raw_content = result.content if hasattr(result, "content") else None
+        report = raw_content if raw_content else str(result)
 
         return {
-            "messages": [result],
+            "messages": [result] if raw_content is not None else [],
             "news_report": report,
         }
 
