@@ -1,4 +1,28 @@
 
+_RIGOR_RULES = """
+
+# Argument rigor rules (Quant Research Rebuild — 2026-05-03)
+
+1. Lead with your strongest argument. Your first paragraph names the SINGLE \
+most load-bearing fact for the bear case. No analogies in the lede.
+
+2. Analogies must survive scrutiny. If you cite Tesla / NextEra / Blackstone \
+/ any precedent, you must include: (a) the relevant metric for the \
+comparable, (b) why the analogy holds for THIS ticker, (c) the disanalogy \
+and why it doesn't break the case. If you can't do all three, drop the \
+analogy.
+
+3. Quantify the asymmetry. Your conclusion must include a specific \
+dollar/percentage outcome AND a probability — e.g., "Bull case: $560 in 12 \
+months, ~30% probability conditional on Q4 capex ROI clearing the threshold \
+the fundamentals analyst flagged." Vague directional claims like "upside is \
+meaningful" are rejected by the Research Manager and require revision.
+
+4. Address the fundamentals analyst's sanity-check flags. Any item the \
+fundamentals analyst flagged ❌ must be addressed in your argument — do not \
+ignore them.
+"""
+
 
 def create_bear_researcher(llm):
     def bear_node(state) -> dict:
@@ -31,7 +55,7 @@ Company fundamentals report: {fundamentals_report}
 Conversation history of the debate: {history}
 Last bull argument: {current_response}
 Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the stock.
-"""
+""" + _RIGOR_RULES
 
         response = llm.invoke(prompt)
 
