@@ -65,6 +65,38 @@ def _read_linux_creds() -> dict:
     return json.loads(_LINUX_CREDS_PATH.read_text())
 
 
+def _read_openclaw_profile(path: str, profile_name: str) -> str:
+    """Return the access token for an OpenClaw auth-profiles.json profile."""
+    p = Path(path)
+    if not p.exists():
+        raise ClaudeCodeAuthError(
+            f"OpenClaw auth-profiles.json not found at {path}. "
+            f"Verify the path or run OpenClaw's update-tokens.sh from the MacBook."
+        )
+    try:
+        data = json.loads(p.read_text())
+    except json.JSONDecodeError as e:
+        raise ClaudeCodeAuthError(
+            f"OpenClaw auth-profiles.json at {path} is not valid JSON: {e}"
+        ) from e
+
+    profiles = data.get("profiles", {})
+    profile = profiles.get(profile_name)
+    if not profile:
+        raise ClaudeCodeAuthError(
+            f"Profile '{profile_name}' not in {path}. "
+            f"Available: {sorted(profiles.keys())}"
+        )
+
+    token = profile.get("token", "")
+    if not token.startswith("sk-ant-oat01-"):
+        raise ClaudeCodeAuthError(
+            f"Profile '{profile_name}' token does not look like an Anthropic "
+            f"OAuth token (expected sk-ant-oat01- prefix). Rotate via OpenClaw."
+        )
+    return token
+
+
 def get_oauth_token() -> str:
     """Return a non-expired Claude Code OAuth access token, or raise."""
     if platform.system() == "Darwin":
