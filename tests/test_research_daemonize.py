@@ -99,8 +99,8 @@ def test_daemonize_grandchild_setsid_and_redirects(monkeypatch, tmp_path):
     assert sorted(closed_fds) == sorted([100, 101])
 
 
-def test_daemonize_skipped_when_no_daemonize_set(tmp_path, monkeypatch):
-    """If --no-daemonize is set, main() must not call _daemonize."""
+def test_daemonize_skipped_when_foreground_env_set(tmp_path, monkeypatch):
+    """When TRADINGRESEARCH_FOREGROUND=1, main() must skip _daemonize."""
     import cli.research as research
 
     class FakeGraph:
@@ -120,16 +120,51 @@ def test_daemonize_skipped_when_no_daemonize_set(tmp_path, monkeypatch):
 
     monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
     monkeypatch.setattr(research, "_daemonize", lambda *a, **kw: daemonize_calls.append(a))
-    # also disable telegram notify to avoid stub-related noise
     monkeypatch.setattr(research, "notify_success", lambda *a, **kw: None)
     monkeypatch.setenv("TRADINGRESEARCH_BOT_TOKEN", "BOT")
+    monkeypatch.setenv("TRADINGRESEARCH_FOREGROUND", "1")
 
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path),
         "--telegram-notify", "-100",
-        "--no-daemonize",
     ])
 
     assert rc == 0
     assert daemonize_calls == []
+
+
+def test_daemonize_runs_when_foreground_env_unset(tmp_path, monkeypatch):
+    """When TRADINGRESEARCH_FOREGROUND is unset, main() must call _daemonize."""
+    import cli.research as research
+
+    daemonize_calls = []
+
+    def fake_daemonize(log_path):
+        daemonize_calls.append(log_path)
+
+    monkeypatch.setattr(research, "_daemonize", fake_daemonize)
+    monkeypatch.delenv("TRADINGRESEARCH_FOREGROUND", raising=False)
+    # Stub the heavy graph so we can let main() run past the daemonize call
+    # (since fake_daemonize is a no-op the main body still executes).
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d):
+            return ({"company_of_interest": t, "trade_date": d,
+                     "market_report": "", "sentiment_report": "",
+                     "news_report": "", "fundamentals_report": "",
+                     "investment_debate_state": {"bull_history": "", "bear_history": "",
+                                                  "judge_decision": ""},
+                     "risk_debate_state": {"aggressive_history": "", "neutral_history": "",
+                                            "conservative_history": "", "judge_decision": ""},
+                     "final_trade_decision": "BUY"},
+                    "BUY")
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path / "out"),
+    ])
+
+    assert rc == 0
+    assert len(daemonize_calls) == 1, "_daemonize must run when env is unset"

@@ -120,15 +120,15 @@ def build_parser() -> argparse.ArgumentParser:
             "rate limits on subscription auth. 0 disables pacing."
         ),
     )
-    # Hidden test/internal flag — argparse.SUPPRESS keeps it out of --help
-    # output so an LLM agent inspecting --help doesn't discover and add it.
-    # Skipping the daemonize step is rarely the right thing for callers; it's
-    # primarily for unit tests that monkeypatch internals.
-    p.add_argument(
-        "--no-daemonize", action="store_true",
-        help=argparse.SUPPRESS,
-    )
     return p
+
+
+# Env-var only escape hatch for tests / direct foreground use. Deliberately
+# NOT a CLI flag — the OpenClaw trader agent kept discovering --no-daemonize
+# (via --help, source code, or its own session memory) and adding it to its
+# synth-bash, defeating the daemonize-by-default gate. An env var is invisible
+# to argparse introspection and the agent doesn't set it spontaneously.
+_FOREGROUND_ENV = "TRADINGRESEARCH_FOREGROUND"
 
 
 def _build_config(args: argparse.Namespace) -> dict:
@@ -174,8 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     # without a TTY; subprocess.Popen + terminate() kills us prematurely).
     # By forking ourselves on entry, the parent process exits within ~1s
     # regardless of how we were called, and the grandchild runs to completion.
-    # Foreground use (tests, direct CLI) passes --no-daemonize.
-    if not args.no_daemonize:
+    # Foreground use (tests, direct CLI) sets TRADINGRESEARCH_FOREGROUND=1.
+    if not os.environ.get(_FOREGROUND_ENV):
         log_path = (
             Path(args.output_dir).parent.parent / "logs"
             / f"tradingresearch-{args.date}-{args.ticker}.log"

@@ -5,6 +5,14 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _foreground_env(monkeypatch):
+    """Force foreground execution for every test in this file — tests must
+    not actually fork inside pytest. The production gate is `if not
+    os.environ.get('TRADINGRESEARCH_FOREGROUND')`."""
+    monkeypatch.setenv("TRADINGRESEARCH_FOREGROUND", "1")
+
+
 def test_help_includes_required_flags(capsys):
     from cli.research import build_parser
 
@@ -76,7 +84,6 @@ def test_main_runs_graph_writes_files_prints_json(tmp_path, monkeypatch, capsys)
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(out),
-        "--no-daemonize",
     ])
     assert rc == 0
 
@@ -114,7 +121,6 @@ def test_auth_error_exits_1(tmp_path, monkeypatch, capsys):
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path),
-        "--no-daemonize",
     ])
     assert rc == 1
     err = capsys.readouterr().err
@@ -132,7 +138,6 @@ def test_unexpected_error_exits_2(tmp_path, monkeypatch, capsys):
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path),
-        "--no-daemonize",
     ])
     assert rc == 2
     err = capsys.readouterr().err
@@ -180,7 +185,6 @@ def test_telegram_notify_skipped_without_env(tmp_path, monkeypatch):
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path / "out"),
         "--telegram-notify", "-100123",
-        "--no-daemonize",  # do not actually fork inside pytest
     ])
     assert rc == 0
     assert notify_calls == []
@@ -208,7 +212,6 @@ def test_telegram_notify_success_path(tmp_path, monkeypatch):
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(out),
         "--telegram-notify", "-100123",
-        "--no-daemonize",
     ])
     assert rc == 0
     assert notify_calls == [("BOT_FAKE", "-100123", str(out), "BUY")]
@@ -236,7 +239,6 @@ def test_telegram_notify_auth_error_path(tmp_path, monkeypatch):
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path),
         "--telegram-notify", "-100",
-        "--no-daemonize",
     ])
     assert rc == 1
     assert len(notify_calls) == 1
@@ -264,7 +266,6 @@ def test_telegram_send_failure_does_not_change_exit_code(tmp_path, monkeypatch, 
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path / "out"),
         "--telegram-notify", "-100",
-        "--no-daemonize",
     ])
     assert rc == 0  # success exit even though notify failed
     err = capsys.readouterr().err
