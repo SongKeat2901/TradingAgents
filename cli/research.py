@@ -120,9 +120,13 @@ def build_parser() -> argparse.ArgumentParser:
             "rate limits on subscription auth. 0 disables pacing."
         ),
     )
+    # Hidden test/internal flag — argparse.SUPPRESS keeps it out of --help
+    # output so an LLM agent inspecting --help doesn't discover and add it.
+    # Skipping the daemonize step is rarely the right thing for callers; it's
+    # primarily for unit tests that monkeypatch internals.
     p.add_argument(
         "--no-daemonize", action="store_true",
-        help="Skip the self-daemonize step (for tests / direct foreground use).",
+        help=argparse.SUPPRESS,
     )
     return p
 
