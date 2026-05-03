@@ -61,3 +61,38 @@ def test_invalid_json_raises(tmp_path):
     p.write_text("{not json")
     with pytest.raises(ClaudeCodeAuthError):
         _read_openclaw_profile(str(p), "anthropic:default")
+
+
+def test_missing_token_key_raises(tmp_path):
+    p = tmp_path / "auth-profiles.json"
+    _write_profile(p, {
+        "version": 1,
+        "profiles": {"anthropic:default": {"type": "oauth"}},
+    })
+    with pytest.raises(ClaudeCodeAuthError, match="no 'token' field"):
+        _read_openclaw_profile(str(p), "anthropic:default")
+
+
+def test_get_oauth_token_openclaw_source(tmp_path):
+    from tradingagents.llm_clients.claude_code_client import get_oauth_token
+
+    p = tmp_path / "auth-profiles.json"
+    p.write_text(json.dumps({
+        "version": 1,
+        "profiles": {
+            "anthropic:default": {"type": "token", "token": "sk-ant-oat01-xyz"},
+        },
+    }))
+    token = get_oauth_token(
+        source="openclaw_profile",
+        openclaw_profile_path=str(p),
+        openclaw_profile_name="anthropic:default",
+    )
+    assert token == "sk-ant-oat01-xyz"
+
+
+def test_get_oauth_token_unknown_source_raises():
+    from tradingagents.llm_clients.claude_code_client import get_oauth_token
+
+    with pytest.raises(ClaudeCodeAuthError, match="Unknown token source"):
+        get_oauth_token(source="bogus")

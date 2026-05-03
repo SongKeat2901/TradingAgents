@@ -62,7 +62,7 @@ def _read_linux_creds() -> dict:
         raise ClaudeCodeAuthError(
             f"No credentials at {_LINUX_CREDS_PATH}. Run `claude /login` first."
         )
-    return json.loads(_LINUX_CREDS_PATH.read_text())
+    return json.loads(_LINUX_CREDS_PATH.read_text(encoding="utf-8"))
 
 
 def _read_openclaw_profile(path: str, profile_name: str) -> str:
@@ -74,7 +74,7 @@ def _read_openclaw_profile(path: str, profile_name: str) -> str:
             f"Verify the path or run OpenClaw's update-tokens.sh from the MacBook."
         )
     try:
-        data = json.loads(p.read_text())
+        data = json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise ClaudeCodeAuthError(
             f"OpenClaw auth-profiles.json at {path} is not valid JSON: {e}"
@@ -88,7 +88,11 @@ def _read_openclaw_profile(path: str, profile_name: str) -> str:
             f"Available: {sorted(profiles.keys())}"
         )
 
-    token = profile.get("token", "")
+    token = profile.get("token")
+    if not token:
+        raise ClaudeCodeAuthError(
+            f"Profile '{profile_name}' has no 'token' field in {path}."
+        )
     if not token.startswith("sk-ant-oat01-"):
         raise ClaudeCodeAuthError(
             f"Profile '{profile_name}' token does not look like an Anthropic "
@@ -97,31 +101,53 @@ def _read_openclaw_profile(path: str, profile_name: str) -> str:
     return token
 
 
-def get_oauth_token() -> str:
-    """Return a non-expired Claude Code OAuth access token, or raise."""
-    if platform.system() == "Darwin":
-        creds = _read_macos_keychain()
-    else:
-        creds = _read_linux_creds()
+def get_oauth_token(
+    source: str = "keychain",
+    openclaw_profile_path: str | None = None,
+    openclaw_profile_name: str | None = None,
+) -> str:
+    """Return a non-expired Claude Code OAuth access token, or raise.
 
-    oauth = creds.get("claudeAiOauth") or creds
-    access_token = oauth.get("accessToken")
-    expires_at = oauth.get("expiresAt")
+    source:
+      - "keychain"          (default) — macOS keychain via `security` (Linux
+                            falls back to ~/.claude/.credentials.json).
+      - "openclaw_profile"  — read from an OpenClaw auth-profiles.json file
+                            on the same host. Requires openclaw_profile_path
+                            and openclaw_profile_name.
+    """
+    if source == "keychain":
+        if platform.system() == "Darwin":
+            creds = _read_macos_keychain()
+        else:
+            creds = _read_linux_creds()
+        oauth = creds.get("claudeAiOauth") or creds
+        access_token = oauth.get("accessToken")
+        expires_at = oauth.get("expiresAt")
 
-    if not access_token:
-        raise ClaudeCodeAuthError(
-            "No accessToken in Claude Code credentials. Run `claude /login`."
-        )
-
-    if expires_at is not None:
-        now_ms = int(time.time() * 1000)
-        if now_ms >= expires_at:
+        if not access_token:
             raise ClaudeCodeAuthError(
-                "Claude Code access token expired. Run any Claude Code command "
-                "(e.g. `claude /status`) to refresh the keychain entry, then retry."
+                "No accessToken in Claude Code credentials. Run `claude /login`."
             )
+        if expires_at is not None:
+            now_ms = int(time.time() * 1000)
+            if now_ms >= expires_at:
+                raise ClaudeCodeAuthError(
+                    "Claude Code access token expired. Run any Claude Code "
+                    "command (e.g. `claude /status`) to refresh, then retry."
+                )
+        return access_token
 
-    return access_token
+    if source == "openclaw_profile":
+        if not openclaw_profile_path or not openclaw_profile_name:
+            raise ClaudeCodeAuthError(
+                "openclaw_profile source requires openclaw_profile_path and "
+                "openclaw_profile_name."
+            )
+        return _read_openclaw_profile(openclaw_profile_path, openclaw_profile_name)
+
+    raise ClaudeCodeAuthError(
+        f"Unknown token source: {source!r}. Use 'keychain' or 'openclaw_profile'."
+    )
 
 
 class _OAuthChatAnthropic(ChatAnthropic):
