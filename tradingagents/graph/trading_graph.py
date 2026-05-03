@@ -150,6 +150,17 @@ class TradingAgentsGraph:
             if effort:
                 kwargs["effort"] = effort
 
+            if provider == "claude_code":
+                kwargs["token_source"] = self.config.get(
+                    "claude_code_token_source", "keychain"
+                )
+                kwargs["openclaw_profile_path"] = self.config.get(
+                    "claude_code_openclaw_profile_path"
+                )
+                kwargs["openclaw_profile_name"] = self.config.get(
+                    "claude_code_openclaw_profile_name", "anthropic:default"
+                )
+
         return kwargs
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:

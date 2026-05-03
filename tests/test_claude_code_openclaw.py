@@ -103,3 +103,39 @@ def test_get_oauth_token_openclaw_source(tmp_path):
 def test_get_oauth_token_unknown_source_raises():
     with pytest.raises(ClaudeCodeAuthError, match="Unknown token source"):
         get_oauth_token(source="bogus")
+
+
+def test_client_uses_openclaw_source(tmp_path, monkeypatch):
+    from tradingagents.llm_clients.claude_code_client import ClaudeCodeClient
+
+    p = tmp_path / "auth-profiles.json"
+    p.write_text(json.dumps({
+        "version": 1,
+        "profiles": {
+            "anthropic:default": {"type": "token", "token": "sk-ant-oat01-zzz"},
+        },
+    }), encoding="utf-8")
+
+    captured = {}
+
+    def fake_anthropic(**kwargs):
+        captured.update(kwargs)
+        return object()  # don't actually network
+
+    monkeypatch.setattr("tradingagents.llm_clients.claude_code_client.Anthropic", fake_anthropic)
+    monkeypatch.setattr("tradingagents.llm_clients.claude_code_client.AsyncAnthropic", fake_anthropic)
+    # _OAuthChatAnthropic does network on first call but not on construction;
+    # we just need the constructor to succeed.
+    monkeypatch.setattr(
+        "tradingagents.llm_clients.claude_code_client._OAuthChatAnthropic",
+        lambda **kw: type("Stub", (), {"_client": None, "_async_client": None, **kw})(),
+    )
+
+    client = ClaudeCodeClient(
+        model="claude-haiku-4-5",
+        token_source="openclaw_profile",
+        openclaw_profile_path=str(p),
+        openclaw_profile_name="anthropic:default",
+    )
+    client.get_llm()
+    assert captured["auth_token"] == "sk-ant-oat01-zzz"

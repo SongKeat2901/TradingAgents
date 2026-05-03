@@ -25,6 +25,13 @@ DEFAULT_CONFIG = {
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
+    # Claude Code OAuth: where to read the access token from.
+    # "keychain" — macOS keychain (default; for local dev on the user's MacBook).
+    # "openclaw_profile" — read from an OpenClaw auth-profiles.json file
+    #   (used when running as a TrueKnot OpenClaw skill on Farm 1 mini).
+    "claude_code_token_source": "keychain",
+    "claude_code_openclaw_profile_path": None,
+    "claude_code_openclaw_profile_name": "anthropic:default",
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,

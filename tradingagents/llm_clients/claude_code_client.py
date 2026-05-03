@@ -179,7 +179,11 @@ class ClaudeCodeClient(BaseLLMClient):
 
     def get_llm(self) -> Any:
         self.warn_if_unknown_model()
-        token = get_oauth_token()
+        token = get_oauth_token(
+            source=self.kwargs.get("token_source", "keychain"),
+            openclaw_profile_path=self.kwargs.get("openclaw_profile_path"),
+            openclaw_profile_name=self.kwargs.get("openclaw_profile_name"),
+        )
 
         sdk_kwargs: dict[str, Any] = {
             "auth_token": token,
