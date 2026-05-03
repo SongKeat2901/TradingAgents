@@ -105,6 +105,24 @@ def test_get_oauth_token_unknown_source_raises():
         get_oauth_token(source="bogus")
 
 
+def test_get_oauth_token_missing_path_raises():
+    with pytest.raises(ClaudeCodeAuthError, match="openclaw_profile_path"):
+        get_oauth_token(
+            source="openclaw_profile",
+            openclaw_profile_path=None,
+            openclaw_profile_name="anthropic:default",
+        )
+
+
+def test_get_oauth_token_missing_name_raises():
+    with pytest.raises(ClaudeCodeAuthError, match="openclaw_profile_name"):
+        get_oauth_token(
+            source="openclaw_profile",
+            openclaw_profile_path="/some/path",
+            openclaw_profile_name=None,
+        )
+
+
 def test_client_uses_openclaw_source(tmp_path, monkeypatch):
     from tradingagents.llm_clients.claude_code_client import ClaudeCodeClient
 
