@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import time
+import traceback
 
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -67,14 +68,24 @@ def main(argv: list[str] | None = None) -> int:
     config = _build_config(args)
     progress = ProgressCallback()
 
+    # Lazy import so test fixtures can monkeypatch ClaudeCodeAuthError if needed.
+    from tradingagents.llm_clients.claude_code_client import ClaudeCodeAuthError
+
     progress.on_node_start("research")
     started = time.monotonic()
-    graph = TradingAgentsGraph(debug=False, config=config)
-    final_state, _decision = graph.propagate(args.ticker, args.date)
-    write_research_outputs(final_state, args.output_dir)
+    try:
+        graph = TradingAgentsGraph(debug=False, config=config)
+        final_state, _decision = graph.propagate(args.ticker, args.date)
+        write_research_outputs(final_state, args.output_dir)
+    except ClaudeCodeAuthError as e:
+        print(f"auth error: {e}", file=sys.stderr)
+        return 1
+    except Exception:  # noqa: BLE001 - top-level CLI catch
+        traceback.print_exc(file=sys.stderr)
+        return 2
+
     duration = time.monotonic() - started
     progress.on_node_done("research", duration_s=duration)
-
     payload = {
         "decision": final_state.get("final_trade_decision", "UNKNOWN"),
         "ticker": args.ticker,

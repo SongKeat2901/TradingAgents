@@ -98,3 +98,39 @@ def test_main_runs_graph_writes_files_prints_json(tmp_path, monkeypatch, capsys)
     assert payload["decision"] == "BUY"
     assert payload["output_dir"] == str(out)
     assert payload["duration_s"] >= 0
+
+
+def test_auth_error_exits_1(tmp_path, monkeypatch, capsys):
+    import cli.research as research
+    from tradingagents.llm_clients.claude_code_client import ClaudeCodeAuthError
+
+    class BoomGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, *a, **kw): raise ClaudeCodeAuthError("token expired")
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", BoomGraph)
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path),
+    ])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "token expired" in err
+
+
+def test_unexpected_error_exits_2(tmp_path, monkeypatch, capsys):
+    import cli.research as research
+
+    class BoomGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, *a, **kw): raise RuntimeError("graph blew up")
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", BoomGraph)
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path),
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "graph blew up" in err
+    assert "Traceback" in err
