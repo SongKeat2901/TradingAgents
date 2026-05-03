@@ -62,6 +62,7 @@ class Propagator:
             "technicals_report": "",
             "pm_feedback": "",
             "pm_retries": 0,
+            "pm_retry_target": "",  # set by PM on retry
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:

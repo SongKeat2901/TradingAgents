@@ -79,3 +79,4 @@ class AgentState(MessagesState):
     technicals_report: str
     pm_feedback: str
     pm_retries: int
+    pm_retry_target: str
