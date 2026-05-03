@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List
 from typing_extensions import TypedDict
 from langgraph.graph import MessagesState
 
@@ -71,3 +71,11 @@ class AgentState(MessagesState):
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
+
+    # Quant-research rebuild (2026-05-03 spec): pre-flight + raw data folder + retry loop
+    pm_brief: str
+    peers: List[str]
+    raw_dir: str
+    technicals_report: str
+    pm_feedback: str
+    pm_retries: int
