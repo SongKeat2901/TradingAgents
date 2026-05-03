@@ -199,3 +199,45 @@ def test_client_uses_openclaw_source(tmp_path, monkeypatch):
     )
     client.get_llm()
     assert captured["auth_token"] == "sk-ant-oat01-zzz"
+
+
+def test_client_forwards_rate_limiter_to_chat_anthropic(tmp_path, monkeypatch):
+    """A rate_limiter passed via kwargs lands on the underlying ChatAnthropic."""
+    from tradingagents.llm_clients.claude_code_client import ClaudeCodeClient
+
+    p = tmp_path / "auth-profiles.json"
+    p.write_text(json.dumps({
+        "version": 1,
+        "profiles": {"anthropic:default": {"type": "token", "token": "sk-ant-oat01-z"}},
+    }), encoding="utf-8")
+
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "tradingagents.llm_clients.claude_code_client.Anthropic",
+        lambda **kw: object(),
+    )
+    monkeypatch.setattr(
+        "tradingagents.llm_clients.claude_code_client.AsyncAnthropic",
+        lambda **kw: object(),
+    )
+
+    def fake_chat(**kw):
+        captured.update(kw)
+        return type("Stub", (), {"_client": None, "_async_client": None})()
+
+    monkeypatch.setattr(
+        "tradingagents.llm_clients.claude_code_client._OAuthChatAnthropic",
+        fake_chat,
+    )
+
+    sentinel = object()
+    client = ClaudeCodeClient(
+        model="claude-haiku-4-5",
+        token_source="openclaw_profile",
+        openclaw_profile_path=str(p),
+        openclaw_profile_name="anthropic:default",
+        rate_limiter=sentinel,
+    )
+    client.get_llm()
+    assert captured.get("rate_limiter") is sentinel

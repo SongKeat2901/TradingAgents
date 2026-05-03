@@ -160,6 +160,14 @@ class TradingAgentsGraph:
                 kwargs["openclaw_profile_name"] = self.config.get(
                     "claude_code_openclaw_profile_name", "anthropic:default"
                 )
+                pacing = self.config.get("pacing_seconds", 0)
+                if pacing and pacing > 0:
+                    from langchain_core.rate_limiters import InMemoryRateLimiter
+                    kwargs["rate_limiter"] = InMemoryRateLimiter(
+                        requests_per_second=1.0 / float(pacing),
+                        check_every_n_seconds=0.1,
+                        max_bucket_size=2,
+                    )
 
         return kwargs
 

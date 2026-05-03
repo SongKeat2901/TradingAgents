@@ -32,6 +32,16 @@ DEFAULT_CONFIG = {
     "claude_code_token_source": "keychain",
     "claude_code_openclaw_profile_path": None,
     "claude_code_openclaw_profile_name": "anthropic:default",
+    # Phase 5: minimum seconds between LLM calls. Shared between deep + quick
+    # clients via a langchain_core InMemoryRateLimiter. 0 disables pacing.
+    # Subscription-OAuth users on Anthropic typically need 3-5s to stay under
+    # output-tokens-per-minute burst limits.
+    "pacing_seconds": 3,
+
+    # WARNING: do not set both deep_think_llm and quick_think_llm to the same
+    # Sonnet variant on subscription auth — that doubles burst risk on the
+    # 4 analyst turns plus the 2 deep judges. Keep haiku for quick.
+
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,

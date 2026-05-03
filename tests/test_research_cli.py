@@ -266,3 +266,20 @@ def test_telegram_send_failure_does_not_change_exit_code(tmp_path, monkeypatch, 
     assert rc == 0  # success exit even though notify failed
     err = capsys.readouterr().err
     assert "telegram notify failed" in err
+
+
+def test_pacing_seconds_flag_exposed(capsys):
+    from cli.research import build_parser
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--help"])
+    out = capsys.readouterr().out
+    assert "--pacing-seconds" in out
+
+
+def test_pacing_seconds_default_3(tmp_path):
+    from cli.research import build_parser
+    parser = build_parser()
+    ns = parser.parse_args(["--ticker", "X", "--date", "2024-01-01",
+                            "--output-dir", str(tmp_path)])
+    assert ns.pacing_seconds == 3

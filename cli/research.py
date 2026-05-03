@@ -113,6 +113,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--pacing-seconds", type=float, default=3.0,
+        help=(
+            "Minimum seconds between LLM calls (shared across deep+quick "
+            "clients). Spreads burst to stay under output-tokens-per-minute "
+            "rate limits on subscription auth. 0 disables pacing."
+        ),
+    )
+    p.add_argument(
         "--no-daemonize", action="store_true",
         help="Skip the self-daemonize step (for tests / direct foreground use).",
     )
@@ -129,6 +137,7 @@ def _build_config(args: argparse.Namespace) -> dict:
     config["claude_code_token_source"] = args.token_source
     config["claude_code_openclaw_profile_path"] = args.openclaw_profile_path
     config["claude_code_openclaw_profile_name"] = args.openclaw_profile_name
+    config["pacing_seconds"] = args.pacing_seconds
     return config
 
 
