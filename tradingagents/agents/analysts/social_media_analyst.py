@@ -73,4 +73,4 @@ def create_social_media_analyst(llm):
             "sentiment_report": report,
         }
 
-    return social_media_analyst_node
+    return social_analyst_node

@@ -1,5 +1,6 @@
 # TradingAgents/graph/propagation.py
 
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from tradingagents.agents.utils.agent_states import (
     AgentState,
@@ -16,9 +17,11 @@ class Propagator:
         self.max_recur_limit = max_recur_limit
 
     def create_initial_state(
-        self, company_name: str, trade_date: str, past_context: str = ""
+        self, company_name: str, trade_date: str, past_context: str = "",
+        output_dir: str = "/tmp",
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
+        raw_dir = str(Path(output_dir) / "raw")
         return {
             "messages": [("human", company_name)],
             "company_of_interest": company_name,
@@ -52,6 +55,13 @@ class Propagator:
             "fundamentals_report": "",
             "sentiment_report": "",
             "news_report": "",
+            # Quant-research rebuild fields (2026-05-03)
+            "raw_dir": raw_dir,
+            "peers": [],
+            "pm_brief": "",
+            "technicals_report": "",
+            "pm_feedback": "",
+            "pm_retries": 0,
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:
