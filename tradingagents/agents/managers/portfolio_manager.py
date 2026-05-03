@@ -66,6 +66,47 @@ be able to understand the framing from the Inputs section alone.
 """
 
 
+_QC_CHECKLIST = """
+
+# Self-correction QC checklist (Quant Research Rebuild — 2026-05-03)
+
+Before emitting your final decision.md, apply this 13-item checklist to your \
+draft. If ANY item fails, revise the draft in place, then re-apply the \
+checklist. Do not emit until every item passes.
+
+1. Probabilities sum to exactly 100%.
+2. All three price targets are specific dollar values (not ranges).
+3. Each scenario lists at least one named, falsifiable catalyst.
+4. Rating logically derives from EV — e.g., EV materially below spot → \
+SELL or UNDERWEIGHT, not HOLD.
+5. Execution triggers are falsifiable (named price / level / date).
+6. (Flaw 8) Re-entry / upgrade triggers must be reachable in at least one \
+scenario in the table. Example: if Bull peaks at $14 but you state \
+"re-enter below $18," that's inconsistent — either revise the trigger or \
+revise the scenario.
+7. (Flaw 2) Every bare "<ticker> at <trade_date>" price citation matches \
+reference_price ± $0.01. Other prices (article quotes, intraday) must \
+carry an explicit time/source qualifier.
+8. (Flaw 3) Every cited analyst position has a verbatim ≤ 30-word quote \
+attributed by section. Statements like "Neutral's math, applied honestly, \
+supports Sell" require a direct quote. If the cited claim is not in the \
+source, the synthesis is invalid — re-synthesize.
+9. (Flaw 5) Cross-section numerical consistency. Compare the same numerical \
+claim (cash runway, target price, percentage move, etc.) across analyst \
+reports + debate transcripts. Any claim that appears with different values \
+in different sections must be reconciled in decision.md under a \
+"Reconciliation" subsection.
+10. (Flaw 4) Sanity-check flags from the fundamentals analyst are addressed \
+in either the bull/bear debate or the trader's plan. Flagged items cannot \
+be silently ignored.
+11. Inputs section is present and complete in decision.md.
+12. Peer comparisons cite specific numbers, not vague comparisons.
+13. All claimed numbers trace back to raw/*.json data.
+
+If revision after one self-correction loop still fails, see the push-back \
+retry rules in the next section."""
+
+
 def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
@@ -106,7 +147,7 @@ def create_portfolio_manager(llm):
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _MANDATED_SECTIONS
+Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _MANDATED_SECTIONS + _QC_CHECKLIST
 
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,
