@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import traceback
+from pathlib import Path
 
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -25,6 +26,37 @@ from cli.research_telegram import (
     notify_success,
 )
 from cli.research_writer import write_research_outputs
+
+
+def _daemonize(log_path: str) -> None:
+    """Detach from the controlling terminal so the binary runs fire-and-forget.
+
+    Standard double-fork + setsid pattern:
+      - first fork: original parent prints child PID and exits 0
+      - first child: setsid() to detach from controlling terminal
+      - second fork: second-fork parent exits, leaving a grandchild
+        orphaned to init (PPID=1) so it cannot acquire a TTY later
+      - grandchild: redirect stdin/stdout/stderr to log_path
+    """
+    pid1 = os.fork()
+    if pid1 > 0:
+        print(f"started pid={pid1}", flush=True)
+        os._exit(0)
+
+    os.setsid()
+
+    pid2 = os.fork()
+    if pid2 > 0:
+        os._exit(0)
+
+    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+    log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(log_fd, 1)  # stdout
+    os.dup2(log_fd, 2)  # stderr
+    devnull = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(devnull, 0)  # stdin
+    os.close(log_fd)
+    os.close(devnull)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
             "If either is missing, no notification is sent."
         ),
     )
+    p.add_argument(
+        "--no-daemonize", action="store_true",
+        help="Skip the self-daemonize step (for tests / direct foreground use).",
+    )
     return p
 
 
@@ -107,6 +143,16 @@ def _safe_notify_failure(
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Self-daemonize when running fire-and-forget. Must happen before any
+    # heavy imports that hold open file descriptors or threads.
+    if args.telegram_notify and not args.no_daemonize:
+        log_path = (
+            Path(args.output_dir).parent.parent / "logs"
+            / f"tradingresearch-{args.date}-{args.ticker}.log"
+        )
+        _daemonize(str(log_path))
+
     config = _build_config(args)
     progress = ProgressCallback()
     tg = _telegram_args(args)
