@@ -36,6 +36,18 @@ MODEL_OPTIONS: ProviderModeOptions = {
             ("Claude Sonnet 4.5 - Agents and coding", "claude-sonnet-4-5"),
         ],
     },
+    "claude_code": {
+        "quick": [
+            ("Claude Haiku 4.5 - Fast, cheapest on subscription quota", "claude-haiku-4-5"),
+            ("Claude Sonnet 4.6 - Balanced", "claude-sonnet-4-6"),
+            ("Claude Sonnet 4.5 - Agents and coding", "claude-sonnet-4-5"),
+        ],
+        "deep": [
+            ("Claude Sonnet 4.6 - Recommended on subscription quota", "claude-sonnet-4-6"),
+            ("Claude Opus 4.6 - Highest quality, burns quota fast", "claude-opus-4-6"),
+            ("Claude Sonnet 4.5 - Agents and coding", "claude-sonnet-4-5"),
+        ],
+    },
     "google": {
         "quick": [
             ("Gemini 3 Flash - Next-gen fast", "gemini-3-flash-preview"),
