@@ -112,11 +112,40 @@ Replace the current 4-analyst graph with a **data-grounded, quant-rigorous, self
 
 **Writes:** `<output_dir>/raw/pm_brief.md` containing:
 - Ticker validation (trading day, sector, market cap class)
+- **Business-model classification (REQUIRED, may override yfinance sector)** — see below.
 - Peer set: 2-4 tickers with rationale ("MSFT's closest peers are GOOG, META, AAPL because all are mega-cap AI infrastructure operators with cloud businesses")
 - Past-lesson summary: any prior decision on this ticker or similar pattern
 - "What this run must answer": 3-5 specific questions the analysts must address
 
 **Output schema:** structured Markdown with named sections that downstream nodes can grep.
+
+#### Business-model classification (motivated by Flaw 1)
+
+yfinance's sector tag is structurally misleading for some tickers. Example: MARA is tagged "Financial Services / Capital Markets" but is actually a Bitcoin miner; the resulting fundamentals analysis treated mark-to-market BTC holdings as a "loss on sale of investment securities," warping the entire bull/bear framing.
+
+PM Pre-flight MUST emit, alongside the yfinance sector, an explicit **`actual_business_model`** sub-section that:
+
+1. States the actual business model in plain English ("Bitcoin miner with co-located power generation").
+2. Calls out any yfinance-tag mismatch.
+3. Provides "interpretation rules for downstream analysts" — how to read specific line items given the actual model:
+
+```markdown
+## Business model classification
+
+- yfinance sector: Financial Services / Capital Markets
+- Actual business model: **Bitcoin miner with co-located power generation**
+
+Interpretation rules for analysts:
+- Revenue = (BTC mined × BTC price) + hosting + ancillary services. NOT
+  net interest margin, NOT trading P&L.
+- "Investment securities" line is largely BTC holdings marked to market.
+  The Q4 "loss on sale of securities" is most likely a BTC price mark, NOT
+  liquidation of a portfolio.
+- Capex is ASIC and power infrastructure spend, NOT capital reallocation.
+- "Cash + investments" must be reported with BTC separated from cash.
+```
+
+The fundamentals analyst's prompt is updated to read this section and quote the relevant rules in its first paragraph (and abide by them). The bull/bear researchers must respect these rules in their arguments.
 
 ### 2. Researcher (new, Python — no LLM)
 
@@ -130,12 +159,35 @@ Replace the current 4-analyst graph with a **data-grounded, quant-rigorous, self
 
 | File | Source | Content |
 |---|---|---|
+| `reference.json` | `get_stock_data` close on `trade_date` | Single source of truth for the **reference price** all agents must cite — see below |
 | `financials.json` | `get_fundamentals`, `get_balance_sheet`, `get_cashflow`, `get_income_statement` | All ticker financials, normalized |
 | `peers.json` | Same tools, called per peer ticker | Per-peer financials, indexed by ticker |
 | `news.json` | `get_news`, `get_global_news` | Recent + macro news |
 | `insider.json` | `get_insider_transactions` | Insider activity |
 | `social.json` | `get_news` (social variant) | Social sentiment |
 | `prices.json` | `get_stock_data` with 5y lookback | OHLCV + indicators (`get_indicators`) |
+
+#### Reference price — single source of truth (motivated by Flaw 2)
+
+Past output had two prices for MARA on the same date: $11.99 in PM/technical sections, $11.41 in news/sentiment sections (one was the close, the other an intraday quote scraped from a news article). This is forbidden going forward.
+
+`raw/reference.json` schema:
+
+```json
+{
+  "ticker": "MARA",
+  "trade_date": "2026-05-01",
+  "reference_price": 11.99,
+  "reference_price_source": "yfinance close 2026-05-01",
+  "spot_50dma": 12.45,
+  "spot_200dma": 14.20,
+  "ytd_high": 18.30,
+  "ytd_low": 8.92,
+  "atr_14": 0.65
+}
+```
+
+**Mandatory rule for every agent:** every dollar/price citation in any output **must** equal `reference_price` for "$TICKER at $trade_date" or use one of the named keys above (e.g. `spot_50dma`). Any other price quoted (e.g. from a news article) must carry an explicit time qualifier — `"$11.41 (article from 2026-04-29)"`. PM Pass-2 QC fails the report if a bare `"<TICKER> at <date>"` price citation diverges from `reference_price` by more than $0.01.
 
 Implementation: a Python module `tradingagents/agents/researcher.py` with a single function `fetch_research_pack(state, peers) -> None` that writes the raw/ folder. No LangGraph node-class needed (uses existing tool functions directly, not bind_tools).
 
@@ -200,6 +252,20 @@ Same names (market, fundamentals, news, social), but two changes:
 ```
 
 - **Capital structure framing** required (reflects stakeholder's "MSFT cash is disgusting vs Meta debt" point): explicit comparison of leverage / cash to peers.
+- **Sanity-check section (motivated by Flaw 4).** Mandate a "Sanity check on reported numbers" section that audits any computed ratio that looks implausible:
+
+```markdown
+## Sanity check on reported numbers
+
+| Metric | Reported | Implied math | Plausible? |
+|---|---|---|---|
+| Interest expense Q4 | $11M | On $3.65B debt = 1.4% effective rate | ❌ Implausibly low — likely excludes capitalized interest or convertibles |
+| Cash + investments | $1.2B | Includes BTC holdings? | Flag for separation |
+| Q4 loss on securities | -$200M | Per business-model rules, this is a BTC mark | Reclassify; not portfolio liquidation |
+```
+
+Any item flagged ❌ or "Flag for ..." must be addressed by the bull/bear researchers in debate. PM Pass-2 QC verifies that flagged items received responses.
+
 - Final section: "What management needs to prove" — 3 falsifiable hurdles.
 
 #### Market analyst — additions
@@ -213,6 +279,14 @@ Same names (market, fundamentals, news, social), but two changes:
 
 #### Social analyst — addition
 - Sentiment must include numbers: "X% bullish per FinTwit volume in past 7d", not just "bullish."
+
+### 4b. Bull / Bear researchers (existing, Sonnet — prompt rigor upgrade)
+
+Motivated by Flaw 6: in past output, the bull leaned on Tesla/NextEra/Blackstone analogies that didn't survive scrutiny while burying the genuinely strong asset-value point (505 MW dispatchable power has scarcity value independent of execution). Bull/Bear prompts gain three explicit rules:
+
+1. **Lead with your strongest argument.** First paragraph names the single most load-bearing fact for your case. No analogies in the lede.
+2. **Analogies must survive scrutiny.** If you cite Tesla / NextEra / Blackstone / any precedent, you must include: (a) the relevant metric for the comparable, (b) why the analogy holds for this specific ticker, (c) the disanalogy and why it doesn't break the case. If you can't do all three, drop the analogy.
+3. **Quantify the asymmetry.** Conclude with a specific dollar/percentage outcome AND a probability ("Bull case: $560 in 12 months, ~30% probability conditional on Q4 capex ROI clearing"). Vague directional claims ("upside is meaningful") are rejected by the Research Manager and require revision.
 
 ### 5. Research Manager (existing, Opus — gains retry-input handling)
 
@@ -228,9 +302,19 @@ Same change as RM: when re-invoked, must address `pm_feedback`.
 
 **Three-pass model in V1:**
 
-**Pass 1 — Draft synthesis.** PM produces a draft `decision.md` containing the existing memo format plus a **mandatory** new section:
+**Pass 1 — Draft synthesis.** PM produces a draft `decision.md` containing two mandatory new sections plus the existing memo:
 
 ```markdown
+## Inputs to this decision (motivated by Flaw 7)
+
+- Reference price: $<reference_price> (<reference_price_source>)
+- Peers compared: <ticker_list with one-line rationale>
+- Past decisions referenced: <ticker> <date> (<rating>; outcome <±pct>%, alpha <±pct>%)
+  — invoked to argue <…>
+- Memory-log lessons applied: <bullets with source line refs>
+- Catalysts in window: <upcoming events with dates>
+- Data freshness: <financials period>, <news through date>
+
 ## 12-Month Scenario Analysis
 
 | Scenario | Probability | 12-Mo Price Target | Return | Key drivers |
@@ -243,15 +327,23 @@ Same change as RM: when re-invoked, must address `pm_feedback`.
 **Rating implication:** <BUY/HOLD/SELL> (<one-line bridge from EV to rating>)
 ```
 
-**Pass 2 — Self-correction QC checklist.** PM applies hard rules in-place:
+The Inputs section makes `decision.md` self-contained — a stakeholder can read it cold without the analyst reports and understand the framing.
 
-- Probabilities sum to exactly 100%
-- All three price targets are specific dollar values (not ranges)
-- Each scenario lists at least one named catalyst (event or metric, not narrative)
-- Rating logically derives from EV
-- Execution triggers are falsifiable (named price/level/date)
-- Peer comparisons cite specific numbers
-- All claimed numbers trace back to `raw/*.json` data
+**Pass 2 — Self-correction QC checklist.** PM applies hard rules in-place. The full checklist (with the additions motivated by Flaws 2, 3, 5, 8):
+
+1. Probabilities sum to exactly 100%.
+2. All three price targets are specific dollar values (not ranges).
+3. Each scenario lists at least one named, falsifiable catalyst.
+4. Rating logically derives from EV.
+5. Execution triggers are falsifiable (named price / level / date).
+6. **(Flaw 8) Re-entry / upgrade triggers must be reachable in at least one scenario in the table.** Example: if Bull peaks at $14 but `decision.md` says "re-enter below $18," that's inconsistent — either revise the trigger or revise the scenario.
+7. **(Flaw 2) Every bare `<ticker> at <trade_date>` price citation matches `reference_price` ± $0.01.** Other prices (article quotes, intraday) must carry an explicit time/source qualifier.
+8. **(Flaw 3) Every cited analyst position has a verbatim ≤ 30-word quote attributed by section.** Statements like "Neutral's math, applied honestly, supports Sell" require a direct quote of the math from Neutral's report. If the cited claim is not in the source, the synthesis is invalid — re-synthesize.
+9. **(Flaw 5) Cross-section numerical consistency.** Compare the same numerical claim (cash runway, target price, percentage move, etc.) across all analyst reports + debate transcripts. Any claim that appears with different values in different sections must be reconciled in `decision.md` under a "Reconciliation" subsection.
+10. **(Flaw 4) Sanity-check flags from the fundamentals analyst are addressed** in either the bull/bear debate or the trader's plan. Flagged items cannot be silently ignored.
+11. **Inputs section** (Flaw 7) is present and complete in `decision.md`.
+12. Peer comparisons cite specific numbers.
+13. All claimed numbers trace back to `raw/*.json` data.
 
 If the draft fails any check, PM revises in-place and re-applies. Capped at one self-correction loop (always single LLM call total — one draft + one revise = 2 calls, reusable framework but capped to keep cost predictable).
 
