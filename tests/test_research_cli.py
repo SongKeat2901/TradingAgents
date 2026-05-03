@@ -76,6 +76,7 @@ def test_main_runs_graph_writes_files_prints_json(tmp_path, monkeypatch, capsys)
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(out),
+        "--no-daemonize",
     ])
     assert rc == 0
 
@@ -113,6 +114,7 @@ def test_auth_error_exits_1(tmp_path, monkeypatch, capsys):
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path),
+        "--no-daemonize",
     ])
     assert rc == 1
     err = capsys.readouterr().err
@@ -130,6 +132,7 @@ def test_unexpected_error_exits_2(tmp_path, monkeypatch, capsys):
     rc = research.main([
         "--ticker", "NVDA", "--date", "2024-05-10",
         "--output-dir", str(tmp_path),
+        "--no-daemonize",
     ])
     assert rc == 2
     err = capsys.readouterr().err

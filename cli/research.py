@@ -164,9 +164,14 @@ def _safe_notify_failure(
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    # Self-daemonize when running fire-and-forget. Must happen before any
-    # heavy imports that hold open file descriptors or threads.
-    if args.telegram_notify and not args.no_daemonize:
+    # Self-daemonize by default. We can't trust callers (especially the
+    # OpenClaw trader agent's synth-bash) to wrap us in nohup/&/Popen
+    # correctly — they tend to invent broken patterns (nohup fails on macOS
+    # without a TTY; subprocess.Popen + terminate() kills us prematurely).
+    # By forking ourselves on entry, the parent process exits within ~1s
+    # regardless of how we were called, and the grandchild runs to completion.
+    # Foreground use (tests, direct CLI) passes --no-daemonize.
+    if not args.no_daemonize:
         log_path = (
             Path(args.output_dir).parent.parent / "logs"
             / f"tradingresearch-{args.date}-{args.ticker}.log"
