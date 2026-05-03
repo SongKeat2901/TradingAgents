@@ -120,6 +120,15 @@ def build_parser() -> argparse.ArgumentParser:
             "rate limits on subscription auth. 0 disables pacing."
         ),
     )
+    p.add_argument(
+        "--max-tokens", type=int, default=2048,
+        help=(
+            "Max output tokens per LLM call. Lower values reduce per-call "
+            "token spike, helping stay under per-minute output-tokens limits. "
+            "Default 2048 — sufficient for Research Manager / Portfolio "
+            "Manager judgements; analysts rarely need more."
+        ),
+    )
     return p
 
 
@@ -142,6 +151,7 @@ def _build_config(args: argparse.Namespace) -> dict:
     config["claude_code_openclaw_profile_path"] = args.openclaw_profile_path
     config["claude_code_openclaw_profile_name"] = args.openclaw_profile_name
     config["pacing_seconds"] = args.pacing_seconds
+    config["max_tokens"] = args.max_tokens
     return config
 
 

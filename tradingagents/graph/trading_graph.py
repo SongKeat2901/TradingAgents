@@ -160,6 +160,11 @@ class TradingAgentsGraph:
                 kwargs["openclaw_profile_name"] = self.config.get(
                     "claude_code_openclaw_profile_name", "anthropic:default"
                 )
+                # Per-call output-token cap. Lower values reduce per-minute
+                # token spike (helps avoid 429s on Sonnet/Opus tiers).
+                if "max_tokens" in self.config:
+                    kwargs["max_tokens"] = self.config["max_tokens"]
+
                 pacing = self.config.get("pacing_seconds", 0)
                 if pacing > 0:
                     # langchain_core is already loaded transitively via
