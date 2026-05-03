@@ -89,9 +89,13 @@ def _read_openclaw_profile(path: str, profile_name: str) -> str:
         )
 
     token = profile.get("token")
-    if not token:
+    if token is None:
         raise ClaudeCodeAuthError(
             f"Profile '{profile_name}' has no 'token' field in {path}."
+        )
+    if not token:
+        raise ClaudeCodeAuthError(
+            f"Profile '{profile_name}' 'token' field is empty in {path}."
         )
     if not token.startswith("sk-ant-oat01-"):
         raise ClaudeCodeAuthError(
@@ -133,15 +137,18 @@ def get_oauth_token(
             if now_ms >= expires_at:
                 raise ClaudeCodeAuthError(
                     "Claude Code access token expired. Run any Claude Code "
-                    "command (e.g. `claude /status`) to refresh, then retry."
+                    "command (e.g. `claude /status`) to refresh the keychain entry, then retry."
                 )
         return access_token
 
     if source == "openclaw_profile":
-        if not openclaw_profile_path or not openclaw_profile_name:
+        if not openclaw_profile_path:
             raise ClaudeCodeAuthError(
-                "openclaw_profile source requires openclaw_profile_path and "
-                "openclaw_profile_name."
+                "openclaw_profile source requires openclaw_profile_path."
+            )
+        if not openclaw_profile_name:
+            raise ClaudeCodeAuthError(
+                "openclaw_profile source requires openclaw_profile_name."
             )
         return _read_openclaw_profile(openclaw_profile_path, openclaw_profile_name)
 
