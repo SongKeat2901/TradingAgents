@@ -22,6 +22,9 @@ Subprocess overhead per call (~2-3s) is irrelevant for a 14s call.
 
 from __future__ import annotations
 
+import glob
+import os
+import shutil
 import subprocess
 from typing import Any, List, Optional
 
@@ -64,6 +67,33 @@ def _resolve_cli_model_name(model: str) -> str:
     return _MODEL_ALIASES.get(model, model)
 
 
+def _discover_claude_cli() -> Optional[str]:
+    """Find the claude executable when it's not on PATH.
+
+    Order of search:
+    1. shutil.which('claude') — happy path on dev machines.
+    2. ~/.nvm/versions/node/*/bin/claude — nvm-managed installs (common on
+       OpenClaw hosts; the trueknot daemon's subprocess PATH is bare so PATH
+       lookup fails even though the binary exists).
+    3. /opt/homebrew/bin/claude, /usr/local/bin/claude — Homebrew defaults.
+    """
+    found = shutil.which("claude")
+    if found:
+        return found
+
+    home = os.path.expanduser("~")
+    nvm_glob = os.path.join(home, ".nvm", "versions", "node", "*", "bin", "claude")
+    matches = sorted(glob.glob(nvm_glob), reverse=True)  # newest version first
+    if matches:
+        return matches[0]
+
+    for fallback in ("/opt/homebrew/bin/claude", "/usr/local/bin/claude"):
+        if os.path.isfile(fallback) and os.access(fallback, os.X_OK):
+            return fallback
+
+    return None
+
+
 class ClaudeCliChatModel(BaseChatModel):
     """LangChain BaseChatModel that shells out to the local ``claude`` CLI.
 
@@ -98,7 +128,17 @@ class ClaudeCliChatModel(BaseChatModel):
     ) -> ChatResult:
         prompt = _format_messages(messages)
         model_arg = _resolve_cli_model_name(self.model)
-        cmd = [self.cli_path, "-p", "--model", model_arg]
+
+        # If cli_path is the default 'claude' bare name and that's not on
+        # PATH (common on daemon-spawned subprocesses with bare PATH), try
+        # to auto-discover the executable in common install locations.
+        cli_path = self.cli_path
+        if cli_path == "claude" and shutil.which("claude") is None:
+            discovered = _discover_claude_cli()
+            if discovered:
+                cli_path = discovered
+
+        cmd = [cli_path, "-p", "--model", model_arg]
 
         try:
             result = subprocess.run(
@@ -120,8 +160,11 @@ class ClaudeCliChatModel(BaseChatModel):
             ) from e
         except FileNotFoundError as e:
             raise RuntimeError(
-                f"claude CLI not found at {self.cli_path!r}. Set cli_path "
-                f"or ensure claude is on PATH."
+                f"claude CLI not found at {cli_path!r}. Set cli_path on "
+                f"ClaudeCliChatModel, set claude_code_cli_path in config, "
+                f"or install claude such that it's on PATH or in a "
+                f"recognised location (~/.nvm/versions/node/*/bin/claude, "
+                f"/opt/homebrew/bin/claude, /usr/local/bin/claude)."
             ) from e
 
         text = result.stdout.strip()
