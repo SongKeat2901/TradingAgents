@@ -79,7 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--date", required=True, help="Trade date YYYY-MM-DD (historical).")
     p.add_argument("--output-dir", required=True, help="Directory to write report files into.")
 
-    p.add_argument("--deep", default="claude-sonnet-4-6", help="Deep-think model id.")
+    p.add_argument(
+        "--deep", default="claude-opus-4-6",
+        help="Deep-think model id (Research Manager + Portfolio Manager).",
+    )
     p.add_argument("--quick", default="claude-haiku-4-5", help="Quick-think model id.")
     p.add_argument(
         "--debate-rounds", type=int, default=1,
@@ -113,20 +116,28 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--pacing-seconds", type=float, default=3.0,
+        "--pacing-seconds", type=float, default=30.0,
         help=(
-            "Minimum seconds between LLM calls (shared across deep+quick "
-            "clients). Spreads burst to stay under output-tokens-per-minute "
-            "rate limits on subscription auth. 0 disables pacing."
+            "Minimum seconds between any two LLM calls (shared rate limiter "
+            "across deep+quick clients). Spreads burst to stay under "
+            "output-tokens-per-minute rate limits on subscription auth. "
+            "Default 30 — generous for reliability; lower at your own risk."
         ),
     )
     p.add_argument(
-        "--max-tokens", type=int, default=2048,
+        "--deep-cooldown-seconds", type=float, default=90.0,
         help=(
-            "Max output tokens per LLM call. Lower values reduce per-call "
-            "token spike, helping stay under per-minute output-tokens limits. "
-            "Default 2048 — sufficient for Research Manager / Portfolio "
-            "Manager judgements; analysts rarely need more."
+            "Additional sleep before each deep-model call (Research Manager, "
+            "Portfolio Manager). Lets per-minute output-tokens bucket fully "
+            "refill before the heavy judges fire. Default 90 — stacks on top "
+            "of --pacing-seconds. Set 0 to disable."
+        ),
+    )
+    p.add_argument(
+        "--max-tokens", type=int, default=4096,
+        help=(
+            "Max output tokens per LLM call. Default 4096 — comfortable for "
+            "Opus 4.6 judges; analysts produce far less."
         ),
     )
     return p
@@ -152,6 +163,7 @@ def _build_config(args: argparse.Namespace) -> dict:
     config["claude_code_openclaw_profile_name"] = args.openclaw_profile_name
     config["pacing_seconds"] = args.pacing_seconds
     config["max_tokens"] = args.max_tokens
+    config["deep_cooldown_seconds"] = args.deep_cooldown_seconds
     return config
 
 

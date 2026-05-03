@@ -168,9 +168,21 @@ def get_oauth_token(
 
 
 class _OAuthChatAnthropic(ChatAnthropic):
-    """ChatAnthropic with response content normalized to a plain string."""
+    """ChatAnthropic with optional pre-invoke sleep and content normalization.
+
+    When `pre_invoke_sleep_seconds` > 0, sleeps that many seconds before each
+    invoke(). Used to insert a generous cooldown before deep-model calls
+    (Research Manager, Portfolio Manager) so the per-minute output-tokens
+    bucket fully refills before the heavy judges fire — this addresses the
+    Phase 5 burst-rate-limit failure where the first deep call after the
+    analysts always 429'd.
+    """
+
+    pre_invoke_sleep_seconds: float = 0
 
     def invoke(self, input, config=None, **kwargs):
+        if self.pre_invoke_sleep_seconds > 0:
+            time.sleep(self.pre_invoke_sleep_seconds)
         return normalize_content(super().invoke(input, config, **kwargs))
 
 
@@ -182,7 +194,7 @@ class ClaudeCodeClient(BaseLLMClient):
     _PASSTHROUGH_KWARGS = (
         "timeout", "max_retries", "max_tokens",
         "callbacks", "http_client", "http_async_client", "effort",
-        "rate_limiter",
+        "rate_limiter", "pre_invoke_sleep_seconds",
     )
 
     def __init__(self, model: str, base_url: Optional[str] = None, **kwargs):
@@ -217,8 +229,9 @@ class ClaudeCodeClient(BaseLLMClient):
             # reports comfortably fit in 8K tokens.
             "max_tokens": 8192,
             # Phase 5: absorb transient 429s with the Anthropic SDK's built-in
-            # exponential backoff. Callers can still override via kwargs.
-            "max_retries": 3,
+            # exponential backoff. Bumped to 5 to handle aggressive per-minute
+            # rate limit on subscription auth. Callers can still override.
+            "max_retries": 5,
         }
         for key in self._PASSTHROUGH_KWARGS:
             if key in self.kwargs:

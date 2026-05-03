@@ -83,11 +83,21 @@ class TradingAgentsGraph:
         if self.callbacks:
             llm_kwargs["callbacks"] = self.callbacks
 
+        # Phase 5 (post-burst-429-fix): apply a per-call cooldown to the deep
+        # client only, so each Sonnet/Opus call is preceded by enough idle to
+        # let the per-minute output-tokens bucket fully refill. Quick client
+        # (Haiku) does not get this cooldown — it's already paced by the
+        # shared rate_limiter and Haiku's per-minute bucket is roomier.
+        deep_llm_kwargs = dict(llm_kwargs)
+        deep_cooldown = float(self.config.get("deep_cooldown_seconds", 0))
+        if deep_cooldown > 0:
+            deep_llm_kwargs["pre_invoke_sleep_seconds"] = deep_cooldown
+
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["deep_think_llm"],
             base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+            **deep_llm_kwargs,
         )
         quick_client = create_llm_client(
             provider=self.config["llm_provider"],

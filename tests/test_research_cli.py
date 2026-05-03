@@ -95,7 +95,7 @@ def test_main_runs_graph_writes_files_prints_json(tmp_path, monkeypatch, capsys)
 
     # Config flowed through
     assert captured_config["llm_provider"] == "claude_code"
-    assert captured_config["deep_think_llm"] == "claude-sonnet-4-6"
+    assert captured_config["deep_think_llm"] == "claude-opus-4-6"
 
     captured = capsys.readouterr().out.strip().splitlines()
 
@@ -361,13 +361,32 @@ def test_pacing_seconds_flag_exposed(capsys):
     assert "--pacing-seconds" in out
 
 
-def test_pacing_seconds_default_3(tmp_path):
+def test_pacing_seconds_default(tmp_path):
+    """Phase 5 robust default: 30s pacing for reliability over speed."""
     from cli.research import build_parser
     parser = build_parser()
     ns = parser.parse_args(["--ticker", "X", "--date", "2024-01-01",
                             "--output-dir", str(tmp_path)])
-    assert ns.pacing_seconds == 3.0
+    assert ns.pacing_seconds == 30.0
     assert isinstance(ns.pacing_seconds, float)
+
+
+def test_deep_cooldown_default(tmp_path):
+    """Phase 5: 90s cooldown before each deep-model call."""
+    from cli.research import build_parser
+    parser = build_parser()
+    ns = parser.parse_args(["--ticker", "X", "--date", "2024-01-01",
+                            "--output-dir", str(tmp_path)])
+    assert ns.deep_cooldown_seconds == 90.0
+
+
+def test_deep_default_is_opus(tmp_path):
+    """Phase 5: Opus 4.6 is the default deep model — full quality on the 2 judges."""
+    from cli.research import build_parser
+    parser = build_parser()
+    ns = parser.parse_args(["--ticker", "X", "--date", "2024-01-01",
+                            "--output-dir", str(tmp_path)])
+    assert ns.deep == "claude-opus-4-6"
 
 
 def test_graph_skips_rate_limiter_when_pacing_zero(tmp_path, monkeypatch):

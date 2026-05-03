@@ -36,7 +36,11 @@ DEFAULT_CONFIG = {
     # clients via a langchain_core InMemoryRateLimiter. 0 disables pacing.
     # Subscription-OAuth users on Anthropic typically need 3-5s to stay under
     # output-tokens-per-minute burst limits.
-    "pacing_seconds": 3.0,
+    "pacing_seconds": 30.0,
+    # Additional sleep before each deep-model call. Lets per-minute
+    # output-tokens bucket fully refill before Research Manager / Portfolio
+    # Manager fire. Stacks on top of pacing_seconds.
+    "deep_cooldown_seconds": 90.0,
 
     # WARNING: do not set both deep_think_llm and quick_think_llm to the same
     # Sonnet variant on subscription auth — that doubles burst risk on the
