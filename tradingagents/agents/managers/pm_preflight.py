@@ -15,11 +15,14 @@ populates `pm_brief` (full text) and `peers` (parsed list).
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+
+_logger = logging.getLogger(__name__)
 
 
 _SYSTEM = """\
@@ -96,13 +99,20 @@ def create_pm_preflight_node(llm):
             HumanMessage(content=f"Produce the PM Pre-flight brief for {ticker} on {date}."),
         ]
         result = llm.invoke(messages)
-        brief = result.content if hasattr(result, "content") else str(result)
+        raw_content = result.content if hasattr(result, "content") else None
+        brief = raw_content if raw_content else str(result)
 
         (raw_dir / "pm_brief.md").write_text(brief, encoding="utf-8")
         peers = _extract_peers(brief)
+        if not peers and "## Peer set" in brief:
+            _logger.warning(
+                "PM Pre-flight: Peer set section present but no peers extracted "
+                "for %s — check LLM format drift (expected '- TICKER: rationale')",
+                ticker,
+            )
 
         return {
-            "messages": [result] if hasattr(result, "content") else [],
+            "messages": [result] if raw_content is not None else [],
             "pm_brief": brief,
             "peers": peers,
         }
