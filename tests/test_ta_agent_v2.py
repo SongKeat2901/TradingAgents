@@ -116,3 +116,43 @@ def test_ta_agent_v2_includes_all_4_analyst_reports_in_user_message(tmp_path):
     assert "Fundamentals analyst said: 970bps FCF margin compression" in user
     assert "News analyst said: no MSFT catalysts" in user
     assert "Sentiment analyst said: zero social mentions" in user
+
+
+def test_ta_agent_v2_substitutes_deterministic_classification(tmp_path):
+    """TA Agent v2 must inject the same DETERMINISTIC CLASSIFICATION block
+    so the v2 review can never flip the classification."""
+    import json as _json
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.analysts.ta_agent import create_ta_agent_v2_node
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "technicals.md").write_text("# v1", encoding="utf-8")
+    (raw / "reference.json").write_text(_json.dumps({"reference_price": 410.0}), encoding="utf-8")
+    (raw / "prices.json").write_text(_json.dumps({"ohlcv": "..."}), encoding="utf-8")
+    (raw / "classification.json").write_text(_json.dumps({
+        "setup_class": "BREAKDOWN",
+        "upside_target": 420.0, "upside_pct": 2.44,
+        "downside_target": 380.0, "downside_pct": -7.32,
+        "reward_risk_ratio": 0.3,
+        "rationale": "v2 stub rationale",
+    }), encoding="utf-8")
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="## Revisions from v1\n\n# v2 stub")
+
+    node = create_ta_agent_v2_node(fake_llm)
+    node({
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(raw),
+        "market_report": "stub", "fundamentals_report": "stub",
+        "news_report": "stub", "sentiment_report": "stub",
+    })
+
+    call_args = fake_llm.invoke.call_args
+    system_msg = call_args.args[0][0].content
+    assert "DETERMINISTIC CLASSIFICATION" in system_msg
+    assert "BREAKDOWN" in system_msg
+    assert "v2 stub rationale" in system_msg

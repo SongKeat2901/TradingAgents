@@ -20,6 +20,44 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from tradingagents.agents.utils.raw_data import format_for_prompt
 
 
+def _load_classification_block(raw_dir: str) -> str:
+    """Format raw/classification.json as a 'DETERMINISTIC CLASSIFICATION' block
+    for injection into the TA agent SystemMessages.
+
+    Returns an empty string if the file is missing or contains INDETERMINATE,
+    in which case the agent falls back to legacy LLM-judged classification.
+    """
+    import json as _json
+    cls_path = Path(raw_dir) / "classification.json"
+    if not cls_path.exists():
+        return ""
+    try:
+        cls = _json.loads(cls_path.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError:
+        return ""
+    if cls.get("setup_class") in (None, "INDETERMINATE"):
+        return ""
+    return (
+        "\n\n# DETERMINISTIC CLASSIFICATION (use this verbatim — do NOT override)\n\n"
+        f"Setup classification: {cls['setup_class']}\n"
+        f"Asymmetry:\n"
+        f"  - Upside to ${cls.get('upside_target')} ({cls.get('upside_pct'):+.2f}%)\n"
+        f"  - Downside to ${cls.get('downside_target')} ({cls.get('downside_pct'):+.2f}%)\n"
+        f"  - Reward/risk ratio: {cls.get('reward_risk_ratio')}:1\n"
+        f"Rationale (deterministic, audit trail): {cls.get('rationale', '')}\n\n"
+        "You MUST use exactly this Setup classification in your "
+        '"## Setup classification" section and these exact upside/downside '
+        'numbers in your "## Asymmetry" section. You may add prose, '
+        "qualifying language, and additional context — but the classification "
+        "name and the asymmetry numbers are fixed.\n\n"
+        "If you disagree with the classification (e.g., you see a chart "
+        "pattern the rules missed), document the disagreement under a new "
+        '"## Notes for next pass" subsection BUT still emit the '
+        "classification verbatim. The rules are load-bearing for cross-run "
+        "consistency; your prose is for nuance.\n"
+    )
+
+
 _SYSTEM = """\
 You are a senior technical analyst. Your job is to identify the price levels \
 that matter for $TICKER and explain why crowds will trade at each one.
@@ -135,8 +173,12 @@ def create_ta_agent_v2_node(llm):
             f"## Sentiment Analyst Report\n{state.get('sentiment_report', '(missing)')}\n"
         )
 
+        classification_block = _load_classification_block(raw_dir)
         messages = [
-            SystemMessage(content=_SYSTEM_V2.replace("$TICKER", ticker).replace("$DATE", date)),
+            SystemMessage(
+                content=_SYSTEM_V2.replace("$TICKER", ticker).replace("$DATE", date)
+                + classification_block
+            ),
             HumanMessage(content=(
                 f"Produce the v2 technicals report for {ticker} on {date}. "
                 f"Below are the v1 setup, the four analyst reports, and the "
@@ -170,8 +212,11 @@ def create_ta_agent_node(llm):
             files=["pm_brief.md", "reference.json", "prices.json"],
         )
 
+        classification_block = _load_classification_block(raw_dir)
         messages = [
-            SystemMessage(content=_SYSTEM.replace("$TICKER", ticker)),
+            SystemMessage(
+                content=_SYSTEM.replace("$TICKER", ticker) + classification_block
+            ),
             HumanMessage(content=f"Produce the technicals report for {ticker}.\n\n{context}"),
         ]
         result = llm.invoke(messages)
