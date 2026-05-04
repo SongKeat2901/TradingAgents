@@ -125,6 +125,7 @@ h2 {
     color: #1d1d1f;
     margin-top: 1.6em;
     margin-bottom: 0.4em;
+    break-after: avoid;
 }
 
 h3 {
@@ -133,12 +134,14 @@ h3 {
     color: #424245;
     margin-top: 1.2em;
     margin-bottom: 0.3em;
+    break-after: avoid;
 }
 
 h4, h5, h6 {
     font-size: 11pt;
     font-weight: 600;
     color: #424245;
+    break-after: avoid;
 }
 
 p {
@@ -188,7 +191,11 @@ table {
     border-collapse: collapse;
     margin: 1em 0;
     font-size: 10pt;
-    page-break-inside: avoid;
+}
+
+thead {
+    /* Repeat the header row when a table splits across pages. */
+    display: table-header-group;
 }
 
 th {
