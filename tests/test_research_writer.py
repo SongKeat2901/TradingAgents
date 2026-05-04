@@ -26,7 +26,9 @@ def _stub_state():
             "conservative_history": "Cons: skip",
             "judge_decision": "PM: BUY at half size — strong fundamentals, manageable risk",
         },
-        "final_trade_decision": "BUY",
+        # In production, portfolio_manager sets both fields to the same string
+        # (the full PM body). Stub them identically here so tests reflect that.
+        "final_trade_decision": "PM: BUY at half size — strong fundamentals, manageable risk",
     }
 
 
@@ -45,15 +47,26 @@ def test_writes_all_expected_files(tmp_path):
         assert p.read_text(), f"{p.name} is empty"
 
 
-def test_decision_md_contains_action_and_pm_judgement(tmp_path):
+def test_decision_md_renders_pm_body_under_ticker_header(tmp_path):
     from cli.research_writer import write_research_outputs
 
     write_research_outputs(_stub_state(), str(tmp_path))
     decision = (tmp_path / "decision.md").read_text()
-    assert "BUY" in decision
-    assert "PM:" in decision  # PM rationale carried forward
-    assert "NVDA" in decision
-    assert "2024-05-10" in decision
+    assert "# NVDA — 2024-05-10" in decision
+    assert "PM: BUY at half size" in decision
+    # The PM body must appear exactly once — no duplication wrapper.
+    assert decision.count("PM: BUY at half size") == 1
+
+
+def test_decision_md_falls_back_to_risk_judge_decision(tmp_path):
+    """If final_trade_decision is empty, fall back to risk_debate_state.judge_decision."""
+    from cli.research_writer import write_research_outputs
+
+    state = _stub_state()
+    state["final_trade_decision"] = ""
+    write_research_outputs(state, str(tmp_path))
+    decision = (tmp_path / "decision.md").read_text()
+    assert "PM: BUY at half size" in decision
 
 
 def test_state_json_round_trips(tmp_path):
@@ -62,7 +75,7 @@ def test_state_json_round_trips(tmp_path):
     write_research_outputs(_stub_state(), str(tmp_path))
     loaded = json.loads((tmp_path / "state.json").read_text())
     assert loaded["company_of_interest"] == "NVDA"
-    assert loaded["final_trade_decision"] == "BUY"
+    assert "BUY" in loaded["final_trade_decision"]
 
 
 def test_creates_output_dir_if_missing(tmp_path):
