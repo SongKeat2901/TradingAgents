@@ -347,12 +347,22 @@ def _format_date_human(date: str) -> str:
         return date
 
 
+def _demote_h1_to_h2(html: str) -> str:
+    """Demote nested <h1> to <h2> so only the template's section dividers
+    trigger CSS `page-break-before: always`. Without this, every `# heading`
+    inside an analyst report forces a page break, leaving the outer section
+    title orphaned on a near-empty page.
+    """
+    return html.replace("<h1>", "<h2>").replace("</h1>", "</h2>")
+
+
 def render_md_from_path(path: Path) -> str:
     """Render markdown from an arbitrary path; returns '(missing)' if absent."""
     if not path.exists():
         return "<em>(missing)</em>"
     text = path.read_text(encoding="utf-8")
-    return markdown.markdown(text, extensions=["tables", "fenced_code"])
+    html = markdown.markdown(text, extensions=["tables", "fenced_code"])
+    return _demote_h1_to_h2(html)
 
 
 def build_research_pdf(
@@ -370,7 +380,7 @@ def build_research_pdf(
         if not path.exists():
             return f"<p><em>(missing: {filename})</em></p>"
         text = path.read_text(encoding="utf-8")
-        return md.reset().convert(text)
+        return _demote_h1_to_h2(md.reset().convert(text))
 
     decision_md_text = ""
     decision_md_path = out / "decision.md"

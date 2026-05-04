@@ -19,17 +19,19 @@ from typing import Any
 
 
 def _decision_md(state: dict[str, Any]) -> str:
+    """Render the PM's full mandated decision under a ticker/date header.
+
+    The PM emits the full document (Inputs / Scenarios / Reconciliation / etc.)
+    in `final_trade_decision`. The same string also lands in
+    `risk_debate_state.judge_decision`. We render it once under the header.
+    """
     ticker = state.get("company_of_interest", "?")
     date = state.get("trade_date", "?")
-    action = state.get("final_trade_decision", "UNKNOWN")
-    pm_judgement = (
-        state.get("risk_debate_state", {}).get("judge_decision", "").strip()
-    )
-    return (
-        f"# {ticker} — {date}\n\n"
-        f"**Decision:** {action}\n\n"
-        f"## Portfolio Manager Rationale\n\n{pm_judgement}\n"
-    )
+    pm_body = (
+        state.get("final_trade_decision")
+        or state.get("risk_debate_state", {}).get("judge_decision", "")
+    ).strip()
+    return f"# {ticker} — {date}\n\n{pm_body}\n"
 
 
 def _analyst_md(title: str, body: str) -> str:
