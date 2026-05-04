@@ -17,6 +17,9 @@ prose around it.
 
 from __future__ import annotations
 
+# `statistics.median` is used for the BREAKOUT 5-day volume vs 90-day median
+# check. The sigma-based "big move" detection from an earlier draft was
+# replaced with ATR-multiple math (see _move_in_atr_multiples below).
 import statistics
 from typing import Any
 
@@ -57,11 +60,23 @@ def _gap_pct(spot: float, target: float) -> float:
 
 
 def _is_top_decile_volume(latest_volume: float, recent_volumes: list[float]) -> bool:
+    """Return True if `latest_volume` is in the top decile of `recent_volumes`.
+
+    Uses linear interpolation (NumPy-style) for the 90th percentile so that
+    thin histories don't collapse to "must equal the max".
+    """
     if not recent_volumes:
         return False
     sorted_vols = sorted(recent_volumes)
-    p90_idx = int(len(sorted_vols) * 0.9)
-    p90 = sorted_vols[min(p90_idx, len(sorted_vols) - 1)]
+    n = len(sorted_vols)
+    if n == 1:
+        return latest_volume >= sorted_vols[0]
+    # Linear interpolation: rank = 0.9 * (n - 1)
+    rank = 0.9 * (n - 1)
+    lower_idx = int(rank)
+    upper_idx = min(lower_idx + 1, n - 1)
+    weight = rank - lower_idx
+    p90 = sorted_vols[lower_idx] * (1 - weight) + sorted_vols[upper_idx] * weight
     return latest_volume >= p90
 
 

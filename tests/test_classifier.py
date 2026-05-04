@@ -185,6 +185,19 @@ def test_first_match_wins_capitulation_over_breakdown():
     assert out["setup_class"] == "CAPITULATION"
 
 
+def test_top_decile_handles_thin_history():
+    """The percentile calc must be sane on thin histories (not equal-to-max)."""
+    from tradingagents.agents.utils.classifier import _is_top_decile_volume
+    # 10 elements, latest = 95 should clear 90th percentile (≈ 91)
+    vols = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    assert _is_top_decile_volume(95, vols) is True
+    # 50 should NOT (only 50th percentile)
+    assert _is_top_decile_volume(50, vols) is False
+    # Single-element history: anything ≥ that element passes
+    assert _is_top_decile_volume(100, [50]) is True
+    assert _is_top_decile_volume(40, [50]) is False
+
+
 def test_asymmetry_math_basic():
     from tradingagents.agents.utils.classifier import compute_classification
 
