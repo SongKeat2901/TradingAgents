@@ -185,14 +185,6 @@ class TradingAgentsGraph:
                 if "max_tokens" in self.config:
                     kwargs["max_tokens"] = self.config["max_tokens"]
 
-                # Phase-6 stochasticity experiment: forward the temperature
-                # config to the analyst-tier ChatAnthropic so identical
-                # inputs produce identical outputs. The CLI deep-judge tier
-                # (ClaudeCliChatModel) is unaffected — `claude -p` doesn't
-                # expose --temperature.
-                if "temperature" in self.config:
-                    kwargs["temperature"] = self.config["temperature"]
-
                 pacing = self.config.get("pacing_seconds", 0)
                 if pacing > 0:
                     # langchain_core is already loaded transitively via

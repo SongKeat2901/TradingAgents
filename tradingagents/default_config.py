@@ -41,12 +41,6 @@ DEFAULT_CONFIG = {
     # Additional sleep before each deep-model call (only used when deep
     # is on the ChatAnthropic path — see deep_via_cli below).
     "deep_cooldown_seconds": 90.0,
-    # Phase-6 stochasticity experiment: pin sampling temperature to 0 so
-    # the analyst tier (TA agents, 4 analysts, bull/bear, RM, trader, risk
-    # debaters, QC agent) produces deterministic output for identical
-    # input. Reduces inter-run divergence (Run #5 reversal vs Run #6
-    # breakdown on the same MSFT 2026-05-01 data).
-    "temperature": 0.0,
     # Phase 5: route the deep judges (Research Manager, Portfolio Manager)
     # through `claude -p` subprocess instead of langchain_anthropic
     # ChatAnthropic. Empirically the only path that doesn't 429 on Sonnet/

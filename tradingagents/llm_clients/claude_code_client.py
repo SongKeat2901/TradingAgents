@@ -195,7 +195,6 @@ class ClaudeCodeClient(BaseLLMClient):
         "timeout", "max_retries", "max_tokens",
         "callbacks", "http_client", "http_async_client", "effort",
         "rate_limiter", "pre_invoke_sleep_seconds",
-        "temperature",
     )
 
     def __init__(self, model: str, base_url: Optional[str] = None, **kwargs):
