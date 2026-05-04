@@ -83,7 +83,10 @@ instead of a peer list.
 Be concrete and falsifiable. No vague questions like "what's the outlook?"."""
 
 
-_PEER_LINE = re.compile(r"^- ([A-Z]{1,5}): ", re.MULTILINE)
+_PEER_LINE = re.compile(
+    r"^-\s+(?:\*{1,2})?([A-Z]{1,5})(?:\*{1,2})?\s*:\s",
+    re.MULTILINE,
+)
 
 
 def _extract_peers(brief: str) -> list[str]:

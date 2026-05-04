@@ -75,6 +75,30 @@ def test_pm_preflight_extracts_peers_from_brief(tmp_path):
     assert sorted(out["peers"]) == ["AAPL", "GOOG", "META"]
 
 
+def test_pm_preflight_extracts_peers_with_markdown_bold(tmp_path):
+    """LLMs sometimes emit '- **GOOGL**: ...' instead of '- GOOGL: ...'.
+    The regex must tolerate optional markdown bold/italic around the ticker."""
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    bold_brief = """\
+# PM Pre-flight Brief: MSFT 2026-05-01
+
+## Peer set
+- **GOOGL**: Hyperscaler peer (GCP)
+- *AMZN*: AWS comp (italic variant)
+- ORCL: plain form
+"""
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=bold_brief)
+    node = create_pm_preflight_node(fake_llm)
+    out = node({
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path / "raw"),
+    })
+    assert sorted(out["peers"]) == ["AMZN", "GOOGL", "ORCL"]
+
+
 def test_pm_preflight_handles_no_peers_etf(tmp_path):
     from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
 
