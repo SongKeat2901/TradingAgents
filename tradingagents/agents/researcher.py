@@ -195,3 +195,12 @@ def fetch_research_pack(state: dict) -> None:
     (raw / "social.json").write_text(json.dumps(social, indent=2, default=str), encoding="utf-8")
     (raw / "prices.json").write_text(json.dumps(prices, indent=2, default=str), encoding="utf-8")
     (raw / "reference.json").write_text(json.dumps(reference, indent=2, default=str), encoding="utf-8")
+
+    # Phase-6 stochasticity mitigation: pure-Python deterministic classifier.
+    # See tradingagents/agents/utils/classifier.py + the design spec at
+    # docs/superpowers/specs/2026-05-04-deterministic-classifier-design.md
+    from tradingagents.agents.utils.classifier import compute_classification
+    classification = compute_classification(reference, prices.get("ohlcv", ""))
+    (raw / "classification.json").write_text(
+        json.dumps(classification, indent=2, default=str), encoding="utf-8"
+    )

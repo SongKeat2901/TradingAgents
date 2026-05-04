@@ -145,3 +145,38 @@ def test_researcher_writes_peer_per_ticker(tmp_path, monkeypatch):
     assert peers_data["GOOG"]["revenue"] == 200
     # Main ticker also fetched
     assert "MSFT" in fetched
+
+
+def test_researcher_writes_classification_json(tmp_path, monkeypatch):
+    """The Researcher must write raw/classification.json with the expected schema."""
+    from tradingagents.agents import researcher
+    monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "rsi": _INDICATOR_STUB(58.0),
+        "macd": _INDICATOR_STUB(1.2),
+        "boll_ub": _INDICATOR_STUB(430.0),
+        "boll_lb": _INDICATOR_STUB(390.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    state = _stub_state(tmp_path)
+    researcher.fetch_research_pack(state)
+
+    cls_path = Path(state["raw_dir"]) / "classification.json"
+    assert cls_path.exists()
+    cls = json.loads(cls_path.read_text())
+    # Schema check — every documented key present
+    for key in ("setup_class", "gap_to_50dma_pct", "gap_to_200dma_pct",
+                "ma_alignment", "recent_volume_signal", "upside_target",
+                "upside_pct", "downside_target", "downside_pct",
+                "reward_risk_ratio", "rationale"):
+        assert key in cls, f"classification.json missing key: {key}"
+    # The stubbed fixture (spot=410, 50-DMA=405, 200-DMA=460) is bear-aligned
+    # downtrend; should be one of the bear classes.
+    assert cls["setup_class"] in {"CAPITULATION", "BREAKDOWN", "DOWNTREND"}
