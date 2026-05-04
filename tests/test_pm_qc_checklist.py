@@ -86,3 +86,17 @@ def test_pm_preflight_prompt_documents_fiscal_calendar():
     assert "fiscal-quarter label" in _SYSTEM
     # The example in the prompt names the specific past mistake
     assert "Q4 FY26" in _SYSTEM
+
+
+def test_mandated_sections_includes_technical_setup_adopted():
+    """The PM's _MANDATED_SECTIONS must require the new 'Technical setup adopted'
+    subsection so the disagreement with TA v2 is transcribed in decision.md."""
+    from tradingagents.agents.managers.portfolio_manager import _MANDATED_SECTIONS
+    assert "Technical setup adopted" in _MANDATED_SECTIONS
+    assert "TA Agent v2 classification" in _MANDATED_SECTIONS
+    # The three required choices
+    assert "adopt" in _MANDATED_SECTIONS
+    assert "partially adopt" in _MANDATED_SECTIONS
+    assert "reject" in _MANDATED_SECTIONS
+    # Reasoning length floor
+    assert "≤80 words" in _MANDATED_SECTIONS or "<= 80 words" in _MANDATED_SECTIONS

@@ -64,6 +64,21 @@ Your response MUST start with these two sections in this order:
 - **Catalysts in window:** <upcoming events with dates>
 - **Data freshness:** <financials period>, <news through date>
 
+**Technical setup adopted:**
+
+- TA Agent v2 classification: <verbatim quote from raw/technicals_v2.md "Setup classification" section>
+- My read: [adopt / partially adopt / reject]
+- Reasoning: <≤80 words of evidence-based explanation citing specific analyst transcripts>
+- Working setup for this decision: <one-line summary>
+
+This subsection is non-negotiable. The TA Agent v2 produced a refined \
+technical view after reading all four analyst reports; you must transcribe \
+how your final decision relates to that view rather than routing around it. \
+"adopt" means you accept v2's classification verbatim; "partially adopt" \
+means you accept the classification but qualify it with named conditions; \
+"reject" means you are overriding it and must cite specific analyst \
+evidence that justifies the override.
+
 ## 12-Month Scenario Analysis
 
 | Scenario | Probability | 12-Mo Price Target | Return | Key drivers |
@@ -236,6 +251,10 @@ def create_portfolio_manager(llm):
         )
 
         reference_block = _load_reference_block(state)
+        technicals_block = (
+            f"\n\n**Refined technicals (TA Agent v2):**\n"
+            f"{state.get('technicals_report', '(missing)')}\n"
+        )
 
         # If the QC agent failed the previous draft, surface its feedback at
         # the top of the prompt so the PM addresses every point on this pass.
@@ -250,7 +269,7 @@ def create_portfolio_manager(llm):
 
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
-{instrument_context}{reference_block}{qc_block}
+{instrument_context}{reference_block}{technicals_block}{qc_block}
 
 {instrument_context}
 
