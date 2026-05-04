@@ -397,7 +397,13 @@ def build_research_pdf(
     decision_short = _summarize_decision(decision_md_text or decision)
 
     pm_brief_html = render_md_from_path(out / "raw" / "pm_brief.md")
-    technicals_html = render_md_from_path(out / "raw" / "technicals.md")
+    # Use the refined v2 view (post-analyst reconciliation) when available;
+    # fall back to v1 if v2 is missing (e.g., older runs predating TA v2).
+    technicals_v2 = out / "raw" / "technicals_v2.md"
+    technicals_v1 = out / "raw" / "technicals.md"
+    technicals_html = render_md_from_path(
+        technicals_v2 if technicals_v2.exists() else technicals_v1
+    )
 
     html = _HTML_TEMPLATE.format(
         ticker=ticker,
