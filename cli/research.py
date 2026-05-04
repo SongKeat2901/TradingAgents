@@ -134,10 +134,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--max-tokens", type=int, default=4096,
+        "--max-tokens", type=int, default=8192,
         help=(
-            "Max output tokens per LLM call. Default 4096 — comfortable for "
-            "Opus 4.6 judges; analysts produce far less."
+            "Max output tokens per LLM call. Default 8192 — bumped from 4096 "
+            "after run-#6 audit caught silent truncation in TA v2's 'Key Levels "
+            "for Traders' table (LLM hit max_tokens mid-cell). Long outputs "
+            "(TA v2 ~4K tokens, PM Final 17KB+, debate transcripts) need the "
+            "headroom. Lower if rate-limit pressure returns; --pacing-seconds "
+            "still throttles per-minute throughput."
         ),
     )
     return p
