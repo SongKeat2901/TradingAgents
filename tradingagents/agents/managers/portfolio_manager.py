@@ -23,11 +23,35 @@ from tradingagents.agents.utils.structured import (
     invoke_structured_or_freetext,
 )
 
+_OUTPUT_CONTRACT = """
+
+# Output contract (READ THIS FIRST — Quant Research Rebuild — 2026-05-03)
+
+Your entire response IS decision.md. The harness writes your response \
+verbatim to `<output_dir>/decision.md`, attaches it to a PDF report, and \
+forwards it to downstream consumers (trader, PM memory log, Telegram).
+
+Therefore:
+- DO NOT write "Decision written to <path>" or "see attached file" — your \
+output IS the file.
+- DO NOT emit a summary of what you "would have" produced — emit the full \
+mandated format below in its entirety.
+- DO NOT omit any mandated section ("Inputs to this decision", "12-Month \
+Scenario Analysis", "Reconciliation" if conflicts found, full synthesis, \
+trading plan, caveats).
+- The QC checklist below is applied to the document you emit. Pass-2 \
+self-correction means revising sections IN PLACE inside your response, not \
+emitting a meta-summary about which checks passed.
+
+A response under ~3000 words is almost certainly missing mandated content; \
+expand to full required depth before emitting."""
+
+
 _MANDATED_SECTIONS = """
 
-# Mandatory sections in your decision.md (Quant Research Rebuild — 2026-05-03)
+# Mandatory sections in decision.md (Quant Research Rebuild — 2026-05-03)
 
-Your decision.md MUST start with these two sections in this order:
+Your response MUST start with these two sections in this order:
 
 ## Inputs to this decision
 
@@ -73,9 +97,11 @@ _QC_CHECKLIST = """
 
 # Self-correction QC checklist (Quant Research Rebuild — 2026-05-03)
 
-Before emitting your final decision.md, apply this 13-item checklist to your \
-draft. If ANY item fails, revise the draft in place, then re-apply the \
-checklist. Do not emit until every item passes.
+Before emitting your response, apply this 13-item checklist to your draft. \
+If ANY item fails, revise the draft IN PLACE (rewrite the affected sections \
+inside your response), then re-apply the checklist. Do not emit until every \
+item passes. Do not narrate which checks passed — the audit is internal; \
+the reader sees only the final corrected document.
 
 1. Probabilities sum to exactly 100%.
 2. All three price targets are specific dollar values (not ranges).
@@ -196,7 +222,7 @@ def create_portfolio_manager(llm):
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _MANDATED_SECTIONS + _QC_CHECKLIST + _RETRY_DIRECTIVE
+Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _OUTPUT_CONTRACT + _MANDATED_SECTIONS + _QC_CHECKLIST + _RETRY_DIRECTIVE
 
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,

@@ -32,3 +32,11 @@ def test_qc_checklist_has_self_correction_directive():
     from tradingagents.agents.managers.portfolio_manager import _QC_CHECKLIST
     # The instruction to apply the checklist before final output
     assert "self-correct" in _QC_CHECKLIST.lower() or "revise" in _QC_CHECKLIST.lower()
+
+
+def test_output_contract_forbids_summary_emission():
+    """The PM must be told its response IS decision.md, not a pointer to one."""
+    from tradingagents.agents.managers.portfolio_manager import _OUTPUT_CONTRACT
+    assert "Your entire response IS decision.md" in _OUTPUT_CONTRACT
+    assert "DO NOT write" in _OUTPUT_CONTRACT
+    assert "DO NOT emit a summary" in _OUTPUT_CONTRACT
