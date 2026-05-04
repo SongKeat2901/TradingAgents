@@ -12,8 +12,72 @@ plain Python functions called from this single deterministic step.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+
+_OHLCV_HEADER = "Date,Open,High,Low,Close,Volume"
+
+
+def _parse_ohlcv_rows(ohlcv_str: str) -> list[tuple[str, float, float, float]]:
+    """Parse the get_stock_data CSV string into (date, high, low, close) rows.
+
+    Skips comment lines (#...) and the header row. Returns rows in the order
+    they appear (chronological for yfinance). Malformed rows are skipped.
+    """
+    rows: list[tuple[str, float, float, float]] = []
+    for line in ohlcv_str.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("Date,"):
+            continue
+        parts = line.split(",")
+        if len(parts) < 5:
+            continue
+        try:
+            rows.append((parts[0], float(parts[2]), float(parts[3]), float(parts[4])))
+        except ValueError:
+            continue
+    return rows
+
+
+def _close_on_or_before(rows: list[tuple[str, float, float, float]], date: str) -> Optional[float]:
+    """Return the Close on `date` or the most recent trading day before it."""
+    candidate: Optional[float] = None
+    for d, _h, _l, c in rows:
+        if d <= date:
+            candidate = c
+        else:
+            break
+    return candidate
+
+
+def _ytd_high_low(rows: list[tuple[str, float, float, float]], date: str) -> tuple[Optional[float], Optional[float]]:
+    """Return (max High, min Low) across rows in the same calendar year as `date`, up to and including `date`."""
+    year = date[:4]
+    highs: list[float] = []
+    lows: list[float] = []
+    for d, h, l, _c in rows:
+        if d.startswith(year) and d <= date:
+            highs.append(h)
+            lows.append(l)
+    return (max(highs) if highs else None, min(lows) if lows else None)
+
+
+def _latest_indicator_value(indicator_str: str) -> Optional[float]:
+    """Pull the most recent numeric value from a get_indicators output string.
+
+    Format is `## <ind> values from <start> to <end>:\\n\\n<DATE>: <val>\\n...`
+    The first non-N/A `<DATE>: <number>` line is the most recent observation.
+    """
+    if not indicator_str or not isinstance(indicator_str, str):
+        return None
+    for m in re.finditer(r"^\d{4}-\d{2}-\d{2}:\s*([0-9]+(?:\.[0-9]+)?)\s*$", indicator_str, re.MULTILINE):
+        try:
+            return float(m.group(1))
+        except ValueError:
+            continue
+    return None
 
 def _fetch_financials(ticker: str, date: str) -> dict[str, Any]:
     """Pull fundamentals + balance sheet + cashflow + income statement for one ticker."""
@@ -105,19 +169,22 @@ def fetch_research_pack(state: dict) -> None:
     # Peers (one financials bundle per peer)
     peers_data = {p: _fetch_financials(p, date) for p in peers}
 
-    # Reference: single source of truth for prices.
-    # prices["ohlcv"] is a raw string from get_stock_data; T6 parses numeric values.
-    # indicators keys are indicator names; T6 parses the returned strings.
+    # Reference: single source of truth for prices. Parse the CSV / indicator
+    # strings to numeric values here so downstream agents (especially the PM's
+    # QC #7 self-audit) can verify price citations against a real number.
+    rows = _parse_ohlcv_rows(prices.get("ohlcv", ""))
+    close_on_date = _close_on_or_before(rows, date)
+    ytd_high, ytd_low = _ytd_high_low(rows, date)
     reference = {
         "ticker": ticker,
         "trade_date": date,
-        "reference_price": None,  # T6 (market analyst) extracts from prices["ohlcv"]
-        "reference_price_source": f"yfinance close {date}",
-        "spot_50dma": indicators.get("close_50_sma"),
-        "spot_200dma": indicators.get("close_200_sma"),
-        "ytd_high": None,  # T6 extracts from prices["ohlcv"]
-        "ytd_low": None,   # T6 extracts from prices["ohlcv"]
-        "atr_14": indicators.get("atr"),
+        "reference_price": close_on_date,
+        "reference_price_source": f"yfinance close on or before {date}",
+        "spot_50dma": _latest_indicator_value(indicators.get("close_50_sma", "")),
+        "spot_200dma": _latest_indicator_value(indicators.get("close_200_sma", "")),
+        "ytd_high": ytd_high,
+        "ytd_low": ytd_low,
+        "atr_14": _latest_indicator_value(indicators.get("atr", "")),
     }
 
     # Write everything

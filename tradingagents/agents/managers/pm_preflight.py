@@ -38,6 +38,17 @@ Produce a Markdown brief with EXACTLY these sections (use the headers below verb
 - Sector (yfinance): <yfinance sector>
 - Market cap: <Mega-cap / Large-cap / Mid-cap / Small-cap>
 
+## Fiscal calendar context
+- Reporting fiscal year: <e.g., July–June for MSFT, January–December for most US firms>
+- Most recently reported quarter: <e.g., FY26 Q2 = calendar Q4 2025, reported Jan 2026>
+- Next earnings print expected: <approximate month + the EXACT fiscal quarter label>
+
+This section is non-negotiable. Downstream agents (analysts, debaters, PM Final) \
+must cite the next earnings catalyst with the correct fiscal-quarter label. \
+Common error to avoid: calling Microsoft's late-July print "Q3 FY26" — Microsoft's \
+FY runs July–June, so the late-July 2026 print is **Q4 FY26** (covering Apr–Jun \
+2026), not Q3. Verify the fiscal calendar against the actual ticker's reporting cadence.
+
 ## Business model classification
 - yfinance sector: <yfinance sector>
 - Actual business model: **<plain-English description>**

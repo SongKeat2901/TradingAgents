@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json as _json
 import re as _re
+from pathlib import Path
 
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
 from tradingagents.agents.utils.agent_utils import (
@@ -182,6 +183,40 @@ def _parse_retry_signal(text: str) -> dict | None:
     return None
 
 
+def _load_reference_block(state: dict) -> str:
+    """Load raw/reference.json and format the canonical price snapshot the PM
+    must use verbatim. Falls back to an empty string when raw/ is unavailable.
+    """
+    raw_dir = state.get("raw_dir")
+    if not raw_dir:
+        return ""
+    try:
+        ref_path = Path(raw_dir) / "reference.json"
+        if not ref_path.exists():
+            return ""
+        ref = _json.loads(ref_path.read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError):
+        return ""
+
+    def fmt(v):
+        return f"${v}" if v is not None else "(unavailable)"
+
+    return (
+        "\n**Canonical reference snapshot (use these exact values in the Inputs section):**\n"
+        f"- reference_price: {fmt(ref.get('reference_price'))}\n"
+        f"- reference_price_source: {ref.get('reference_price_source', '(unavailable)')}\n"
+        f"- trade_date: {ref.get('trade_date', '(unavailable)')}\n"
+        f"- spot_50dma: {fmt(ref.get('spot_50dma'))}\n"
+        f"- spot_200dma: {fmt(ref.get('spot_200dma'))}\n"
+        f"- ytd_high: {fmt(ref.get('ytd_high'))}\n"
+        f"- ytd_low: {fmt(ref.get('ytd_low'))}\n"
+        f"- atr_14: {fmt(ref.get('atr_14'))}\n"
+        "Cite reference_price and trade_date verbatim from this snapshot — \
+do not infer either from analyst transcripts or earlier debate prose. \
+Other prices (article quotes, intraday) must carry an explicit time/source qualifier.\n"
+    )
+
+
 def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
@@ -200,7 +235,11 @@ def create_portfolio_manager(llm):
             else ""
         )
 
+        reference_block = _load_reference_block(state)
+
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
+
+{instrument_context}{reference_block}
 
 {instrument_context}
 
