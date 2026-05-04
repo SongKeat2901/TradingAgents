@@ -66,6 +66,98 @@ language. Every claim must trace to a specific number from prices.json or \
 indicators.json."""
 
 
+_SYSTEM_V2 = """\
+You are the TA Agent doing a second-pass review for $TICKER on $DATE.
+
+Your v1 setup is in raw/technicals.md. The four analysts have now produced \
+their reports (Market, Fundamentals, News, Sentiment). Your job is to read \
+their reports plus your own v1 read, then emit a refined technical setup that \
+addresses any analyst pushback that materially affects the technical view.
+
+Produce a Markdown report with EXACTLY these sections (use the headers verbatim):
+
+## Revisions from v1
+
+For each material revision, name the analyst whose pushback caused the change \
+(verbatim quote ≤30 words) and state what changed and why.
+
+If no revision is warranted, this section reads exactly:
+"No revisions — analyst reports did not surface evidence to revise v1's classification."
+
+## Major historical levels
+
+[Same table format as v1: Level | Price | Type | Why crowds trade here]
+
+## Volume profile zones
+
+- Heaviest accumulation: $<low>-$<high>
+- Volume gap: $<low>-$<high>
+
+## Current technical state
+
+Narrative on RSI, MACD, moving-average stack, divergences.
+
+## Setup classification
+
+One of: breakout / breakdown / consolidation / distribution / accumulation.
+
+## Asymmetry
+
+- Upside to next major resistance: $<price> (<+X>%)
+- Downside to next major support: $<price> (<-Y>%)
+- Reward/risk: <ratio>:1
+
+The v2 view is what every downstream agent (bull/bear/RM/trader/risk team/PM) \
+will reason over. Cite specific numbers. Address fundamental concerns when they \
+materially shift the technical read."""
+
+
+def create_ta_agent_v2_node(llm):
+    """Factory: returns the TA Agent v2 LangGraph node function.
+
+    Reads v1 + four analyst reports + raw/reference.json + raw/prices.json.
+    Writes raw/technicals_v2.md and overwrites state.technicals_report.
+    """
+
+    def ta_agent_v2_node(state: dict) -> dict[str, Any]:
+        ticker = state["company_of_interest"]
+        date = state["trade_date"]
+        raw_dir = state["raw_dir"]
+
+        v1_context = format_for_prompt(
+            raw_dir,
+            files=["technicals.md", "reference.json", "prices.json"],
+        )
+        analyst_block = (
+            f"\n## Market Analyst Report\n{state.get('market_report', '(missing)')}\n\n"
+            f"## Fundamentals Analyst Report\n{state.get('fundamentals_report', '(missing)')}\n\n"
+            f"## News Analyst Report\n{state.get('news_report', '(missing)')}\n\n"
+            f"## Sentiment Analyst Report\n{state.get('sentiment_report', '(missing)')}\n"
+        )
+
+        messages = [
+            SystemMessage(content=_SYSTEM_V2.replace("$TICKER", ticker).replace("$DATE", date)),
+            HumanMessage(content=(
+                f"Produce the v2 technicals report for {ticker} on {date}. "
+                f"Below are the v1 setup, the four analyst reports, and the "
+                f"reference snapshot. Refine and emit v2.\n\n"
+                f"{v1_context}\n{analyst_block}"
+            )),
+        ]
+        result = llm.invoke(messages)
+        raw_content = result.content if hasattr(result, "content") else None
+        report = raw_content if raw_content else str(result)
+
+        (Path(raw_dir) / "technicals_v2.md").write_text(report, encoding="utf-8")
+
+        return {
+            "messages": [result] if raw_content is not None else [],
+            "technicals_report": report,
+        }
+
+    return ta_agent_v2_node
+
+
 def create_ta_agent_node(llm):
     """Factory: returns the TA Agent LangGraph node function."""
 
