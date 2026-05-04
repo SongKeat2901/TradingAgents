@@ -164,6 +164,7 @@ def _build_config(args: argparse.Namespace) -> dict:
     config["pacing_seconds"] = args.pacing_seconds
     config["max_tokens"] = args.max_tokens
     config["deep_cooldown_seconds"] = args.deep_cooldown_seconds
+    config["output_dir"] = args.output_dir
     return config
 
 
