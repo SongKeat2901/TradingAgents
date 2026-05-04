@@ -237,9 +237,20 @@ def create_portfolio_manager(llm):
 
         reference_block = _load_reference_block(state)
 
+        # If the QC agent failed the previous draft, surface its feedback at
+        # the top of the prompt so the PM addresses every point on this pass.
+        qc_feedback = state.get("qc_feedback", "").strip()
+        qc_block = (
+            f"\n\n**QC_FAIL_FEEDBACK from prior pass — you MUST address every "
+            f"point below before re-emitting:**\n{qc_feedback}\n\nDo not "
+            "produce an identical document; revise the affected sections and "
+            "re-emit the full corrected decision.md.\n"
+            if qc_feedback else ""
+        )
+
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
-{instrument_context}{reference_block}
+{instrument_context}{reference_block}{qc_block}
 
 {instrument_context}
 

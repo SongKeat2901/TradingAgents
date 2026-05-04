@@ -63,6 +63,9 @@ class Propagator:
             "pm_feedback": "",
             "pm_retries": 0,
             "pm_retry_target": "",  # set by PM on retry
+            "qc_feedback": "",
+            "qc_passed": False,
+            "qc_retries": 0,
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:

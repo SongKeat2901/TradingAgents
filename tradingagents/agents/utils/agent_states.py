@@ -80,3 +80,7 @@ class AgentState(MessagesState):
     pm_feedback: str
     pm_retries: int
     pm_retry_target: str
+    # QC agent (independent node auditing PM draft against the 13-item checklist)
+    qc_feedback: str
+    qc_passed: bool
+    qc_retries: int

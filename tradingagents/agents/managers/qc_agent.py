@@ -1,0 +1,193 @@
+"""QC Agent — independent reviewer of the PM's decision.md draft.
+
+Sits between the Portfolio Manager and END in the graph. The PM's Pass-2
+self-correction is in-prompt and stochastic (the same LLM that drafted the
+document audits its own work). This agent runs the audit in a separate LLM
+call with a fresh context, so a "PASS" from QC is a real second opinion.
+
+Design:
+- Receives the full PM draft via state.final_trade_decision.
+- Reads raw/reference.json to verify reference_price/trade_date citations.
+- Applies the 13-item checklist (kept in sync with portfolio_manager._QC_CHECKLIST).
+- Emits structured verdict: PASS or FAIL with concrete feedback.
+- On FAIL: sets state.qc_feedback (text the PM must address) and bumps
+  qc_retries. The graph routes back to the PM.
+- On PASS or qc_retries == 1: routes through to END.
+
+Cap at 1 retry per run to bound LLM cost. The PM's existing PM_RETRY_SIGNAL
+remains independent — it pushes back to RM/Risk, this agent only audits PM
+output and pushes back to PM.
+"""
+
+from __future__ import annotations
+
+import json as _json
+import logging
+import re as _re
+from pathlib import Path
+from typing import Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+logger = logging.getLogger(__name__)
+
+
+_SYSTEM = """\
+You are an independent QC reviewer auditing a Portfolio Manager's decision \
+document. Your role is adversarial, not collaborative — your job is to catch \
+the PM's mistakes, not to rubber-stamp the work.
+
+You will be given:
+- The PM's full decision document
+- The canonical reference snapshot from raw/reference.json
+
+Apply the 13-item checklist below to the document. For each item, decide PASS \
+or FAIL based on what's literally in the document — do not infer or extrapolate.
+
+# 13-item checklist
+
+1. Probabilities in the 12-month scenario table sum to exactly 100%.
+2. All three price targets are specific dollar values (e.g., "$485"), not \
+ranges (e.g., "$480-$490").
+3. Each scenario's "Key drivers" column lists at least one named, falsifiable \
+catalyst — a specific metric threshold, event, or date — not narrative phrases \
+like "execution risk" or "macro headwinds".
+4. The rating logically derives from EV. If EV is materially positive (>+10%) \
+the rating cannot be HOLD or UNDERWEIGHT; if EV is materially negative \
+(<-10%) it cannot be HOLD or OVERWEIGHT. The Rating implication line must \
+explicitly bridge EV → rating.
+5. Execution triggers (entry, exit, stop, upgrade, downgrade) are falsifiable: \
+each has a named price level, volume threshold, or date — not "if conditions \
+improve" or "post-earnings".
+6. Re-entry / upgrade triggers are reachable in at least one scenario in the \
+table. If Bull peaks at $14 and the doc says "re-enter below $18", that's \
+inconsistent — flag it.
+7. Bare "<ticker> at <trade_date>" price citations match \
+reference_snapshot.reference_price ± $0.01. Other prices (article quotes, \
+intraday) must carry an explicit time/source qualifier ("intraday low \
+$X on 2026-04-30").
+8. Every cited analyst position has a verbatim quote (≤ 30 words) attributed \
+to the section it came from. Statements like "Neutral's math, applied honestly, \
+supports Sell" without a verbatim quote → FAIL.
+9. Cross-section numerical consistency. The same numerical claim (cash \
+runway, target price, percentage move) appearing in different sections must \
+be reconciled in a "Reconciliation" subsection or carry consistent values \
+throughout.
+10. Sanity-check flags from the fundamentals analyst (any ❌ entries) are \
+addressed in the bull/bear debate, the trader's plan, or the PM's own \
+synthesis — not silently ignored.
+11. The "Inputs to this decision" section is present, complete, and \
+self-sufficient (a stakeholder reading only that section understands the \
+framing).
+12. Peer comparisons cite specific numbers (P/E multiple, op margin, ND/EBITDA), \
+not vague comparisons ("trades at a discount", "stronger balance sheet").
+13. Numerical claims in the document trace back to raw/*.json or the analyst \
+reports. No invented numbers, no "approximately" stand-ins for unsourced figures.
+
+# Output format
+
+Emit your verdict as the LAST line of your response in this exact JSON format \
+(on its own line):
+
+QC_VERDICT: {"status": "PASS"}
+
+Or:
+
+QC_VERDICT: {"status": "FAIL", "feedback": "<≤300-word specific instruction \
+to the PM listing exactly which checklist items failed and what to fix>"}
+
+Before the verdict line, walk through each of the 13 items briefly with \
+PASS/FAIL and one-sentence rationale. The PM will read your feedback and \
+revise — be specific, not vague."""
+
+
+_VERDICT_PATTERN = _re.compile(
+    r"^QC_VERDICT:\s*(\{.+?\})\s*$",
+    flags=_re.MULTILINE,
+)
+
+
+def _parse_verdict(text: str) -> dict | None:
+    """Parse the QC_VERDICT JSON line emitted by the LLM."""
+    m = _VERDICT_PATTERN.search(text)
+    if not m:
+        return None
+    try:
+        v = _json.loads(m.group(1))
+    except _json.JSONDecodeError:
+        return None
+    if v.get("status") not in ("PASS", "FAIL"):
+        return None
+    return v
+
+
+def _load_reference_snapshot(state: dict) -> str:
+    """Format raw/reference.json for inclusion in the user message."""
+    raw_dir = state.get("raw_dir")
+    if not raw_dir:
+        return "(reference.json unavailable — no raw_dir in state)"
+    try:
+        ref = _json.loads((Path(raw_dir) / "reference.json").read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError):
+        return "(reference.json unavailable or malformed)"
+    return _json.dumps(ref, indent=2)
+
+
+def create_qc_agent_node(llm):
+    """Factory: returns the QC Agent LangGraph node function.
+
+    Reads state.final_trade_decision and raw/reference.json, runs the audit,
+    and writes back qc_passed + qc_feedback + qc_retries.
+    """
+
+    def qc_agent_node(state: dict) -> dict[str, Any]:
+        retries = state.get("qc_retries", 0)
+        # Hard cap: only run QC once. After one round of feedback (whether the PM
+        # re-passed or not) the graph proceeds to END.
+        if retries >= 1:
+            return {"qc_passed": True}
+
+        decision = state.get("final_trade_decision", "").strip()
+        if not decision:
+            logger.warning("QC Agent: empty final_trade_decision, skipping audit")
+            return {"qc_passed": True}
+
+        reference_snapshot = _load_reference_snapshot(state)
+
+        messages = [
+            SystemMessage(content=_SYSTEM),
+            HumanMessage(content=(
+                "Audit the document below. Apply the 13-item checklist and "
+                "emit your verdict on the last line.\n\n"
+                f"## Reference snapshot (from raw/reference.json)\n"
+                f"```json\n{reference_snapshot}\n```\n\n"
+                f"## PM decision document\n\n{decision}"
+            )),
+        ]
+        result = llm.invoke(messages)
+        raw_content = result.content if hasattr(result, "content") else None
+        report = raw_content if raw_content else str(result)
+
+        verdict = _parse_verdict(report)
+        if verdict is None:
+            # Couldn't parse — treat as PASS to avoid blocking the pipeline on
+            # a malformed verdict line. Log loudly so this is detectable.
+            logger.warning(
+                "QC Agent: could not parse QC_VERDICT line; treating as PASS. "
+                "Last 200 chars of response: %s",
+                report[-200:] if report else "(empty)",
+            )
+            return {"qc_passed": True}
+
+        if verdict["status"] == "PASS":
+            return {"qc_passed": True}
+
+        # FAIL: bump retries, write feedback for the PM.
+        feedback = verdict.get("feedback", "QC review failed (no feedback provided)")
+        return {
+            "qc_passed": False,
+            "qc_feedback": feedback,
+            "qc_retries": retries + 1,
+        }
+
+    return qc_agent_node

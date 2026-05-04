@@ -7,6 +7,7 @@ from langgraph.prebuilt import ToolNode
 from tradingagents.agents import *
 from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+from tradingagents.agents.managers.qc_agent import create_qc_agent_node
 from tradingagents.agents.analysts.ta_agent import create_ta_agent_node
 from tradingagents.agents.researcher import fetch_research_pack
 
@@ -82,6 +83,9 @@ class GraphSetup:
         # Quant-research rebuild nodes (2026-05-03)
         pm_preflight_node = create_pm_preflight_node(self.deep_thinking_llm)
         ta_agent_node = create_ta_agent_node(self.quick_thinking_llm)
+        # QC agent runs on a Sonnet-tier (quick) model to keep cost low; the
+        # checklist work doesn't require Opus reasoning.
+        qc_agent_node = create_qc_agent_node(self.quick_thinking_llm)
 
         def researcher_node(state):
             """Wraps the Python data fetcher as a LangGraph node."""
@@ -95,6 +99,7 @@ class GraphSetup:
         workflow.add_node("PM Preflight", pm_preflight_node)
         workflow.add_node("Researcher", researcher_node)
         workflow.add_node("TA Agent", ta_agent_node)
+        workflow.add_node("QC Agent", qc_agent_node)
 
         # Add analyst nodes to the graph (no tool-loop nodes in rebuild)
         for analyst_type, node in analyst_nodes.items():
@@ -172,16 +177,18 @@ class GraphSetup:
             },
         )
 
-        # PM retry conditional edges (Pass-3 push-back mechanism)
+        # PM retry conditional edges:
+        # - PM_RETRY_SIGNAL → push back to RM or Risk team (Pass-3 mechanism)
+        # - otherwise → QC Agent for an independent audit
         def pm_router(state):
             if state.get("pm_retries", 0) >= 1:
-                return END
+                return "QC Agent"
             target = state.get("pm_retry_target")
             if target == "research_manager":
                 return "Research Manager"
             if target == "risk_team":
                 return "Aggressive Analyst"
-            return END
+            return "QC Agent"
 
         workflow.add_conditional_edges(
             "Portfolio Manager",
@@ -189,6 +196,21 @@ class GraphSetup:
             {
                 "Research Manager": "Research Manager",
                 "Aggressive Analyst": "Aggressive Analyst",
+                "QC Agent": "QC Agent",
+            },
+        )
+
+        # QC routing: PASS → END, FAIL with retries left → re-run PM with feedback.
+        def qc_router(state):
+            if state.get("qc_passed", False):
+                return END
+            return "Portfolio Manager"
+
+        workflow.add_conditional_edges(
+            "QC Agent",
+            qc_router,
+            {
+                "Portfolio Manager": "Portfolio Manager",
                 END: END,
             },
         )
