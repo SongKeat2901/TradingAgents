@@ -108,14 +108,16 @@ def test_qc_agent_includes_reference_snapshot_in_user_message(tmp_path):
     assert "2026-05-01" in user_content  # trade_date from stub
 
 
-def test_qc_system_prompt_lists_all_13_items():
-    """The QC agent's system prompt must enumerate the same 13 checklist items
-    as the PM's _QC_CHECKLIST so audits are calibrated to the same standard."""
+def test_qc_system_prompt_lists_all_14_items():
+    """The QC agent's system prompt must enumerate the 14 checklist items
+    (13 original + 1 for the Technical setup adopted subsection)."""
     from tradingagents.agents.managers.qc_agent import _SYSTEM
-    # Each item is on its own numbered line
-    for n in range(1, 14):
+    for n in range(1, 15):
         assert f"{n}." in _SYSTEM, f"QC system prompt missing item {n}"
     assert "QC_VERDICT:" in _SYSTEM
+    # Item 14 specifics
+    assert "Technical setup adopted" in _SYSTEM
+    assert "verbatim" in _SYSTEM
 
 
 def test_parse_verdict_handles_pass_and_fail():

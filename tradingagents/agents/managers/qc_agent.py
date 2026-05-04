@@ -8,7 +8,7 @@ call with a fresh context, so a "PASS" from QC is a real second opinion.
 Design:
 - Receives the full PM draft via state.final_trade_decision.
 - Reads raw/reference.json to verify reference_price/trade_date citations.
-- Applies the 13-item checklist (kept in sync with portfolio_manager._QC_CHECKLIST).
+- Applies the 14-item checklist (kept in sync with portfolio_manager._QC_CHECKLIST).
 - Emits structured verdict: PASS or FAIL with concrete feedback.
 - On FAIL: sets state.qc_feedback (text the PM must address) and bumps
   qc_retries. The graph routes back to the PM.
@@ -41,10 +41,10 @@ You will be given:
 - The PM's full decision document
 - The canonical reference snapshot from raw/reference.json
 
-Apply the 13-item checklist below to the document. For each item, decide PASS \
+Apply the 14-item checklist below to the document. For each item, decide PASS \
 or FAIL based on what's literally in the document — do not infer or extrapolate.
 
-# 13-item checklist
+# 14-item checklist
 
 1. Probabilities in the 12-month scenario table sum to exactly 100%.
 2. All three price targets are specific dollar values (e.g., "$485"), not \
@@ -83,6 +83,12 @@ framing).
 not vague comparisons ("trades at a discount", "stronger balance sheet").
 13. Numerical claims in the document trace back to raw/*.json or the analyst \
 reports. No invented numbers, no "approximately" stand-ins for unsourced figures.
+14. The "Technical setup adopted" subsection exists inside the Inputs section, \
+names the TA Agent v2 classification verbatim (from raw/technicals_v2.md), \
+picks one of {adopt, partially adopt, reject}, and provides ≥30-word reasoning \
+that cites at least one specific analyst transcript. Skipping this subsection \
+or filling it with vague phrasing like "I adopt the technical setup" without \
+evidence → FAIL.
 
 # Output format
 
@@ -96,7 +102,7 @@ Or:
 QC_VERDICT: {"status": "FAIL", "feedback": "<≤300-word specific instruction \
 to the PM listing exactly which checklist items failed and what to fix>"}
 
-Before the verdict line, walk through each of the 13 items briefly with \
+Before the verdict line, walk through each of the 14 items briefly with \
 PASS/FAIL and one-sentence rationale. The PM will read your feedback and \
 revise — be specific, not vague."""
 
@@ -157,7 +163,7 @@ def create_qc_agent_node(llm):
         messages = [
             SystemMessage(content=_SYSTEM),
             HumanMessage(content=(
-                "Audit the document below. Apply the 13-item checklist and "
+                "Audit the document below. Apply the 14-item checklist and "
                 "emit your verdict on the last line.\n\n"
                 f"## Reference snapshot (from raw/reference.json)\n"
                 f"```json\n{reference_snapshot}\n```\n\n"
