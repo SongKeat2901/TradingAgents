@@ -35,6 +35,7 @@ def create_research_manager(llm):
 
         investment_debate_state = state["investment_debate_state"]
 
+        technicals_report = state.get("technicals_report", "")
         pm_feedback = state.get("pm_feedback", "")
         feedback_block = (
             f"\n\nPM_FEEDBACK_FROM_PRIOR_PASS:\n{pm_feedback}\n"
@@ -59,7 +60,9 @@ Commit to a clear stance whenever the debate's strongest arguments warrant one; 
 ---
 
 **Debate History:**
-{history}{feedback_block}""" + _PM_FEEDBACK_HANDLER
+{history}{feedback_block}
+
+Refined technicals report (TA Agent v2, post-analyst reconciliation): {technicals_report}""" + _PM_FEEDBACK_HANDLER
 
         investment_plan = invoke_structured_or_freetext(
             structured_llm,
