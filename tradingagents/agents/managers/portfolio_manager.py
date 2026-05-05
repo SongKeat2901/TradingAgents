@@ -11,8 +11,11 @@ back gracefully to free-text generation.
 from __future__ import annotations
 
 import json as _json
+import logging
 import re as _re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
 from tradingagents.agents.utils.agent_utils import (
@@ -272,16 +275,20 @@ def create_portfolio_manager(llm):
         # the PM cannot frame the decision around a "pending adjudicator"
         # filing that's already public.
         sec_block = ""
-        try:
-            sec_path = Path(state.get("raw_dir", "")) / "sec_filing.md"
+        raw_dir = state.get("raw_dir")
+        if raw_dir:
+            sec_path = Path(raw_dir) / "sec_filing.md"
             if sec_path.exists():
-                sec_block = (
-                    "\n\n**Most recent SEC filing (already public on trade date — "
-                    "treat as known data, never as 'pending adjudication'):**\n"
-                    f"{sec_path.read_text(encoding='utf-8')}\n"
-                )
-        except OSError:
-            pass
+                try:
+                    sec_block = (
+                        "\n\n**Most recent SEC filing (already public on trade date — "
+                        "treat as known data, never as 'pending adjudication'):**\n"
+                        f"{sec_path.read_text(encoding='utf-8')}\n"
+                    )
+                except OSError as exc:
+                    logger.warning(
+                        "PM: could not read %s (%s); omitting sec_block", sec_path, exc
+                    )
 
         # If the QC agent failed the previous draft, surface its feedback at
         # the top of the prompt so the PM addresses every point on this pass.
