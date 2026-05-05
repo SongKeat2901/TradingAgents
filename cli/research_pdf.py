@@ -417,10 +417,28 @@ def render_md_from_path(path: Path) -> str:
 _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     # Order matters: most-specific patterns first so generic catch-alls
     # don't shadow them.
+
+    # Citation-style references to debate paragraph locations — these are
+    # internal traceability metadata (e.g. "(Aggressive, opening paragraph;
+    # ≤30 words paraphrased)"). Strip them entirely; the appendix has the
+    # original text if anyone wants to verify.
+    (r"\s*\((?:Aggressive|Conservative|Neutral|Bull|Bear)[,;]\s*[^)]*paraphrased\s*\)", ""),
+    (r"\s*\((?:Aggressive|Conservative|Neutral|Bull|Bear)[,;]\s*[Pp]oint\s*\d+[^)]*\)", ""),
+    (r"\s*\((?:Aggressive|Conservative|Neutral|Bull|Bear)[,;]\s*[Pp]aragraph\s*\d+[^)]*\)", ""),
+
     # Multi-word phrases referencing specific agent stances:
     (r"\bAggressive's strongest punch\b", "aggressive case's strongest argument"),
     (r"\bConservative's strongest punch\b", "conservative case's strongest argument"),
+    (r"\bConservative's structural punch\b", "conservative case's structural argument"),
+    (r"\bConservative's load-bearing punch\b", "conservative case's load-bearing argument"),
+    (r"\bAggressive's load-bearing punch\b", "aggressive case's load-bearing argument"),
     (r"\bAggressive overreaches\b", "The aggressive case overreaches"),
+    (r"\bAggressive omitted\b", "The aggressive case omitted"),
+    (r"\bConservative correctly notes\b", "The conservative case correctly notes"),
+    (r"\bNeutral lands the sequencing verdict\b", "The neutral case lands the sequencing verdict"),
+    (r"\bNeutral lands\b", "The neutral case lands"),
+    (r"\bAggressive lands\b", "The aggressive case lands"),
+    (r"\bConservative lands\b", "The conservative case lands"),
     (r"\bThe Trader's HOLD proposal\b", "The trader proposal (HOLD)"),
     (r"\bThe Trader's SELL proposal\b", "The trader proposal (SELL)"),
     (r"\bTrader's HOLD proposal\b", "trader proposal (HOLD)"),
@@ -485,6 +503,41 @@ def _clean_agentic_vocabulary(text: str) -> str:
     the operational language preserved in the appendix for troubleshooting."""
     for pattern, replacement in _AGENTIC_VOCAB_REPLACEMENTS:
         text = re.sub(pattern, replacement, text)
+    return text
+
+
+# Phase 6.5: deterministic blocks (Phase 6.2 calendar, 6.3 SEC filing footer,
+# 6.4 peer ratios) carry instruction tails directed at the analyst-tier LLM
+# ("Use these dates verbatim. Do not write 'data to follow'...", "Treat as
+# known data, never as 'pending adjudication'...", etc.). Those instructions
+# do their job in pm_brief.md (where the LLM reads them) but they leak into
+# the executive-facing PDF. Strip them from front-of-document rendering only.
+_LLM_DIRECTIVE_PATTERNS: list[str] = [
+    # Calendar block instruction tail (italic standalone paragraph).
+    r"\*Use these dates verbatim\..*?catalyst windows\.\*",
+    # Peer ratios block instruction tail (italic standalone paragraph).
+    r"\*Use these values verbatim\..*?from memory\.\*",
+    # SEC filing footer suffix: "; full text in raw/sec_filing.md. Treat as
+    # **known data**, never as "pending adjudication" or "awaiting filing"."
+    # The whole tail is operational metadata + LLM imperative; an executive
+    # reader doesn't need either piece.
+    r";\s*full text in raw/sec_filing\.md\.\s*Treat as \*\*known data\*\*, never as \"pending adjudication\" or \"awaiting filing\"\.",
+    # Bare imperative tails (in case the prefix already stripped or
+    # the pm_brief.md suffix differs).
+    r"Treat as \*\*known data\*\*, never as \"pending adjudication\" or \"awaiting filing\"\.",
+    r"Treat them as known data, NEVER as 'pending adjudication' or 'awaiting filing'\.",
+]
+
+
+def _strip_llm_directives(text: str) -> str:
+    """Remove LLM-targeting instruction tails from deterministic blocks.
+
+    Calendar / peer-ratios / SEC-filing blocks carry trailing imperatives
+    aimed at the analyst-tier LLM. Those should NOT appear in the
+    executive-facing PDF surface. This function strips them; pm_brief.md
+    on disk is unchanged (the LLM still reads the directives at runtime)."""
+    for pattern in _LLM_DIRECTIVE_PATTERNS:
+        text = re.sub(pattern, "", text, flags=re.DOTALL)
     return text
 
 
@@ -611,20 +664,24 @@ def build_research_pdf(
         return _demote_h1_to_h2(md.reset().convert(text))
 
     def render_md_polished(filename: str) -> str:
-        """Render a Markdown file with executive-format vocabulary cleanup.
-        Used for front-of-document sections (Investment Thesis, Technical
-        Setup, Investment Recommendation, Executive Summary)."""
+        """Render a Markdown file with executive-format polish: strip
+        LLM-targeting directives + replace agent vocabulary. Used for
+        front-of-document sections (Investment Thesis, Technical Setup,
+        Investment Recommendation, Executive Summary)."""
         path = out / filename
         if not path.exists():
             return f"<p><em>(missing: {filename})</em></p>"
         text = path.read_text(encoding="utf-8")
+        text = _strip_llm_directives(text)
         text = _clean_agentic_vocabulary(text)
         return _demote_h1_to_h2(md.reset().convert(text))
 
     def render_md_polished_from_path(path: Path) -> str:
         if not path.exists():
             return "<em>(missing)</em>"
-        text = _clean_agentic_vocabulary(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        text = _strip_llm_directives(text)
+        text = _clean_agentic_vocabulary(text)
         return _demote_h1_to_h2(md.reset().convert(text))
 
     decision_md_text = ""
@@ -636,6 +693,7 @@ def build_research_pdf(
 
     # Phase 6.5: Executive Summary (page 2) — distilled from decision.md.
     executive_summary_md = _build_executive_summary_md(decision_md_text)
+    executive_summary_md = _strip_llm_directives(executive_summary_md)
     executive_summary_md = _clean_agentic_vocabulary(executive_summary_md)
     executive_summary_html = _demote_h1_to_h2(md.reset().convert(executive_summary_md))
 
