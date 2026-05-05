@@ -100,11 +100,25 @@ to follow" framing applied to the filing whose text is in raw/sec_filing.md.
 16. **Multi-decimal numerical claims trace to a specific source cell.** \
 Any claim of the form "X% capex-to-revenue" / "X% margin" / "Y bps \
 compression" / "Zx multiple" must trace verbatim to a cell in \
-raw/financials.json, raw/sec_filing.md, raw/peers.json, or raw/reference.json. \
-Fabricated peer-comparison ratios that don't appear in any raw/ file → FAIL. \
-The pipeline caught a prior run citing "MSFT capex/revenue 5.4%" when the \
-actual value computed from financials.json was 37.3%; that magnitude of \
-error must be blocked at this gate.
+raw/financials.json, raw/sec_filing.md, raw/peers.json, raw/prices.json, \
+or raw/reference.json — OR be derivable by simple arithmetic from such cells \
+with the formula stated inline. Three sub-rules: \
+(a) **Verbatim or computed.** Fabricated ratios that don't appear in any raw/ \
+file AND aren't a stated computation from one → FAIL. The pipeline caught a \
+prior run citing "MSFT capex/revenue 5.4%" when the actual value computed \
+from financials.json was 37.3%; that magnitude of error must be blocked here. \
+(b) **Sign + direction match source convention.** A balance-sheet aggregate \
+labeled "net cash" must be supported by a raw cell whose sign indicates net \
+cash (e.g., Total Cash + ST Investments > Total Debt). Calling a "Net Debt = \
++$8.2B" line "$8.2B net cash" → FAIL: same number, opposite economic meaning. \
+Same rule applies to "ratio as % vs as multiplier" (0.04x net debt/EBITDA \
+must come from a 0.04x raw figure, not from 4% mislabeled). \
+(c) **Peer-comparison deltas reconcile.** Any "MSFT capex N% above peers" or \
+"$X higher than peer average" claim must reconcile with the explicit peer \
+ratios cited elsewhere in the same document (analyst reports, debates) OR \
+with values in raw/peers.json. If the bull says "GOOGL/AMZN average 8–9% \
+capex/revenue" and a sibling section says "MSFT 5% above peers", the peer \
+delta is internally inconsistent → FAIL.
 
 # Output format
 

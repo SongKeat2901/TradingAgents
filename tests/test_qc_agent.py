@@ -135,18 +135,28 @@ def test_parse_verdict_handles_pass_and_fail():
 def test_qc_checklist_has_16_items_and_filing_anchor_text():
     """The QC system prompt must (a) declare a 16-item checklist (was 14 pre-Phase-6.3),
     (b) include item 15 with key filing-anchor phrasing, (c) include item 16 with
-    key numerical-trace phrasing."""
+    all three sub-rules (verbatim/computed, sign+direction, peer-delta reconcile)."""
     from tradingagents.agents.managers.qc_agent import _SYSTEM
 
     assert "16-item checklist" in _SYSTEM
     # Item 15: filing-anchor temporal correctness
     assert "Filing-anchor temporal correctness" in _SYSTEM
     assert "raw/sec_filing.md" in _SYSTEM
-    assert "pending adjudication" in _SYSTEM or "awaiting filing" in _SYSTEM
+    assert "awaiting filing" in _SYSTEM
     # Item 16: numerical claims trace to source
     assert "Multi-decimal numerical claims" in _SYSTEM
     assert "trace" in _SYSTEM.lower()
     assert "raw/financials.json" in _SYSTEM
+    # Item 16's source-cell list must include raw/prices.json (TA-derived bps figures)
+    assert "raw/prices.json" in _SYSTEM
+    # Item 16 sub-rule (a) — verbatim or computed (catches the original 5.4% bug)
+    assert "Verbatim or computed" in _SYSTEM
+    assert "5.4%" in _SYSTEM and "37.3%" in _SYSTEM
+    # Item 16 sub-rule (b) — sign + direction (catches the $8.2B net-cash sign inversion)
+    assert "Sign + direction" in _SYSTEM
+    assert "net cash" in _SYSTEM and "Net Debt" in _SYSTEM
+    # Item 16 sub-rule (c) — peer-delta reconciliation (catches the 5.4% above peers claim)
+    assert "Peer-comparison deltas reconcile" in _SYSTEM
 
 
 def test_qc_fails_pm_draft_calling_filed_10q_pending(tmp_path):
