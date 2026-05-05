@@ -180,3 +180,53 @@ def test_researcher_writes_classification_json(tmp_path, monkeypatch):
     # The stubbed fixture (spot=410, 50-DMA=405, 200-DMA=460) is bear-aligned
     # downtrend; should be one of the bear classes.
     assert cls["setup_class"] in {"CAPITULATION", "BREAKDOWN", "DOWNTREND"}
+
+
+def test_researcher_writes_calendar_json(tmp_path, monkeypatch):
+    """Researcher must write raw/calendar.json with documented schema."""
+    from tradingagents.agents import researcher
+
+    # Stub the data fetchers so the test doesn't network out
+    monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "rsi": _INDICATOR_STUB(58.0),
+        "macd": _INDICATOR_STUB(1.2),
+        "boll_ub": _INDICATOR_STUB(430.0),
+        "boll_lb": _INDICATOR_STUB(390.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    # Stub compute_calendar so the test doesn't network out either
+    def fake_compute_calendar(trade_date, tickers):
+        return {
+            "trade_date": trade_date,
+            "_unavailable": [],
+            **{t: {
+                "last_reported": "2026-04-29",
+                "fiscal_period": "Q1 2026",
+                "next_expected": "2026-07-29",
+                "source": "yfinance",
+            } for t in tickers},
+        }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        fake_compute_calendar,
+    )
+
+    state = _stub_state(tmp_path)
+    researcher.fetch_research_pack(state)
+
+    cal_path = Path(state["raw_dir"]) / "calendar.json"
+    assert cal_path.exists()
+    cal = json.loads(cal_path.read_text())
+    assert cal["trade_date"] == "2026-05-01"
+    assert "MSFT" in cal
+    assert cal["MSFT"]["last_reported"] == "2026-04-29"
+    assert cal["MSFT"]["next_expected"] == "2026-07-29"
+    assert "_unavailable" in cal
