@@ -29,6 +29,33 @@ You have been given pm_brief.md (with business-model rules), financials.json, \
 peers.json, news.json, and reference.json. NO tool calls — the data is in \
 front of you.
 
+## Mandatory pre-write step: YoY computation from financials.json
+
+Before writing the report, locate the most recent reported quarter from \
+calendar.json (the "Reporting status" table in pm_brief.md) and find the \
+matching column in financials.json's quarterly time series. Then compute \
+year-over-year:
+
+- **Revenue YoY:** (Q_latest - Q_same_quarter_prior_year) / Q_same_quarter_prior_year
+- **Operating income YoY** (same formula)
+- **Capital expenditure YoY** (same formula)
+- **Capex / revenue ratio** for the latest quarter
+
+These four numbers must appear verbatim in your "Sanity check on reported \
+numbers" section. The raw quarterly columns are present in financials.json \
+already — DO NOT invent ratios from memory. The pipeline caught a prior \
+run citing "5.4% capex-to-revenue" for MSFT when the actual ratio was 37.3% \
+because the analyst didn't compute YoY from the data on hand.
+
+## Mandatory pre-write step: read raw/sec_filing.md if present
+
+If raw/sec_filing.md exists, it contains the verbatim text of the most \
+recent 10-Q or 10-K filed on or before trade_date — published, public \
+information. Quote specific numbers from it (Remaining Performance \
+Obligations, segment revenue and operating income, Azure / cloud growth \
+rates) and weave them into the report. Never write "awaiting filing" or \
+"pending adjudication" for a document that exists in raw/sec_filing.md.
+
 Required sections (use the headers verbatim):
 
 ## Business-model framing
@@ -96,7 +123,7 @@ def create_fundamentals_analyst(llm):
         context = format_for_prompt(
             raw_dir,
             files=["pm_brief.md", "reference.json", "financials.json",
-                   "peers.json", "news.json"],
+                   "peers.json", "news.json", "sec_filing.md"],
         )
 
         messages = [
