@@ -107,12 +107,19 @@ with the formula stated inline. Three sub-rules: \
 file AND aren't a stated computation from one → FAIL. The pipeline caught a \
 prior run citing "MSFT capex/revenue 5.4%" when the actual value computed \
 from financials.json was 37.3%; that magnitude of error must be blocked here. \
-(b) **Sign + direction match source convention.** A balance-sheet aggregate \
-labeled "net cash" must be supported by a raw cell whose sign indicates net \
-cash (e.g., Total Cash + ST Investments > Total Debt). Calling a "Net Debt = \
-+$8.2B" line "$8.2B net cash" → FAIL: same number, opposite economic meaning. \
-Same rule applies to "ratio as % vs as multiplier" (0.04x net debt/EBITDA \
-must come from a 0.04x raw figure, not from 4% mislabeled). \
+(b) **Sign + direction match source convention; net-cash/net-debt labels \
+require inline arithmetic.** A balance-sheet aggregate labeled "net cash" \
+must be supported by a raw cell whose sign indicates net cash (e.g., Total \
+Cash + ST Investments > Total Debt). Calling a "Net Debt = +$8.2B" line \
+"$8.2B net cash" → FAIL: same number, opposite economic meaning. Stricter: \
+any *labeled* "net cash $X" or "net debt $X" claim must show the inline \
+arithmetic that produces $X from raw cells (e.g., "net cash = Cash $32.1B \
++ ST Investments $46.1B − Total Debt $57.0B = $21.2B"). A bare "$8.2B net \
+cash" without the computation → FAIL even if $8.2B happens to appear in \
+some raw cell, because the label's directionality is unverified. The same \
+inline-computation requirement applies to any sign-sensitive aggregate \
+(net working capital, free-cash-flow ex-acquisitions, etc.). Ratio-vs- \
+multiplier mislabels (0.04x net-debt/EBITDA presented as 4%) are also FAIL. \
 (c) **Peer-comparison deltas reconcile.** Any "MSFT capex N% above peers" or \
 "$X higher than peer average" claim must reconcile with the explicit peer \
 ratios cited elsewhere in the same document (analyst reports, debates) OR \

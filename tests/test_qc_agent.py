@@ -155,6 +155,10 @@ def test_qc_checklist_has_16_items_and_filing_anchor_text():
     # Item 16 sub-rule (b) — sign + direction (catches the $8.2B net-cash sign inversion)
     assert "Sign + direction" in _SYSTEM
     assert "net cash" in _SYSTEM and "Net Debt" in _SYSTEM
+    # Inline-arithmetic requirement — closes the bare "$8.2B net cash" label
+    # that survived the first pass of item 16(b) (cb24edf empirical run, 2026-05-05).
+    assert "inline arithmetic" in _SYSTEM
+    assert "Cash $32.1B" in _SYSTEM and "Total Debt $57.0B" in _SYSTEM
     # Item 16 sub-rule (c) — peer-delta reconciliation (catches the 5.4% above peers claim)
     assert "Peer-comparison deltas reconcile" in _SYSTEM
 
