@@ -21,143 +21,221 @@ from weasyprint import CSS, HTML
 
 
 _CSS = """
+/* Phase 6.6 — TrueKnot brand-pack tokens applied throughout.
+   Source: docs/brand/letterhead.html + docs/brand/brand-pack.html in
+   the TrueKnot Web Setup project. */
+
 @page {
     size: A4;
-    margin: 2cm 1.5cm 2cm 1.5cm;
+    margin: 2.4cm 1.5cm 2cm 1.5cm;
+
+    @top-left {
+        content: "TRUEKNOT";
+        font-size: 8.5pt;
+        color: #0a0f1e;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+    }
 
     @top-right {
         content: string(running-header);
-        font-size: 9pt;
-        color: #888;
+        font-size: 8.5pt;
+        color: #6c6f78;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    @bottom-center {
+    @bottom-left {
+        content: "TrueKnot Pte. Ltd. · trueknot.sg";
+        font-size: 7.5pt;
+        color: #a9abb0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    @bottom-right {
         content: "Page " counter(page) " of " counter(pages);
-        font-size: 9pt;
-        color: #888;
+        font-size: 7.5pt;
+        color: #a9abb0;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 }
 
 @page :first {
+    @top-left { content: ""; }
     @top-right { content: ""; }
-    @bottom-center { content: ""; }
+    @bottom-left { content: ""; }
+    @bottom-right { content: ""; }
 }
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 10.5pt;
-    line-height: 1.55;
-    color: #1d1d1f;
+    line-height: 1.65;
+    color: #0a0f1e;
 }
 
+/* ── Cover page ── */
 .cover {
     page-break-after: always;
     text-align: center;
-    padding-top: 4cm;
+    padding-top: 3cm;
+}
+
+.cover-brand {
+    margin-bottom: 2.8cm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.cover-brand-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+}
+
+.cover-knot {
+    width: 14mm;
+    height: 14mm;
+}
+
+.cover-wordmark {
+    font-size: 18pt;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: #0a0f1e;
+}
+
+.cover-tagline {
+    font-size: 10pt;
+    color: #6c6f78;
+    font-style: italic;
+    letter-spacing: 0.04em;
 }
 
 .cover .eyebrow {
-    font-size: 11pt;
-    letter-spacing: 0.3em;
-    color: #6e6e73;
+    font-size: 10pt;
+    letter-spacing: 0.32em;
+    color: #6c6f78;
     text-transform: uppercase;
     margin-bottom: 0.5em;
 }
 
 .cover .title {
-    font-size: 48pt;
-    font-weight: 700;
-    color: #000;
-    line-height: 1.05;
+    font-size: 56pt;
+    font-weight: 800;
+    color: #0a0f1e;
+    line-height: 1.0;
+    letter-spacing: -0.01em;
     margin: 0.2em 0 0.4em 0;
 }
 
 .cover .subtitle {
-    font-size: 18pt;
-    color: #424245;
+    font-size: 16pt;
+    color: #4f525d;
     margin-bottom: 3em;
+    font-weight: 400;
 }
 
 .cover .decision-badge {
     display: inline-block;
-    padding: 0.6em 1.6em;
-    background: #1d1d1f;
-    color: #fff;
-    font-size: 16pt;
-    font-weight: 600;
-    border-radius: 6px;
-    letter-spacing: 0.04em;
-    margin-bottom: 4em;
+    padding: 0.65em 1.8em;
+    background: #0a0f1e;
+    color: #ffffff;
+    font-size: 15pt;
+    font-weight: 700;
+    border-radius: 4px;
+    letter-spacing: 0.08em;
+    margin-bottom: 3.5em;
 }
 
 .cover .meta {
-    color: #6e6e73;
-    font-size: 10pt;
+    color: #6c6f78;
+    font-size: 9pt;
     line-height: 1.8;
+    letter-spacing: 0.02em;
 }
 
 .cover .disclaimer {
-    margin-top: 6em;
-    color: #86868b;
-    font-size: 8.5pt;
+    margin-top: 4em;
+    color: #a9abb0;
+    font-size: 8pt;
     font-style: italic;
-    max-width: 14cm;
+    line-height: 1.55;
+    max-width: 13cm;
     margin-left: auto;
     margin-right: auto;
 }
 
+.cover-corporate-footer {
+    position: absolute;
+    bottom: 1.2cm;
+    left: 1.5cm;
+    right: 1.5cm;
+    border-top: 0.3mm solid #e7e7e9;
+    padding-top: 0.5em;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5pt;
+    color: #a9abb0;
+    letter-spacing: 0.02em;
+}
+
+/* ── Section headers ── */
 h1 {
     font-size: 22pt;
-    font-weight: 700;
-    color: #000;
-    border-bottom: 2px solid #1d1d1f;
+    font-weight: 800;
+    color: #0a0f1e;
+    border-bottom: 0.5mm solid #0a0f1e;
     padding-bottom: 0.3em;
     margin-top: 0;
-    margin-bottom: 0.8em;
+    margin-bottom: 0.7em;
     page-break-before: always;
     string-set: running-header content();
+    letter-spacing: -0.005em;
 }
 
 h2 {
-    font-size: 15pt;
-    font-weight: 600;
-    color: #1d1d1f;
+    font-size: 14pt;
+    font-weight: 700;
+    color: #0a0f1e;
     margin-top: 1.6em;
     margin-bottom: 0.4em;
     break-after: avoid;
 }
 
 h3 {
-    font-size: 12pt;
-    font-weight: 600;
-    color: #424245;
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #4f525d;
     margin-top: 1.2em;
     margin-bottom: 0.3em;
     break-after: avoid;
+    letter-spacing: 0.01em;
 }
 
 h4, h5, h6 {
-    font-size: 11pt;
-    font-weight: 600;
-    color: #424245;
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #4f525d;
     break-after: avoid;
 }
 
 p {
     margin: 0 0 0.7em 0;
     text-align: left;
+    color: #4f525d;
 }
 
 strong {
-    font-weight: 600;
-    color: #000;
+    font-weight: 700;
+    color: #0a0f1e;
 }
 
 em {
     font-style: italic;
-    color: #1d1d1f;
+    color: #0a0f1e;
 }
 
 code, pre {
@@ -166,32 +244,35 @@ code, pre {
 }
 
 code {
-    background: #f5f5f7;
+    background: #f8f9fb;
     padding: 0.1em 0.3em;
-    border-radius: 3px;
-    color: #1d1d1f;
+    border-radius: 2px;
+    color: #0a0f1e;
+    border: 0.2mm solid #e7e7e9;
 }
 
 pre {
-    background: #f5f5f7;
+    background: #f8f9fb;
     padding: 0.9em 1.1em;
-    border-radius: 6px;
-    border-left: 3px solid #1d1d1f;
+    border-radius: 4px;
+    border-left: 0.5mm solid #0a0f1e;
     overflow-x: auto;
     margin: 1em 0;
     line-height: 1.4;
+    color: #0a0f1e;
 }
 
 pre code {
     background: transparent;
     padding: 0;
+    border: none;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     margin: 1em 0;
-    font-size: 10pt;
+    font-size: 9.5pt;
 }
 
 thead {
@@ -200,18 +281,24 @@ thead {
 }
 
 th {
-    background: #f5f5f7;
-    font-weight: 600;
+    background: #f8f9fb;
+    font-weight: 700;
     text-align: left;
     padding: 0.6em 0.8em;
-    border-bottom: 2px solid #1d1d1f;
-    color: #1d1d1f;
+    border-bottom: 0.4mm solid #0a0f1e;
+    color: #0a0f1e;
+    letter-spacing: 0.02em;
 }
 
 td {
-    padding: 0.5em 0.8em;
-    border-bottom: 1px solid #d2d2d7;
+    padding: 0.55em 0.8em;
+    border-bottom: 0.2mm solid #e7e7e9;
     vertical-align: top;
+    color: #4f525d;
+}
+
+td strong, th strong {
+    color: #0a0f1e;
 }
 
 tr:last-child td {
@@ -225,37 +312,44 @@ ul, ol {
 
 li {
     margin-bottom: 0.3em;
+    color: #4f525d;
+}
+
+li strong {
+    color: #0a0f1e;
 }
 
 blockquote {
-    border-left: 3px solid #d2d2d7;
+    border-left: 0.5mm solid #e7e7e9;
     margin: 1em 0;
     padding-left: 1em;
-    color: #424245;
+    color: #6c6f78;
     font-style: italic;
 }
 
 hr {
     border: none;
-    border-top: 1px solid #d2d2d7;
+    border-top: 0.2mm solid #e7e7e9;
     margin: 2em 0;
 }
 
 .section-pretitle {
-    font-size: 9pt;
-    color: #86868b;
+    font-size: 8.5pt;
+    color: #a9abb0;
     text-transform: uppercase;
-    letter-spacing: 0.15em;
+    letter-spacing: 0.18em;
     margin-bottom: 0.3em;
     margin-top: 0.5em;
+    font-weight: 600;
 }
 
 .appendix-divider {
     page-break-before: always;
     text-align: center;
     border: none;
-    color: #6e6e73;
-    font-size: 18pt;
+    color: #0a0f1e;
+    font-size: 22pt;
+    font-weight: 800;
     letter-spacing: 0.4em;
     text-transform: uppercase;
     padding: 6cm 0 0 0;
@@ -265,18 +359,20 @@ hr {
 .appendix-divider + .section-pretitle {
     text-align: center;
     font-size: 9pt;
-    color: #86868b;
+    color: #6c6f78;
     margin-top: 0.6em;
     margin-bottom: 4cm;
 }
 
 .exec-summary-banner {
-    background: #f5f5f7;
-    border-left: 4px solid #1d1d1f;
+    background: #f8f9fb;
+    border-left: 0.6mm solid #0a0f1e;
     padding: 1em 1.2em;
     margin: 0 0 1.5em 0;
-    font-size: 10pt;
-    color: #424245;
+    font-size: 9.5pt;
+    color: #4f525d;
+    font-style: italic;
+    line-height: 1.6;
 }
 """
 
@@ -290,18 +386,45 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <body>
 
 <div class="cover">
+    <div class="cover-brand">
+        <div class="cover-brand-lockup">
+            <svg class="cover-knot" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <mask id="cv-knot-hm" maskUnits="userSpaceOnUse" x="0" y="0" width="56" height="56">
+                        <rect width="56" height="56" fill="white"/>
+                        <rect x="14.64" y="14.64" width="10" height="10" fill="black"/>
+                        <rect x="31.36" y="31.36" width="10" height="10" fill="black"/>
+                    </mask>
+                    <mask id="cv-knot-vm" maskUnits="userSpaceOnUse" x="0" y="0" width="56" height="56">
+                        <rect width="56" height="56" fill="white"/>
+                        <rect x="31.36" y="14.64" width="10" height="10" fill="black"/>
+                        <rect x="14.64" y="31.36" width="10" height="10" fill="black"/>
+                    </mask>
+                </defs>
+                <ellipse cx="28" cy="28" rx="21" ry="8" fill="none" stroke="#0a0f1e" stroke-width="4.5" mask="url(#cv-knot-hm)"/>
+                <ellipse cx="28" cy="28" rx="8" ry="21" fill="none" stroke="#0a0f1e" stroke-width="4.5" mask="url(#cv-knot-vm)"/>
+            </svg>
+            <span class="cover-wordmark">TRUEKNOT</span>
+        </div>
+        <div class="cover-tagline">Untangle what matters.</div>
+    </div>
+
     <div class="eyebrow">Trading Research</div>
     <div class="title">{ticker}</div>
     <div class="subtitle">{date_human}</div>
     <div class="decision-badge">{decision_short}</div>
     <div class="meta">
         Generated {generated_at} SGT<br>
-        TradingAgents multi-agent pipeline · {model_label}
+        Multi-agent research pipeline · {model_label}
     </div>
     <div class="disclaimer">
         This document is research output from a simulated multi-agent decision pipeline.
         It is for educational and research purposes only and does not constitute financial,
         investment, or trading advice. Past data does not guarantee future results.
+    </div>
+    <div class="cover-corporate-footer">
+        <span>TrueKnot Pte. Ltd. &nbsp;·&nbsp; UEN 202608241M</span>
+        <span>1 Bukit Batok Cres, #05-15, Singapore 658064 &nbsp;·&nbsp; trueknot.sg</span>
     </div>
 </div>
 
