@@ -185,3 +185,128 @@ def test_researcher_writes_classification_json(tmp_path, monkeypatch):
 # NOTE: calendar.json is now written by PM Pre-flight (which runs before the
 # Researcher and has the peer list), not by the Researcher. See
 # tests/test_pm_preflight.py::test_pm_preflight_writes_calendar_json_using_extracted_peers.
+
+
+def test_researcher_writes_peer_ratios_json_and_appends_block(tmp_path, monkeypatch):
+    """Phase 6.4: after writing peers.json, the Researcher must compute
+    raw/peer_ratios.json AND append a "## Peer ratios" block to the existing
+    pm_brief.md. The block must land after any prior calendar / SEC blocks
+    (the Researcher uses 'a' open-mode)."""
+    from tradingagents.agents import researcher
+
+    # Stub data fetchers so the test doesn't network out
+    def fake_financials(t, d):
+        if t == "GOOGL":
+            return {
+                "ticker": "GOOGL",
+                "trade_date": d,
+                "fundamentals": "PE Ratio (TTM): 29.23\nForward PE: 26.68\n",
+                "balance_sheet": "",
+                "cashflow": "# header\nCapital Expenditure,-35700000000\n",
+                "income_statement": (
+                    "# header\nTotal Revenue,109900000000\n"
+                    "Operating Income,39700000000\n"
+                ),
+            }
+        return {"ticker": t}
+
+    monkeypatch.setattr(researcher, "_fetch_financials", fake_financials)
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    state = _stub_state(tmp_path, peers=("GOOGL",))
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    # PM Pre-flight already created pm_brief.md by the time the Researcher runs.
+    (raw / "pm_brief.md").write_text(
+        "# PM Pre-flight Brief\n\n## Reporting status\n(prior block)\n",
+        encoding="utf-8",
+    )
+
+    researcher.fetch_research_pack(state)
+
+    pr_path = raw / "peer_ratios.json"
+    assert pr_path.exists(), "peer_ratios.json must be written"
+    pr = json.loads(pr_path.read_text())
+    assert pr["trade_date"] == "2026-05-01"
+    assert "GOOGL" in pr
+    # 35.7B / 109.9B = 32.48%, rounded to 2 decimals
+    assert abs(pr["GOOGL"]["latest_quarter_capex_to_revenue"] - 32.48) < 0.05
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Peer ratios (computed from raw/peers.json, trade_date 2026-05-01)" in brief
+    assert "GOOGL" in brief
+    assert "32.5%" in brief  # rendered with 1 decimal
+    assert "29.23x" in brief
+    # Block must come AFTER the pre-existing "## Reporting status" header.
+    assert brief.rfind("## Peer ratios") > brief.rfind("## Reporting status")
+
+
+def test_researcher_skips_peer_ratios_when_no_peers(tmp_path, monkeypatch):
+    """No peers in state → no peer_ratios.json + no peer block."""
+    from tradingagents.agents import researcher
+
+    monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    state = _stub_state(tmp_path, peers=())
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
+
+    researcher.fetch_research_pack(state)
+
+    assert not (raw / "peer_ratios.json").exists()
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Peer ratios" not in brief
+
+
+def test_researcher_handles_peer_ratios_compute_exception(tmp_path, monkeypatch):
+    """If compute_peer_ratios raises, the Researcher degrades gracefully:
+    no peer_ratios.json, no peer block, but the rest of the run continues."""
+    from tradingagents.agents import researcher
+
+    monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    def _raises(*a, **kw):
+        raise RuntimeError("simulated peer-compute crash")
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.peer_ratios.compute_peer_ratios", _raises
+    )
+
+    state = _stub_state(tmp_path, peers=("GOOGL",))
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
+
+    researcher.fetch_research_pack(state)  # must not raise
+
+    assert not (raw / "peer_ratios.json").exists()
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Peer ratios" not in brief
+    # The rest of the run should still produce reference.json etc.
+    assert (raw / "reference.json").exists()

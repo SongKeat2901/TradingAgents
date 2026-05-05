@@ -232,34 +232,11 @@ def create_pm_preflight_node(llm):
                 f.write(footer)
             brief = brief + footer
 
-        # Phase 6.4 deterministic peer ratios: compute authoritative
-        # capex/revenue + op margin + P/E from raw/peers.json (yfinance
-        # data) and append a verbatim "## Peer ratios" block to
-        # pm_brief.md so downstream agents see ground-truth values they
-        # cannot paraphrase. Closes the 16(a) caveat-wrapping hole the
-        # Phase 6.3 audit identified (GOOGL 4.9% / AMZN 5.1% claims with
-        # caveats vs actual 32.5% / 24.4%).
-        peers_path = raw_dir / "peers.json"
-        if peers_path.exists():
-            try:
-                import json
-                from tradingagents.agents.utils.peer_ratios import (
-                    compute_peer_ratios,
-                    format_peer_ratios_block,
-                )
-                peers_data = json.loads(peers_path.read_text(encoding="utf-8"))
-                ratios = compute_peer_ratios(peers_data, date)
-                (raw_dir / "peer_ratios.json").write_text(
-                    json.dumps(ratios, indent=2, default=str),
-                    encoding="utf-8",
-                )
-                peer_block = format_peer_ratios_block(ratios)
-                if peer_block:
-                    with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
-                        f.write(peer_block)
-                    brief = brief + peer_block
-            except Exception:  # noqa: BLE001 — graceful degradation
-                pass
+        # NOTE: Phase 6.4 deterministic peer-ratios injection lives in
+        # researcher.py (which writes peers.json). PM Pre-flight runs
+        # BEFORE the Researcher, so peers.json doesn't exist here yet.
+        # See tradingagents/agents/researcher.py for the actual wiring
+        # and docs/superpowers/specs/2026-05-05-deterministic-peer-ratios-design.md.
 
         return {
             "messages": [result] if raw_content is not None else [],

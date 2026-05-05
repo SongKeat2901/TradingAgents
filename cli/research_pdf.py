@@ -266,7 +266,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="subtitle">{date_human}</div>
     <div class="decision-badge">{decision_short}</div>
     <div class="meta">
-        Generated {generated_at} UTC<br>
+        Generated {generated_at} SGT<br>
         TradingAgents multi-agent pipeline · {model_label}
     </div>
     <div class="disclaimer">
@@ -441,7 +441,7 @@ def build_research_pdf(
         date=date,
         date_human=_format_date_human(date),
         decision_short=decision_short,
-        generated_at=_dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        generated_at=_dt.datetime.now(_dt.timezone(_dt.timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"),
         model_label=_resolve_model_label(out),
         pm_brief_html=pm_brief_html,
         technicals_html=technicals_html,

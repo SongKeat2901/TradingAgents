@@ -207,3 +207,31 @@ def fetch_research_pack(state: dict) -> None:
 
     # Phase-6.2 calendar.json is written by PM Pre-flight (which runs before
     # this node and has the peer list). Read-only here.
+
+    # Phase-6.4 deterministic peer ratios: compute authoritative
+    # capex/revenue + op margin + P/E from peers_data (already in memory)
+    # and append a verbatim "## Peer ratios" block to pm_brief.md (which
+    # PM Pre-flight already created). The peer-ratios block must land
+    # AFTER the Phase 6.2 calendar table and Phase 6.3 SEC filing footer.
+    # Lives in the Researcher (not PM Pre-flight) because peers.json is
+    # only written here — PM Pre-flight runs before this node and would
+    # find peers_path.exists() == False. See docs/superpowers/specs/
+    # 2026-05-05-deterministic-peer-ratios-design.md.
+    pm_brief_path = raw / "pm_brief.md"
+    if peers_data and pm_brief_path.exists():
+        try:
+            from tradingagents.agents.utils.peer_ratios import (
+                compute_peer_ratios,
+                format_peer_ratios_block,
+            )
+            ratios = compute_peer_ratios(peers_data, date)
+            (raw / "peer_ratios.json").write_text(
+                json.dumps(ratios, indent=2, default=str),
+                encoding="utf-8",
+            )
+            peer_block = format_peer_ratios_block(ratios)
+            if peer_block:
+                with open(pm_brief_path, "a", encoding="utf-8") as f:
+                    f.write(peer_block)
+        except Exception:  # noqa: BLE001 — graceful degradation
+            pass
