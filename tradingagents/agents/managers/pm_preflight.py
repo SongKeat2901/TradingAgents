@@ -206,6 +206,32 @@ def create_pm_preflight_node(llm):
                 f.write(calendar_block)
             brief = brief + calendar_block
 
+        # Phase-6.3 filing-anchor: fetch the most recent 10-Q/10-K filed on
+        # or before the trade date from SEC EDGAR. This catches the case
+        # where the LLM hallucinates "filing pending" for a document that's
+        # already public. Only fetched for the primary ticker (peers add
+        # noise + rate-limit pressure on EDGAR).
+        from tradingagents.agents.utils.sec_edgar import fetch_latest_filing, format_for_prompt as format_sec_filing
+        try:
+            filing = fetch_latest_filing(ticker, date)
+        except Exception:
+            filing = {"unavailable": True, "reason": "fetcher raised", "ticker": ticker}
+        sec_filing_md = format_sec_filing(filing)
+        if sec_filing_md:
+            (raw_dir / "sec_filing.md").write_text(sec_filing_md, encoding="utf-8")
+            # Append a one-line filing-status note to pm_brief so the
+            # PM/analysts/debaters see it inline.
+            footer = (
+                f"\n## Recent SEC filing (relative to trade_date {date})\n\n"
+                f"- **{filing['ticker']} {filing['form']} filed {filing['filing_date']}** — "
+                f"contents already public on the trade date; full text in "
+                f"raw/sec_filing.md. Treat as **known data**, never as "
+                f"\"pending adjudication\" or \"awaiting filing\".\n"
+            )
+            with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
+                f.write(footer)
+            brief = brief + footer
+
         return {
             "messages": [result] if raw_content is not None else [],
             "pm_brief": brief,

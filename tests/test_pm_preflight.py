@@ -273,3 +273,104 @@ def test_pm_preflight_system_prompt_has_temporal_anchor():
     from tradingagents.agents.managers.pm_preflight import _SYSTEM
     assert "Temporal anchor" in _SYSTEM or "trade date as \"today\"" in _SYSTEM
     assert "data to follow" in _SYSTEM or "already occurred" in _SYSTEM
+
+
+def test_pm_preflight_writes_sec_filing_md_when_filing_available(tmp_path, monkeypatch):
+    """If fetch_latest_filing returns a happy-path dict, PM Pre-flight writes
+    raw/sec_filing.md AND appends a 'Recent SEC filing' footer to pm_brief.md."""
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    fake_filing = {
+        "ticker": "MSFT",
+        "form": "10-Q",
+        "filing_date": "2026-04-29",
+        "accession_number": "0001193125-26-191507",
+        "primary_document": "msft-20260331.htm",
+        "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526191507/msft-20260331.htm",
+        "content": "Azure and other cloud services revenue increased 40%.",
+        "content_truncated": False,
+        "source": "sec.gov",
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing",
+        lambda t, d: fake_filing,
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=_VALID_BRIEF)
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path / "raw"),
+    }
+    node(state)
+
+    sec_path = tmp_path / "raw" / "sec_filing.md"
+    assert sec_path.exists()
+    sec_content = sec_path.read_text(encoding="utf-8")
+    assert "MSFT 10-Q filed 2026-04-29" in sec_content
+    assert "Azure and other cloud services revenue increased 40%" in sec_content
+
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Recent SEC filing (relative to trade_date 2026-05-01)" in brief
+    assert "MSFT 10-Q filed 2026-04-29" in brief
+    assert "treat as **known data**" in brief.lower() or "Treat as **known data**" in brief
+
+
+def test_pm_preflight_omits_sec_filing_when_unavailable(tmp_path, monkeypatch):
+    """If fetch_latest_filing returns unavailable, PM Pre-flight must NOT write
+    raw/sec_filing.md and must NOT add the filing footer to pm_brief.md."""
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing",
+        lambda t, d: {"unavailable": True, "reason": "EDGAR unreachable", "ticker": t},
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=_VALID_BRIEF)
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path / "raw"),
+    }
+    node(state)
+
+    sec_path = tmp_path / "raw" / "sec_filing.md"
+    assert not sec_path.exists()
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "Recent SEC filing" not in brief
+
+
+def test_pm_preflight_handles_fetcher_exception(tmp_path, monkeypatch):
+    """If fetch_latest_filing raises, PM Pre-flight must degrade gracefully:
+    no sec_filing.md written, no footer, pipeline still returns normally."""
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    def _raises(t, d):
+        raise RuntimeError("simulated EDGAR client crash")
+
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing", _raises
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=_VALID_BRIEF)
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path / "raw"),
+    }
+    out = node(state)  # MUST NOT raise
+
+    sec_path = tmp_path / "raw" / "sec_filing.md"
+    assert not sec_path.exists()
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "Recent SEC filing" not in brief
+    assert out["pm_brief"] == brief
