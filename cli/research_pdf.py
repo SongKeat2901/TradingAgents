@@ -249,6 +249,35 @@ hr {
     margin-bottom: 0.3em;
     margin-top: 0.5em;
 }
+
+.appendix-divider {
+    page-break-before: always;
+    text-align: center;
+    border: none;
+    color: #6e6e73;
+    font-size: 18pt;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    padding: 6cm 0 0 0;
+    margin: 0;
+}
+
+.appendix-divider + .section-pretitle {
+    text-align: center;
+    font-size: 9pt;
+    color: #86868b;
+    margin-top: 0.6em;
+    margin-bottom: 4cm;
+}
+
+.exec-summary-banner {
+    background: #f5f5f7;
+    border-left: 4px solid #1d1d1f;
+    padding: 1em 1.2em;
+    margin: 0 0 1.5em 0;
+    font-size: 10pt;
+    color: #424245;
+}
 """
 
 
@@ -276,39 +305,47 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 </div>
 
-<h1>PM Pre-flight Brief</h1>
-<div class="section-pretitle">Run mandate, business-model classification, peer set, framing.</div>
+<h1>Executive Summary</h1>
+<div class="section-pretitle">Rating, scenario analysis, trading plan.</div>
+<div class="exec-summary-banner">Distilled from the full investment recommendation. See pages that follow for setup, technical context, and complete reasoning. Operational source material (analyst reports, debate transcripts) appears in the appendix at the back.</div>
+{executive_summary_html}
+
+<h1>Investment Thesis</h1>
+<div class="section-pretitle">Setup, business-model framing, peer set, what this run must answer.</div>
 {pm_brief_html}
 
 <h1>Technical Setup</h1>
 <div class="section-pretitle">Major historical levels, volume zones, trading playbook.</div>
 {technicals_html}
 
-<h1>Portfolio Manager — Final Decision</h1>
-<div class="section-pretitle">Synthesizes all preceding analysis into a single actionable verdict.</div>
+<h1>Investment Recommendation</h1>
+<div class="section-pretitle">Synthesizes the analyst stack and debate into the final actionable verdict.</div>
 {decision_html}
 
-<h1>Risk Team Debate</h1>
-<div class="section-pretitle">Aggressive vs Neutral vs Conservative — three voices stress-test the trader's proposal.</div>
+<h1 class="appendix-divider">Appendix</h1>
+<div class="section-pretitle">Source material — kept verbatim for review and troubleshooting.</div>
+
+<h1>Appendix A — Risk Team Debate</h1>
+<div class="section-pretitle">Aggressive vs Neutral vs Conservative — three voices stress-test the proposal.</div>
 {debate_risk_html}
 
-<h1>Bull vs Bear Debate</h1>
-<div class="section-pretitle">Adversarial researchers argue the case for and against, judged by the Research Manager.</div>
+<h1>Appendix B — Bull vs Bear Debate</h1>
+<div class="section-pretitle">Adversarial researchers argue the case for and against.</div>
 {debate_bull_bear_html}
 
-<h1>Market Analyst</h1>
+<h1>Appendix C — Market Analyst Notes</h1>
 <div class="section-pretitle">Price action, technicals, indicators.</div>
 {analyst_market_html}
 
-<h1>Fundamentals Analyst</h1>
+<h1>Appendix D — Fundamentals Analyst Notes</h1>
 <div class="section-pretitle">Earnings, valuation, balance sheet.</div>
 {analyst_fundamentals_html}
 
-<h1>News Analyst</h1>
+<h1>Appendix E — News Analyst Notes</h1>
 <div class="section-pretitle">Macroeconomic and event flow.</div>
 {analyst_news_html}
 
-<h1>Social Sentiment Analyst</h1>
+<h1>Appendix F — Social Sentiment Analyst Notes</h1>
 <div class="section-pretitle">Public sentiment and social-media mood.</div>
 {analyst_social_html}
 
@@ -373,6 +410,157 @@ def render_md_from_path(path: Path) -> str:
     return _demote_h1_to_h2(html)
 
 
+# Phase 6.5 executive-format cleanup. Replace internal multi-agent vocabulary
+# in front-of-document sections with executive-friendly prose. Appendix
+# sections are left verbatim — the user wants the operational detail
+# preserved there for review/troubleshooting.
+_AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
+    # Order matters: most-specific patterns first so generic catch-alls
+    # don't shadow them.
+    # Multi-word phrases referencing specific agent stances:
+    (r"\bAggressive's strongest punch\b", "aggressive case's strongest argument"),
+    (r"\bConservative's strongest punch\b", "conservative case's strongest argument"),
+    (r"\bAggressive overreaches\b", "The aggressive case overreaches"),
+    (r"\bThe Trader's HOLD proposal\b", "The trader proposal (HOLD)"),
+    (r"\bThe Trader's SELL proposal\b", "The trader proposal (SELL)"),
+    (r"\bTrader's HOLD proposal\b", "trader proposal (HOLD)"),
+    (r"\bTrader's SELL proposal\b", "trader proposal (SELL)"),
+    (r"\bThe Research Manager's verdict\b", "The research synthesis"),
+    (r"\bResearch Manager's verdict\b", "research synthesis"),
+    (r"\bThe Aggressive Risk Analyst's\b", "The aggressive case's"),
+    (r"\bThe Conservative Risk Analyst's\b", "The conservative case's"),
+    (r"\bThe Neutral Risk Analyst's\b", "The neutral case's"),
+    (r"\bAll three risk analysts\b", "All three risk perspectives"),
+    (r"\ball three risk analysts\b", "all three risk perspectives"),
+    # Generic agent-role names (after the specific phrases):
+    (r"\bThe Trader's\b", "The trader's"),
+    (r"\bThe Trader\b", "The trader"),
+    (r"\bThe Research Manager's\b", "The research synthesis's"),
+    (r"\bResearch Manager's\b", "research synthesis's"),
+    (r"\bResearch Manager\b", "Research synthesis"),
+    (r"\bAggressive Risk Analyst\b", "aggressive case"),
+    (r"\bConservative Risk Analyst\b", "conservative case"),
+    (r"\bNeutral Risk Analyst\b", "neutral case"),
+    (r"\bAggressive's\b", "the aggressive case's"),
+    (r"\bConservative's\b", "the conservative case's"),
+    (r"\bNeutral's\b", "the neutral case's"),
+    (r"\bthe risk debate\b", "the risk analysis"),
+    (r"\bRisk Debate\b", "Risk Analysis"),
+    # File-path leaks.
+    (r"raw/peer_ratios\.json", "the peer-ratios dataset"),
+    (r"raw/peers\.json", "the peer dataset"),
+    (r"raw/sec_filing\.md", "the 10-Q text"),
+    (r"raw/financials\.json", "the financials dataset"),
+    (r"raw/calendar\.json", "the earnings calendar"),
+    (r"raw/reference\.json", "the reference snapshot"),
+    (r"raw/classification\.json", "the technical classifier output"),
+    (r"raw/pm_brief\.md", "the setup brief"),
+    (r"\bpm_brief\.md\b", "the setup brief"),
+    (r"\bpeer_ratios\.json\b", "the peer-ratios dataset"),
+    # Internal v1/v2 pass labels.
+    (r"\bTA Agent v2\b", "Technical analysis"),
+    (r"\bTA v2\b", "Technical analysis"),
+    (r"\bTA v1\b", "Technical analysis (first pass)"),
+    (r" — v2 Report\b", ""),
+    (r" — v2\b", ""),
+    (r"\(v2\)", ""),
+    # PM Pre-flight terminology.
+    (r"\bPM Pre-flight Brief\b", "Setup brief"),
+    (r"\bPM Pre-flight\b", "Setup"),
+    # QC framework refs that occasionally leak.
+    (r"\bItem 16[a-c]?\b", "the numerical-trace check"),
+    (r"\bItem 15\b", "the filing-anchor check"),
+    (r"\bQC checklist\b", "quality check"),
+    (r"\bQC verdict\b", "quality verdict"),
+    # Inherited-debate-transcript references (these belong to debug history).
+    (r"\bprior PM transcripts\b", "prior decisions"),
+    (r"\bprior debate transcripts\b", "prior decisions"),
+    (r"\binherited from prior debate\b", "carried over from prior decisions"),
+]
+
+
+def _clean_agentic_vocabulary(text: str) -> str:
+    """Replace internal multi-agent vocabulary with executive-friendly equivalents.
+    Applied to front-of-document Markdown only (NOT appendix); the user wants
+    the operational language preserved in the appendix for troubleshooting."""
+    for pattern, replacement in _AGENTIC_VOCAB_REPLACEMENTS:
+        text = re.sub(pattern, replacement, text)
+    return text
+
+
+def _extract_section(md_text: str, section_pattern: str) -> str | None:
+    """Pull a single section (header + body) out of a Markdown document.
+    `section_pattern` is a regex that should match the header line (e.g.
+    r'^## 12-Month Scenario Analysis\\s*$'). Returns the section content
+    starting with the header up to the next same-or-higher-level header,
+    or None if not found."""
+    lines = md_text.split("\n")
+    start = None
+    header_level = None
+    for i, line in enumerate(lines):
+        if re.match(section_pattern, line):
+            start = i
+            # Count leading # characters
+            m = re.match(r"^(#+)\s", line)
+            header_level = len(m.group(1)) if m else 2
+            break
+    if start is None:
+        return None
+
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        m = re.match(r"^(#+)\s", lines[j])
+        if m and len(m.group(1)) <= header_level:
+            end = j
+            break
+    return "\n".join(lines[start:end]).rstrip()
+
+
+def _build_executive_summary_md(decision_md: str) -> str:
+    """Distil decision.md into a 1–2-page executive summary.
+
+    Pulls the scenario table, the trading plan immediate-action block, and
+    the bottom-line rating + reasoning. Skips the agent-debate synthesis,
+    the rejecting/caveats block, and the operational reconciliation tables.
+    Sections are renamed for executive presentation."""
+    if not decision_md:
+        return "_(no decision document available)_"
+
+    parts: list[str] = []
+
+    # 1. Pull final rating from any of: "## Final Rating", "## Rating: X", "## Bottom Line"
+    bottom = _extract_section(decision_md, r"^## Bottom Line\s*$")
+    if bottom:
+        # Promote h2 → h2 (kept) and replace "Bottom Line" with "Verdict"
+        bottom = re.sub(r"^## Bottom Line\s*$", "## Verdict", bottom, flags=re.MULTILINE)
+        parts.append(bottom)
+
+    # 2. Pull the scenario table (probabilities + targets + drivers).
+    scenarios = _extract_section(decision_md, r"^## 12-Month Scenario Analysis\s*$")
+    if scenarios:
+        # Trim the trailing "Rating implication" block since we already
+        # have the rating in the Bottom Line above.
+        scenarios = re.sub(
+            r"\n\*\*Rating implication.*$",
+            "",
+            scenarios,
+            flags=re.DOTALL,
+        )
+        parts.append(scenarios)
+
+    # 3. Pull the trading plan's immediate-action sub-table.
+    plan = _extract_section(decision_md, r"^### Immediate action.*$")
+    if plan:
+        parts.append("## Trading Plan\n\n" + plan.replace("### Immediate action", "### Immediate action").lstrip("# ").strip())
+
+    if not parts:
+        # Fallback: if we couldn't locate the named sections, emit a brief
+        # placeholder rather than a misleading blank page.
+        return "_(executive summary unavailable — see Investment Recommendation)_"
+
+    return "\n\n".join(parts)
+
+
 def _humanize_model_id(model_id: str | None) -> str:
     """Render a model id like 'claude-opus-4-6' as 'Opus 4.6' for the cover.
     Returns the raw id if the pattern doesn't match. None → '(unknown)'."""
@@ -414,10 +602,29 @@ def build_research_pdf(
     md = markdown.Markdown(extensions=["tables", "fenced_code", "sane_lists", "nl2br"])
 
     def render_md(filename: str) -> str:
+        """Render a Markdown file verbatim. Used for appendix sections that
+        the user wants kept intact for troubleshooting reference."""
         path = out / filename
         if not path.exists():
             return f"<p><em>(missing: {filename})</em></p>"
         text = path.read_text(encoding="utf-8")
+        return _demote_h1_to_h2(md.reset().convert(text))
+
+    def render_md_polished(filename: str) -> str:
+        """Render a Markdown file with executive-format vocabulary cleanup.
+        Used for front-of-document sections (Investment Thesis, Technical
+        Setup, Investment Recommendation, Executive Summary)."""
+        path = out / filename
+        if not path.exists():
+            return f"<p><em>(missing: {filename})</em></p>"
+        text = path.read_text(encoding="utf-8")
+        text = _clean_agentic_vocabulary(text)
+        return _demote_h1_to_h2(md.reset().convert(text))
+
+    def render_md_polished_from_path(path: Path) -> str:
+        if not path.exists():
+            return "<em>(missing)</em>"
+        text = _clean_agentic_vocabulary(path.read_text(encoding="utf-8"))
         return _demote_h1_to_h2(md.reset().convert(text))
 
     decision_md_text = ""
@@ -427,12 +634,16 @@ def build_research_pdf(
 
     decision_short = _summarize_decision(decision_md_text or decision)
 
-    pm_brief_html = render_md_from_path(out / "raw" / "pm_brief.md")
-    # Use the refined v2 view (post-analyst reconciliation) when available;
-    # fall back to v1 if v2 is missing (e.g., older runs predating TA v2).
+    # Phase 6.5: Executive Summary (page 2) — distilled from decision.md.
+    executive_summary_md = _build_executive_summary_md(decision_md_text)
+    executive_summary_md = _clean_agentic_vocabulary(executive_summary_md)
+    executive_summary_html = _demote_h1_to_h2(md.reset().convert(executive_summary_md))
+
+    # Front-of-document sections get the polish pass; appendix sections do not.
+    pm_brief_html = render_md_polished_from_path(out / "raw" / "pm_brief.md")
     technicals_v2 = out / "raw" / "technicals_v2.md"
     technicals_v1 = out / "raw" / "technicals.md"
-    technicals_html = render_md_from_path(
+    technicals_html = render_md_polished_from_path(
         technicals_v2 if technicals_v2.exists() else technicals_v1
     )
 
@@ -443,9 +654,10 @@ def build_research_pdf(
         decision_short=decision_short,
         generated_at=_dt.datetime.now(_dt.timezone(_dt.timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"),
         model_label=_resolve_model_label(out),
+        executive_summary_html=executive_summary_html,
         pm_brief_html=pm_brief_html,
         technicals_html=technicals_html,
-        decision_html=render_md("decision.md"),
+        decision_html=render_md_polished("decision.md"),
         debate_risk_html=render_md("debate_risk.md"),
         debate_bull_bear_html=render_md("debate_bull_bear.md"),
         analyst_market_html=render_md("analyst_market.md"),
