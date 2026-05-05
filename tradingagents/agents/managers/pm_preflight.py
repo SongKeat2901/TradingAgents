@@ -180,15 +180,6 @@ def create_pm_preflight_node(llm):
 
         (raw_dir / "pm_brief.md").write_text(brief, encoding="utf-8")
 
-        # Phase-6.2 temporal-anchor: append the deterministic earnings
-        # calendar AFTER the LLM-written content so dates can never be
-        # paraphrased. See docs/superpowers/specs/2026-05-05-deterministic-earnings-calendar-design.md.
-        calendar_block = _format_calendar_block(state["raw_dir"])
-        if calendar_block:
-            with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
-                f.write(calendar_block)
-            brief = brief + calendar_block
-
         peers = _extract_peers(brief)
         if not peers and "## Peer set" in brief:
             _logger.warning(
@@ -196,6 +187,24 @@ def create_pm_preflight_node(llm):
                 "for %s — check LLM format drift (expected '- TICKER: rationale')",
                 ticker,
             )
+
+        # Phase-6.2 temporal-anchor: compute the deterministic earnings
+        # calendar with the peer list we just extracted, write calendar.json,
+        # then append the Reporting status block AFTER the LLM-written content
+        # so dates can never be paraphrased. PM Pre-flight runs before the
+        # Researcher, so this is the earliest point in the graph where peers
+        # are known. See docs/superpowers/specs/2026-05-05-deterministic-earnings-calendar-design.md.
+        from tradingagents.agents.utils.calendar import compute_calendar
+        import json as _json
+        calendar = compute_calendar(date, [ticker] + peers)
+        (raw_dir / "calendar.json").write_text(
+            _json.dumps(calendar, indent=2, default=str), encoding="utf-8"
+        )
+        calendar_block = _format_calendar_block(state["raw_dir"])
+        if calendar_block:
+            with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
+                f.write(calendar_block)
+            brief = brief + calendar_block
 
         return {
             "messages": [result] if raw_content is not None else [],

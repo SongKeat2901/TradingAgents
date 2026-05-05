@@ -205,11 +205,5 @@ def fetch_research_pack(state: dict) -> None:
         json.dumps(classification, indent=2, default=str), encoding="utf-8"
     )
 
-    # Phase-6.2 temporal-anchor: deterministic earnings calendar.
-    # See tradingagents/agents/utils/calendar.py + the design spec at
-    # docs/superpowers/specs/2026-05-05-deterministic-earnings-calendar-design.md
-    from tradingagents.agents.utils.calendar import compute_calendar
-    calendar = compute_calendar(date, [ticker] + peers)
-    (raw / "calendar.json").write_text(
-        json.dumps(calendar, indent=2, default=str), encoding="utf-8"
-    )
+    # Phase-6.2 calendar.json is written by PM Pre-flight (which runs before
+    # this node and has the peer list). Read-only here.

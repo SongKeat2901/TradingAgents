@@ -8,6 +8,16 @@ from langchain_core.messages import AIMessage
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _stub_compute_calendar(monkeypatch):
+    """Prevent any test from accidentally hitting yfinance.network. Tests that
+    need calendar content override this with their own monkeypatch."""
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: {"trade_date": d, "_unavailable": []},
+    )
+
+
 _VALID_BRIEF = """\
 # PM Pre-flight Brief: MSFT 2026-05-01
 
@@ -125,17 +135,14 @@ def test_pm_preflight_handles_no_peers_etf(tmp_path):
     assert out["peers"] == []
 
 
-def test_pm_preflight_appends_calendar_block_to_brief(tmp_path):
-    """If raw/calendar.json exists, pm_brief.md must end with a deterministic
-    'Reporting status' block appended after the LLM-written content."""
-    import json as _json
+def test_pm_preflight_appends_calendar_block_to_brief(tmp_path, monkeypatch):
+    """PM Pre-flight must compute the calendar (via the peers it just extracted)
+    and append a deterministic 'Reporting status' block after the LLM content."""
     from unittest.mock import MagicMock
     from langchain_core.messages import AIMessage
     from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
 
-    raw = tmp_path / "raw"
-    raw.mkdir()
-    (raw / "calendar.json").write_text(_json.dumps({
+    fake_calendar = {
         "trade_date": "2026-05-01",
         "_unavailable": [],
         "MSFT": {
@@ -150,7 +157,11 @@ def test_pm_preflight_appends_calendar_block_to_brief(tmp_path):
             "next_expected": "2026-07-23",
             "source": "yfinance",
         },
-    }), encoding="utf-8")
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: fake_calendar,
+    )
 
     fake_llm = MagicMock()
     fake_llm.invoke.return_value = AIMessage(content="# PM Brief: MSFT 2026-05-01\n\n## Peer set\n- GOOGL: hyperscaler peer\n")
@@ -159,9 +170,12 @@ def test_pm_preflight_appends_calendar_block_to_brief(tmp_path):
     state = {
         "company_of_interest": "MSFT",
         "trade_date": "2026-05-01",
-        "raw_dir": str(raw),
+        "raw_dir": str(tmp_path / "raw"),
     }
-    node(state)
+    out = node(state)
+
+    raw = Path(state["raw_dir"])
+    assert (raw / "calendar.json").exists()
 
     brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
     assert brief.startswith("# PM Brief: MSFT 2026-05-01")
@@ -173,68 +187,82 @@ def test_pm_preflight_appends_calendar_block_to_brief(tmp_path):
     assert "already happened" in brief
     assert "2026-07-25" in brief
     assert "2026-07-23" in brief
+    assert out["pm_brief"] == brief
 
 
-def test_pm_preflight_skips_calendar_block_when_calendar_missing(tmp_path):
-    """If raw/calendar.json doesn't exist, pm_brief.md should contain only
-    the LLM content. No fallback fabrication."""
+def test_pm_preflight_writes_calendar_json_using_extracted_peers(tmp_path, monkeypatch):
+    """compute_calendar must be called with the peer list extracted from the
+    LLM brief, not with state['peers'] (PM Pre-flight runs before peers are
+    written to state by anyone else)."""
     from unittest.mock import MagicMock
     from langchain_core.messages import AIMessage
     from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
 
-    raw = tmp_path / "raw"
-    raw.mkdir()
-    # No calendar.json
+    captured = {}
+
+    def fake_compute_calendar(trade_date, tickers):
+        captured["trade_date"] = trade_date
+        captured["tickers"] = list(tickers)
+        return {"trade_date": trade_date, "_unavailable": []}
+
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        fake_compute_calendar,
+    )
 
     fake_llm = MagicMock()
-    fake_llm.invoke.return_value = AIMessage(content="# Brief content\n\n## Peer set\n- AAPL: peer\n")
+    fake_llm.invoke.return_value = AIMessage(content=(
+        "# PM Pre-flight Brief: MSFT 2026-05-01\n\n"
+        "## Peer set\n"
+        "- GOOGL: peer one\n"
+        "- AMZN: peer two\n"
+        "- ORCL: peer three\n"
+    ))
 
     node = create_pm_preflight_node(fake_llm)
-    state = {
+    node({
         "company_of_interest": "MSFT",
         "trade_date": "2026-05-01",
-        "raw_dir": str(raw),
-    }
-    node(state)
+        "raw_dir": str(tmp_path / "raw"),
+    })
 
-    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
-    assert "Reporting status" not in brief
-    assert brief.startswith("# Brief content")
+    assert captured["trade_date"] == "2026-05-01"
+    assert captured["tickers"][0] == "MSFT"
+    assert set(captured["tickers"]) == {"MSFT", "GOOGL", "AMZN", "ORCL"}
 
 
-def test_pm_preflight_calendar_block_renders_unavailable_tickers(tmp_path):
+def test_pm_preflight_calendar_block_renders_unavailable_tickers(tmp_path, monkeypatch):
     """A ticker marked unavailable in calendar.json should render '(yfinance unavailable)'."""
-    import json as _json
     from unittest.mock import MagicMock
     from langchain_core.messages import AIMessage
     from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
 
-    raw = tmp_path / "raw"
-    raw.mkdir()
-    (raw / "calendar.json").write_text(_json.dumps({
-        "trade_date": "2026-05-01",
-        "_unavailable": ["TICKERX"],
-        "MSFT": {
-            "last_reported": "2026-04-29",
-            "fiscal_period": "FY26 Q3",
-            "next_expected": "2026-07-25",
-            "source": "yfinance",
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: {
+            "trade_date": "2026-05-01",
+            "_unavailable": ["TICKERX"],
+            "MSFT": {
+                "last_reported": "2026-04-29",
+                "fiscal_period": "FY26 Q3",
+                "next_expected": "2026-07-25",
+                "source": "yfinance",
+            },
+            "TICKERX": {"unavailable": True, "reason": "yfinance returned no earnings dates"},
         },
-        "TICKERX": {"unavailable": True, "reason": "yfinance returned no earnings dates"},
-    }), encoding="utf-8")
+    )
 
     fake_llm = MagicMock()
     fake_llm.invoke.return_value = AIMessage(content="# Brief")
 
     node = create_pm_preflight_node(fake_llm)
-    state = {
+    node({
         "company_of_interest": "MSFT",
         "trade_date": "2026-05-01",
-        "raw_dir": str(raw),
-    }
-    node(state)
+        "raw_dir": str(tmp_path / "raw"),
+    })
 
-    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    brief = (Path(tmp_path) / "raw" / "pm_brief.md").read_text(encoding="utf-8")
     assert "TICKERX" in brief
     assert "yfinance unavailable" in brief.lower() or "(yfinance unavailable)" in brief
 
