@@ -22,7 +22,6 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from html.parser import HTMLParser
-from pathlib import Path
 from typing import Any
 
 
@@ -135,20 +134,20 @@ def _find_recent_filing(
     if not recent:
         return None
     for i in range(len(recent.get("form", []))):
-        if recent["form"][i] not in forms:
-            continue
         try:
+            if recent["form"][i] not in forms:
+                continue
             filing_date = datetime.strptime(recent["filingDate"][i], "%Y-%m-%d")
-        except (ValueError, KeyError):
+            if filing_date > trade_date:
+                continue
+            return {
+                "form": recent["form"][i],
+                "filing_date": recent["filingDate"][i],
+                "accession_number": recent["accessionNumber"][i],
+                "primary_document": recent["primaryDocument"][i],
+            }
+        except (ValueError, KeyError, IndexError):
             continue
-        if filing_date > trade_date:
-            continue
-        return {
-            "form": recent["form"][i],
-            "filing_date": recent["filingDate"][i],
-            "accession_number": recent["accessionNumber"][i],
-            "primary_document": recent["primaryDocument"][i],
-        }
     return None
 
 

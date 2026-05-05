@@ -154,3 +154,73 @@ def test_format_for_prompt_returns_empty_for_unavailable():
     agents fall back to LLM judgment without ground truth)."""
     from tradingagents.agents.utils import sec_edgar
     assert sec_edgar.format_for_prompt({"unavailable": True, "reason": "x", "ticker": "MSFT"}) == ""
+
+
+def test_fetch_latest_filing_skips_filing_with_missing_accession(monkeypatch):
+    """If EDGAR returns a malformed filing row (e.g. accessionNumber list is
+    shorter than the other arrays), that row must be skipped via IndexError,
+    not raised. The fetcher's never-raises contract must hold under
+    malformed-but-not-empty submissions JSON."""
+    from tradingagents.agents.utils import sec_edgar
+
+    # Two filing rows. The first row (i=0, 2026-04-29) will have a valid
+    # filingDate but accessionNumber has ZERO entries, so accessionNumber[0]
+    # raises IndexError → row 0 is skipped. The second row (i=1, 2026-01-28)
+    # also raises IndexError on accessionNumber[1] → both rows skipped →
+    # function returns None → fetch_latest_filing returns unavailable.
+    # This validates the never-raises contract: no KeyError/IndexError escapes.
+    submissions_no_accessions = json.dumps({
+        "filings": {
+            "recent": {
+                "form": ["10-Q", "10-Q"],
+                "filingDate": ["2026-04-29", "2026-01-28"],
+                "accessionNumber": [],           # both rows will IndexError here
+                "primaryDocument": ["msft-20260331.htm", "msft-20251231.htm"],
+            },
+        },
+    }).encode("utf-8")
+
+    def fake_http_get(url, timeout=30):
+        if "submissions/CIK" in url:
+            return submissions_no_accessions
+        return b"<html>doc</html>"
+    monkeypatch.setattr(sec_edgar, "_http_get", fake_http_get)
+
+    # Both rows are malformed (missing accessionNumber entries) → all skipped →
+    # unavailable returned, but crucially no IndexError raised to the caller.
+    result = sec_edgar.fetch_latest_filing("MSFT", "2026-05-01")
+    assert result["unavailable"] is True
+    # The reason must reflect missing filing, not an uncaught exception
+    assert "no 10-q or 10-k" in result["reason"].lower()
+
+
+def test_fetch_latest_filing_skips_malformed_row_continues_to_next(monkeypatch):
+    """A single malformed row (bad filingDate) must be skipped and the next
+    valid row returned — the loop must not abort on first exception."""
+    from tradingagents.agents.utils import sec_edgar
+
+    submissions = json.dumps({
+        "filings": {
+            "recent": {
+                "form": ["10-Q", "10-Q"],
+                # First row has a garbled date → ValueError → skipped.
+                # Second row is fully valid.
+                "filingDate": ["NOT-A-DATE", "2026-01-28"],
+                "accessionNumber": ["0001193125-26-191507", "0001193125-26-027207"],
+                "primaryDocument": ["msft-20260331.htm", "msft-20251231.htm"],
+            },
+        },
+    }).encode("utf-8")
+
+    def fake_http_get(url, timeout=30):
+        if "submissions/CIK" in url:
+            return submissions
+        return b"<html>doc</html>"
+    monkeypatch.setattr(sec_edgar, "_http_get", fake_http_get)
+
+    # First row (i=0) skipped due to ValueError on bad date.
+    # Second row (i=1, 2026-01-28) is valid and before trade_date 2026-05-01.
+    result = sec_edgar.fetch_latest_filing("MSFT", "2026-05-01")
+    assert result.get("unavailable") is not True
+    assert result["filing_date"] == "2026-01-28"
+    assert result["accession_number"] == "0001193125-26-027207"
