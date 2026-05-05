@@ -18,6 +18,16 @@ def _stub_compute_calendar(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _stub_fetch_latest_filing(monkeypatch):
+    """Prevent any test from accidentally hitting SEC EDGAR network. Tests
+    that need filing content override this with their own monkeypatch."""
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing",
+        lambda t, d: {"unavailable": True, "reason": "stubbed", "ticker": t},
+    )
+
+
 _VALID_BRIEF = """\
 # PM Pre-flight Brief: MSFT 2026-05-01
 
