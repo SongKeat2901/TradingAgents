@@ -268,6 +268,21 @@ def create_portfolio_manager(llm):
             f"{state.get('technicals_report', '(missing)')}\n"
         )
 
+        # Phase-6.3: surface the most recent SEC filing (10-Q/10-K) text so
+        # the PM cannot frame the decision around a "pending adjudicator"
+        # filing that's already public.
+        sec_block = ""
+        try:
+            sec_path = Path(state.get("raw_dir", "")) / "sec_filing.md"
+            if sec_path.exists():
+                sec_block = (
+                    "\n\n**Most recent SEC filing (already public on trade date — "
+                    "treat as known data, never as 'pending adjudication'):**\n"
+                    f"{sec_path.read_text(encoding='utf-8')}\n"
+                )
+        except OSError:
+            pass
+
         # If the QC agent failed the previous draft, surface its feedback at
         # the top of the prompt so the PM addresses every point on this pass.
         qc_feedback = state.get("qc_feedback", "").strip()
@@ -281,7 +296,7 @@ def create_portfolio_manager(llm):
 
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
-{instrument_context}{reference_block}{technicals_block}{qc_block}
+{instrument_context}{reference_block}{technicals_block}{sec_block}{qc_block}
 
 {instrument_context}
 

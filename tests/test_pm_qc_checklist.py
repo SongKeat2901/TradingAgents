@@ -100,3 +100,135 @@ def test_mandated_sections_includes_technical_setup_adopted():
     assert "reject" in _MANDATED_SECTIONS
     # Reasoning length floor
     assert "≤80 words" in _MANDATED_SECTIONS or "<= 80 words" in _MANDATED_SECTIONS
+
+
+def test_portfolio_manager_includes_sec_block_when_sec_filing_md_present(tmp_path, monkeypatch):
+    """When raw/sec_filing.md exists, the PM prompt must include a 'Most recent
+    SEC filing' block with the file's verbatim content + the temporal-anchor
+    instruction. Catches the Run-#2 failure mode where the PM framed the
+    already-public 10-Q as 'pending adjudication'."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "reference.json").write_text(
+        '{"ticker": "MSFT", "trade_date": "2026-05-01", "reference_price": 410.0}',
+        encoding="utf-8",
+    )
+    (raw / "sec_filing.md").write_text(
+        "# SEC Filing — MSFT 10-Q filed 2026-04-29\n\n"
+        "Azure and other cloud services revenue increased 40%.\n",
+        encoding="utf-8",
+    )
+
+    captured = {}
+    fake_llm = MagicMock()
+    # Force bind_structured to return None so invoke_structured_or_freetext
+    # routes directly to plain_llm.invoke — the path we instrument.
+    fake_llm.with_structured_output.side_effect = NotImplementedError("no structured output")
+
+    def _capture_invoke(messages):
+        if isinstance(messages, str):
+            captured["prompt"] = messages
+        else:
+            captured["prompt"] = "\n".join(
+                m.content if hasattr(m, "content") else str(m) for m in messages
+            )
+        return AIMessage(content="## Inputs\n... full PM doc ...")
+
+    fake_llm.invoke.side_effect = _capture_invoke
+
+    node = create_portfolio_manager(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(raw),
+        "risk_debate_state": {
+            "history": "",
+            "aggressive_history": "",
+            "conservative_history": "",
+            "neutral_history": "",
+            "current_aggressive_response": "",
+            "current_conservative_response": "",
+            "current_neutral_response": "",
+            "count": 0,
+        },
+        "investment_plan": "",
+        "trader_investment_plan": "",
+        "market_report": "stub",
+        "sentiment_report": "stub",
+        "news_report": "stub",
+        "fundamentals_report": "stub",
+        "technicals_report": "stub",
+        "qc_feedback": "",
+    }
+    node(state)
+
+    prompt = captured["prompt"]
+    assert "Most recent SEC filing" in prompt
+    assert "Azure and other cloud services revenue increased 40%" in prompt
+    assert "treat as known data" in prompt.lower() or "treat as **known data**" in prompt.lower()
+
+
+def test_portfolio_manager_omits_sec_block_when_sec_filing_md_missing(tmp_path):
+    """When raw/sec_filing.md is absent, the PM prompt must NOT render a
+    sec_block (no fabrication, no template residue)."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "reference.json").write_text(
+        '{"ticker": "MSFT", "trade_date": "2026-05-01", "reference_price": 410.0}',
+        encoding="utf-8",
+    )
+    # NO sec_filing.md
+
+    captured = {}
+    fake_llm = MagicMock()
+    # Force bind_structured to return None so invoke_structured_or_freetext
+    # routes directly to plain_llm.invoke — the path we instrument.
+    fake_llm.with_structured_output.side_effect = NotImplementedError("no structured output")
+
+    def _capture_invoke(messages):
+        if isinstance(messages, str):
+            captured["prompt"] = messages
+        else:
+            captured["prompt"] = "\n".join(
+                m.content if hasattr(m, "content") else str(m) for m in messages
+            )
+        return AIMessage(content="## Inputs\n... full PM doc ...")
+
+    fake_llm.invoke.side_effect = _capture_invoke
+
+    node = create_portfolio_manager(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(raw),
+        "risk_debate_state": {
+            "history": "",
+            "aggressive_history": "",
+            "conservative_history": "",
+            "neutral_history": "",
+            "current_aggressive_response": "",
+            "current_conservative_response": "",
+            "current_neutral_response": "",
+            "count": 0,
+        },
+        "investment_plan": "",
+        "trader_investment_plan": "",
+        "market_report": "stub",
+        "sentiment_report": "stub",
+        "news_report": "stub",
+        "fundamentals_report": "stub",
+        "technicals_report": "stub",
+        "qc_feedback": "",
+    }
+    node(state)
+
+    prompt = captured["prompt"]
+    assert "Most recent SEC filing" not in prompt
