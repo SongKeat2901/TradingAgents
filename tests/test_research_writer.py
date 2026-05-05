@@ -93,6 +93,38 @@ def test_state_json_round_trips(tmp_path):
     loaded = json.loads((tmp_path / "state.json").read_text())
     assert loaded["company_of_interest"] == "NVDA"
     assert "BUY" in loaded["final_trade_decision"]
+    # _meta is only added when config is provided
+    assert "_meta" not in loaded
+
+
+def test_state_json_records_model_meta_when_config_provided(tmp_path):
+    """When config is passed, state.json must capture deep_think_llm /
+    quick_think_llm / llm_provider so the PDF cover-page label can render
+    actual models instead of the historical hardcoded 'Opus 4.6 / Haiku 4.5'."""
+    from cli.research_writer import write_research_outputs
+
+    config = {
+        "deep_think_llm": "claude-opus-4-7",
+        "quick_think_llm": "claude-sonnet-4-6",
+        "llm_provider": "claude_code",
+        "deep_via_cli": True,
+    }
+    write_research_outputs(_stub_state(), str(tmp_path), config=config)
+    loaded = json.loads((tmp_path / "state.json").read_text())
+    assert loaded["_meta"]["deep_think_llm"] == "claude-opus-4-7"
+    assert loaded["_meta"]["quick_think_llm"] == "claude-sonnet-4-6"
+    assert loaded["_meta"]["llm_provider"] == "claude_code"
+    assert loaded["_meta"]["deep_via_cli"] is True
+
+
+def test_state_json_meta_does_not_mutate_caller_state(tmp_path):
+    """Adding `_meta` must not leak into the caller's state dict — the writer
+    should copy before mutating."""
+    from cli.research_writer import write_research_outputs
+
+    state = _stub_state()
+    write_research_outputs(state, str(tmp_path), config={"deep_think_llm": "x"})
+    assert "_meta" not in state
 
 
 def test_creates_output_dir_if_missing(tmp_path):

@@ -61,10 +61,30 @@ def _risk_md(state: dict[str, Any]) -> str:
     )
 
 
-def write_research_outputs(state: dict[str, Any], output_dir: str) -> list[Path]:
-    """Write all report files. Returns the list of paths written."""
+def write_research_outputs(
+    state: dict[str, Any],
+    output_dir: str,
+    config: dict[str, Any] | None = None,
+) -> list[Path]:
+    """Write all report files. Returns the list of paths written.
+
+    If ``config`` is provided, attaches a ``_meta`` block to state.json
+    recording which models were used for this run (deep / quick + provider).
+    Downstream PDF generation reads ``_meta`` so the cover-page model label
+    reflects the actual run instead of a hardcoded default.
+    """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+
+    if config is not None:
+        # Attach (don't mutate caller's dict) — copy state shallowly first.
+        state = dict(state)
+        state["_meta"] = {
+            "deep_think_llm": config.get("deep_think_llm"),
+            "quick_think_llm": config.get("quick_think_llm"),
+            "llm_provider": config.get("llm_provider"),
+            "deep_via_cli": config.get("deep_via_cli", True),
+        }
 
     files: list[tuple[str, str]] = [
         ("decision.md", _decision_md(state)),

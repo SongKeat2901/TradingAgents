@@ -12,6 +12,7 @@ pango at the OS level; on macOS install via `brew install cairo pango`.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import re
 from pathlib import Path
 
@@ -266,7 +267,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="decision-badge">{decision_short}</div>
     <div class="meta">
         Generated {generated_at} UTC<br>
-        TradingAgents multi-agent pipeline · Opus 4.6 judges · Haiku 4.5 analysts
+        TradingAgents multi-agent pipeline · {model_label}
     </div>
     <div class="disclaimer">
         This document is research output from a simulated multi-agent decision pipeline.
@@ -372,6 +373,36 @@ def render_md_from_path(path: Path) -> str:
     return _demote_h1_to_h2(html)
 
 
+def _humanize_model_id(model_id: str | None) -> str:
+    """Render a model id like 'claude-opus-4-6' as 'Opus 4.6' for the cover.
+    Returns the raw id if the pattern doesn't match. None → '(unknown)'."""
+    if not model_id:
+        return "(unknown)"
+    m = re.match(r"claude-(opus|sonnet|haiku)-(\d+)-(\d+)", model_id)
+    if m:
+        return f"{m.group(1).capitalize()} {m.group(2)}.{m.group(3)}"
+    return model_id
+
+
+def _resolve_model_label(out: Path) -> str:
+    """Read state.json's `_meta` block (if present) and render a human-readable
+    'Opus 4.6 judges · Haiku 4.5 analysts' label. Falls back to '(model not
+    recorded)' when the run pre-dates _meta or the state file is missing."""
+    state_path = out / "state.json"
+    if not state_path.exists():
+        return "(model not recorded)"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "(model not recorded)"
+    meta = state.get("_meta") or {}
+    deep = _humanize_model_id(meta.get("deep_think_llm"))
+    quick = _humanize_model_id(meta.get("quick_think_llm"))
+    if deep == "(unknown)" and quick == "(unknown)":
+        return "(model not recorded)"
+    return f"{deep} judges · {quick} analysts"
+
+
 def build_research_pdf(
     output_dir: str, ticker: str, date: str, decision: str
 ) -> Path:
@@ -411,6 +442,7 @@ def build_research_pdf(
         date_human=_format_date_human(date),
         decision_short=decision_short,
         generated_at=_dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        model_label=_resolve_model_label(out),
         pm_brief_html=pm_brief_html,
         technicals_html=technicals_html,
         decision_html=render_md("decision.md"),

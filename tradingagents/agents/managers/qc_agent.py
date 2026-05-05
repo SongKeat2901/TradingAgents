@@ -103,10 +103,22 @@ compression" / "Zx multiple" must trace verbatim to a cell in \
 raw/financials.json, raw/sec_filing.md, raw/peers.json, raw/prices.json, \
 or raw/reference.json — OR be derivable by simple arithmetic from such cells \
 with the formula stated inline. Three sub-rules: \
-(a) **Verbatim or computed.** Fabricated ratios that don't appear in any raw/ \
-file AND aren't a stated computation from one → FAIL. The pipeline caught a \
-prior run citing "MSFT capex/revenue 5.4%" when the actual value computed \
-from financials.json was 37.3%; that magnitude of error must be blocked here. \
+(a) **Verbatim or computed; caveat-wrapping does not substitute for \
+recomputation when raw data is available.** Fabricated ratios that don't \
+appear in any raw/ file AND aren't a stated computation from one → FAIL. \
+The pipeline caught a prior run citing "MSFT capex/revenue 5.4%" when the \
+actual value computed from financials.json was 37.3%; that magnitude of \
+error must be blocked here. **Stricter for peer ratios:** if raw/peers.json \
+contains the underlying quarterly capex AND revenue (or any data needed to \
+compute a cited peer ratio), the analyst MUST recompute and cite the result \
+inline (e.g., "GOOGL Q1 capex/revenue = $35.7B / $109.9B = 32.5%"). \
+Disclaiming an inherited approximation with phrases like "not revalidated", \
+"inherited from prior debate", or "treat as approximate" does NOT satisfy \
+this rule when the raw data is sitting in raw/peers.json — the c5c41e4 \
+empirical run cited "GOOGL 4.9% / AMZN 5.1%" capex intensities (actual: \
+32.5% / 24.4%) under exactly such a caveat, a 6–7× magnitude error that \
+materially weakened the bear case. Caveat-wrapping is acceptable only when \
+the raw/ files do not contain the data. \
 (b) **Sign + direction match source convention; net-cash/net-debt labels \
 require inline arithmetic.** A balance-sheet aggregate labeled "net cash" \
 must be supported by a raw cell whose sign indicates net cash (e.g., Total \

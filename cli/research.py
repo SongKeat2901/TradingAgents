@@ -262,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         graph = TradingAgentsGraph(debug=False, config=config)
         final_state, _decision = graph.propagate(args.ticker, args.date)
-        write_research_outputs(final_state, args.output_dir)
+        write_research_outputs(final_state, args.output_dir, config=config)
     except ClaudeCodeAuthError as e:
         msg = f"auth error: {e}"
         print(msg, file=sys.stderr)

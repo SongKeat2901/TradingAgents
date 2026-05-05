@@ -152,6 +152,13 @@ def test_qc_checklist_has_16_items_and_filing_anchor_text():
     # Item 16 sub-rule (a) — verbatim or computed (catches the original 5.4% bug)
     assert "Verbatim or computed" in _SYSTEM
     assert "5.4%" in _SYSTEM and "37.3%" in _SYSTEM
+    # 16(a) caveat-wrapping clause — closes the c5c41e4 hole where the PM
+    # cited GOOGL 4.9% / AMZN 5.1% capex with a "not revalidated" caveat
+    # despite raw/peers.json containing the underlying quarterly data.
+    assert "caveat-wrapping does not substitute for recomputation" in _SYSTEM.lower() \
+        or "Caveat-wrapping is acceptable only when the raw/ files do not contain the data" in _SYSTEM
+    assert "raw/peers.json" in _SYSTEM
+    assert "32.5%" in _SYSTEM  # GOOGL actual capex/revenue from c5c41e4 audit
     # Item 16 sub-rule (b) — sign + direction (catches the $8.2B net-cash sign inversion)
     assert "Sign + direction" in _SYSTEM
     assert "net cash" in _SYSTEM and "Net Debt" in _SYSTEM
