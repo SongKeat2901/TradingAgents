@@ -108,9 +108,8 @@ def test_qc_agent_includes_reference_snapshot_in_user_message(tmp_path):
     assert "2026-05-01" in user_content  # trade_date from stub
 
 
-def test_qc_system_prompt_lists_all_14_items():
-    """The QC agent's system prompt must enumerate the 14 checklist items
-    (13 original + 1 for the Technical setup adopted subsection)."""
+def test_qc_system_prompt_includes_original_14_items():
+    """Verifies that the original 14 checklist items are still present after the Phase-6.3 expansion to 16 items. Lower-bound regression check; the new 16-item count is verified by `test_qc_checklist_has_16_items_and_filing_anchor_text`."""
     from tradingagents.agents.managers.qc_agent import _SYSTEM
     for n in range(1, 15):
         assert f"{n}." in _SYSTEM, f"QC system prompt missing item {n}"

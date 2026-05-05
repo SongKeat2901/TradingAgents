@@ -8,7 +8,7 @@ call with a fresh context, so a "PASS" from QC is a real second opinion.
 Design:
 - Receives the full PM draft via state.final_trade_decision.
 - Reads raw/reference.json to verify reference_price/trade_date citations.
-- Applies the 16-item checklist (kept in sync with portfolio_manager._QC_CHECKLIST).
+- Applies the 16-item checklist (a strict superset of portfolio_manager._QC_CHECKLIST's 13 items — QC adds independent audit items 14, 15, 16 that the PM doesn't self-check).
 - Emits structured verdict: PASS or FAIL with concrete feedback.
 - On FAIL: sets state.qc_feedback (text the PM must address) and bumps
   qc_retries. The graph routes back to the PM.
