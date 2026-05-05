@@ -103,6 +103,21 @@ class TradingAgentsGraph:
             if deep_cooldown > 0:
                 deep_llm_kwargs["pre_invoke_sleep_seconds"] = deep_cooldown
 
+        # Quick tier: as of Phase 6 the analysts no longer use bind_tools()
+        # (they read pre-fetched data from raw/ via format_for_prompt). So
+        # they CAN route through the claude-CLI subprocess too, dodging the
+        # ChatAnthropic 429 that Phase 5 documented for Sonnet/Opus on the
+        # direct-API path. Default quick_via_cli=True; flip to False to
+        # restore the legacy ChatAnthropic path (e.g., to use Haiku quickly).
+        quick_llm_kwargs = dict(llm_kwargs)
+        if self.config.get("llm_provider") == "claude_code" and self.config.get(
+            "quick_via_cli", True
+        ):
+            quick_llm_kwargs["via_cli"] = True
+            quick_cli_path = self.config.get("claude_code_cli_path")
+            if quick_cli_path:
+                quick_llm_kwargs["cli_path"] = quick_cli_path
+
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["deep_think_llm"],
@@ -113,7 +128,7 @@ class TradingAgentsGraph:
             provider=self.config["llm_provider"],
             model=self.config["quick_think_llm"],
             base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+            **quick_llm_kwargs,
         )
 
         self.deep_thinking_llm = deep_client.get_llm()

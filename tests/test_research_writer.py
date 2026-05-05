@@ -108,6 +108,7 @@ def test_state_json_records_model_meta_when_config_provided(tmp_path):
         "quick_think_llm": "claude-sonnet-4-6",
         "llm_provider": "claude_code",
         "deep_via_cli": True,
+        "quick_via_cli": True,
     }
     write_research_outputs(_stub_state(), str(tmp_path), config=config)
     loaded = json.loads((tmp_path / "state.json").read_text())
@@ -115,6 +116,7 @@ def test_state_json_records_model_meta_when_config_provided(tmp_path):
     assert loaded["_meta"]["quick_think_llm"] == "claude-sonnet-4-6"
     assert loaded["_meta"]["llm_provider"] == "claude_code"
     assert loaded["_meta"]["deep_via_cli"] is True
+    assert loaded["_meta"]["quick_via_cli"] is True
 
 
 def test_state_json_meta_does_not_mutate_caller_state(tmp_path):

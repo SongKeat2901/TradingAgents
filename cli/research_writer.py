@@ -84,6 +84,7 @@ def write_research_outputs(
             "quick_think_llm": config.get("quick_think_llm"),
             "llm_provider": config.get("llm_provider"),
             "deep_via_cli": config.get("deep_via_cli", True),
+            "quick_via_cli": config.get("quick_via_cli", True),
         }
 
     files: list[tuple[str, str]] = [
