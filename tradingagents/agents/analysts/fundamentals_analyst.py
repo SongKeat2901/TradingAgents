@@ -32,9 +32,9 @@ front of you.
 ## Mandatory pre-write step: YoY computation from financials.json
 
 Before writing the report, locate the most recent reported quarter from \
-calendar.json (the "Reporting status" table in pm_brief.md) and find the \
-matching column in financials.json's quarterly time series. Then compute \
-year-over-year:
+the "Reporting status" table in pm_brief.md (appended by PM Pre-flight) \
+and find the matching column in financials.json's quarterly time series. \
+Then compute year-over-year:
 
 - **Revenue YoY:** (Q_latest - Q_same_quarter_prior_year) / Q_same_quarter_prior_year
 - **Operating income YoY** (same formula)
@@ -53,8 +53,10 @@ If raw/sec_filing.md exists, it contains the verbatim text of the most \
 recent 10-Q or 10-K filed on or before trade_date — published, public \
 information. Quote specific numbers from it (Remaining Performance \
 Obligations, segment revenue and operating income, Azure / cloud growth \
-rates) and weave them into the report. Never write "awaiting filing" or \
-"pending adjudication" for a document that exists in raw/sec_filing.md.
+rates) and weave them into the report. If the section is not marked `_(missing)_`, NEVER write "awaiting filing", \
+"pending adjudication", "data to follow", or "not yet disclosed" about its \
+contents — these phrases describe future events, but the document is \
+already public on the trade date.
 
 Required sections (use the headers verbatim):
 

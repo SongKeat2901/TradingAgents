@@ -24,7 +24,10 @@ def test_fundamentals_prompt_includes_sec_filing_read_step():
     from tradingagents.agents.analysts.fundamentals_analyst import _SYSTEM
     assert "raw/sec_filing.md" in _SYSTEM
     assert "Remaining Performance Obligations" in _SYSTEM
-    assert "awaiting filing" in _SYSTEM or "pending adjudication" in _SYSTEM
+    assert "awaiting filing" in _SYSTEM
+    assert "pending adjudication" in _SYSTEM
+    assert "data to follow" in _SYSTEM
+    assert "not yet disclosed" in _SYSTEM
 
 
 def test_fundamentals_reads_sec_filing_md_when_present(monkeypatch, tmp_path):
