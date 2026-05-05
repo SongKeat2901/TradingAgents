@@ -39,9 +39,9 @@ MODEL_OPTIONS: ProviderModeOptions = {
     },
     "claude_code": {
         "quick": [
-            ("Claude Haiku 4.5 - Fast, cheapest on subscription quota", "claude-haiku-4-5"),
-            ("Claude Sonnet 4.6 - Balanced", "claude-sonnet-4-6"),
+            ("Claude Sonnet 4.6 - Recommended for analysts (default)", "claude-sonnet-4-6"),
             ("Claude Sonnet 4.5 - Agents and coding", "claude-sonnet-4-5"),
+            ("Claude Haiku 4.5 - Fastest, cheapest on subscription quota", "claude-haiku-4-5"),
         ],
         "deep": [
             ("Claude Opus 4.7 - Latest frontier, 1M context", "claude-opus-4-7"),

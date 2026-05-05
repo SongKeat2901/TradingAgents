@@ -83,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--deep", default="claude-opus-4-7",
         help="Deep-think model id (Research Manager + Portfolio Manager).",
     )
-    p.add_argument("--quick", default="claude-haiku-4-5", help="Quick-think model id.")
+    p.add_argument("--quick", default="claude-sonnet-4-6", help="Quick-think model id.")
     p.add_argument(
         "--debate-rounds", type=int, default=1,
         help="Number of bull-bear debate rounds.",
