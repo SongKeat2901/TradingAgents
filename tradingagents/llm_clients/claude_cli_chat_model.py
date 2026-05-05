@@ -35,6 +35,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 
 _MODEL_ALIASES = {
+    "claude-opus-4-7": "opus",
     "claude-opus-4-6": "opus",
     "claude-opus-4-5": "opus",
     "claude-sonnet-4-6": "sonnet",

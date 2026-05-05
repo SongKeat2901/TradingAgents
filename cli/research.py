@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output-dir", required=True, help="Directory to write report files into.")
 
     p.add_argument(
-        "--deep", default="claude-opus-4-6",
+        "--deep", default="claude-opus-4-7",
         help="Deep-think model id (Research Manager + Portfolio Manager).",
     )
     p.add_argument("--quick", default="claude-haiku-4-5", help="Quick-think model id.")
