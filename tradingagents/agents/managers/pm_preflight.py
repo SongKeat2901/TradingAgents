@@ -80,7 +80,16 @@ instead of a peer list.
 2. <specific question>
 3. <specific question>
 
-Be concrete and falsifiable. No vague questions like "what's the outlook?"."""
+Be concrete and falsifiable. No vague questions like "what's the outlook?".
+
+# Temporal anchor
+
+Treat the trade date as "today". Events dated before it have already
+occurred — never write them as "data to follow", "upcoming", or
+"data to be reported". A "Reporting status" table will be programmatically
+appended to your output listing the most-recent and next-expected earnings
+dates for each ticker; those dates are authoritative and you do not need
+to enumerate them yourself in the brief."""
 
 
 _PEER_LINE = re.compile(
@@ -97,6 +106,59 @@ def _extract_peers(brief: str) -> list[str]:
         return []
     section = match.group(1)
     return _PEER_LINE.findall(section)
+
+
+def _format_calendar_block(raw_dir: str) -> str:
+    """Format raw/calendar.json as a 'Reporting status' Markdown block for
+    appending to pm_brief.md after the LLM call.
+
+    Returns "" if calendar.json is missing or all tickers are unavailable —
+    in which case downstream agents fall back to LLM judgment for temporal
+    reasoning (same INDETERMINATE pattern as the classifier).
+    """
+    import json as _json
+    cal_path = Path(raw_dir) / "calendar.json"
+    if not cal_path.exists():
+        return ""
+    try:
+        cal = _json.loads(cal_path.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError:
+        return ""
+
+    trade_date = cal.get("trade_date", "?")
+    unavailable_set = set(cal.get("_unavailable", []))
+
+    rows = []
+    for key, val in cal.items():
+        if key in ("trade_date", "_unavailable"):
+            continue
+        if key in unavailable_set or val.get("unavailable"):
+            rows.append(
+                f"| {key} | (yfinance unavailable) | unknown | (yfinance unavailable) |"
+            )
+            continue
+        last = val.get("last_reported", "?")
+        period = val.get("fiscal_period", "?")
+        nxt = val.get("next_expected") or "(unknown)"
+        rows.append(
+            f"| {key} | {period} reported {last} | already happened | {nxt} |"
+        )
+
+    if not rows:
+        return ""
+
+    table = "\n".join(rows)
+    return (
+        f"\n\n## Reporting status (relative to trade_date {trade_date})\n\n"
+        "| Ticker | Most recent earnings | Status | Next expected |\n"
+        "|---|---|---|---|\n"
+        f"{table}\n\n"
+        "*Use these dates verbatim. Do not write \"data to follow\" or "
+        "\"upcoming\" for rows marked \"already happened\" — they happened "
+        "before the trade date. Treat them as rear-view information that "
+        "should inform fundamental and sentiment reasoning. The \"next "
+        "expected\" dates are the forward catalyst windows.*\n"
+    )
 
 
 def create_pm_preflight_node(llm):
@@ -117,6 +179,16 @@ def create_pm_preflight_node(llm):
         brief = raw_content if raw_content else str(result)
 
         (raw_dir / "pm_brief.md").write_text(brief, encoding="utf-8")
+
+        # Phase-6.2 temporal-anchor: append the deterministic earnings
+        # calendar AFTER the LLM-written content so dates can never be
+        # paraphrased. See docs/superpowers/specs/2026-05-05-deterministic-earnings-calendar-design.md.
+        calendar_block = _format_calendar_block(state["raw_dir"])
+        if calendar_block:
+            with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
+                f.write(calendar_block)
+            brief = brief + calendar_block
+
         peers = _extract_peers(brief)
         if not peers and "## Peer set" in brief:
             _logger.warning(

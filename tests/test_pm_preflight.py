@@ -123,3 +123,125 @@ def test_pm_preflight_handles_no_peers_etf(tmp_path):
     }
     out = node(state)
     assert out["peers"] == []
+
+
+def test_pm_preflight_appends_calendar_block_to_brief(tmp_path):
+    """If raw/calendar.json exists, pm_brief.md must end with a deterministic
+    'Reporting status' block appended after the LLM-written content."""
+    import json as _json
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "calendar.json").write_text(_json.dumps({
+        "trade_date": "2026-05-01",
+        "_unavailable": [],
+        "MSFT": {
+            "last_reported": "2026-04-29",
+            "fiscal_period": "FY26 Q3",
+            "next_expected": "2026-07-25",
+            "source": "yfinance",
+        },
+        "GOOGL": {
+            "last_reported": "2026-04-22",
+            "fiscal_period": "Q1 2026",
+            "next_expected": "2026-07-23",
+            "source": "yfinance",
+        },
+    }), encoding="utf-8")
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="# PM Brief: MSFT 2026-05-01\n\n## Peer set\n- GOOGL: hyperscaler peer\n")
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(raw),
+    }
+    node(state)
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert brief.startswith("# PM Brief: MSFT 2026-05-01")
+    assert "## Reporting status (relative to trade_date 2026-05-01)" in brief
+    assert "MSFT" in brief
+    assert "FY26 Q3 reported 2026-04-29" in brief
+    assert "GOOGL" in brief
+    assert "Q1 2026 reported 2026-04-22" in brief
+    assert "already happened" in brief
+    assert "2026-07-25" in brief
+    assert "2026-07-23" in brief
+
+
+def test_pm_preflight_skips_calendar_block_when_calendar_missing(tmp_path):
+    """If raw/calendar.json doesn't exist, pm_brief.md should contain only
+    the LLM content. No fallback fabrication."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    # No calendar.json
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="# Brief content\n\n## Peer set\n- AAPL: peer\n")
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(raw),
+    }
+    node(state)
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "Reporting status" not in brief
+    assert brief.startswith("# Brief content")
+
+
+def test_pm_preflight_calendar_block_renders_unavailable_tickers(tmp_path):
+    """A ticker marked unavailable in calendar.json should render '(yfinance unavailable)'."""
+    import json as _json
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "calendar.json").write_text(_json.dumps({
+        "trade_date": "2026-05-01",
+        "_unavailable": ["TICKERX"],
+        "MSFT": {
+            "last_reported": "2026-04-29",
+            "fiscal_period": "FY26 Q3",
+            "next_expected": "2026-07-25",
+            "source": "yfinance",
+        },
+        "TICKERX": {"unavailable": True, "reason": "yfinance returned no earnings dates"},
+    }), encoding="utf-8")
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="# Brief")
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(raw),
+    }
+    node(state)
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "TICKERX" in brief
+    assert "yfinance unavailable" in brief.lower() or "(yfinance unavailable)" in brief
+
+
+def test_pm_preflight_system_prompt_has_temporal_anchor():
+    """Option A: PM Pre-flight _SYSTEM must include a Temporal anchor section
+    instructing the LLM not to fabricate past-vs-future status."""
+    from tradingagents.agents.managers.pm_preflight import _SYSTEM
+    assert "Temporal anchor" in _SYSTEM or "trade date as \"today\"" in _SYSTEM
+    assert "data to follow" in _SYSTEM or "already occurred" in _SYSTEM
