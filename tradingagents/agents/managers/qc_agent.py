@@ -8,7 +8,7 @@ call with a fresh context, so a "PASS" from QC is a real second opinion.
 Design:
 - Receives the full PM draft via state.final_trade_decision.
 - Reads raw/reference.json to verify reference_price/trade_date citations.
-- Applies the 14-item checklist (kept in sync with portfolio_manager._QC_CHECKLIST).
+- Applies the 16-item checklist (kept in sync with portfolio_manager._QC_CHECKLIST).
 - Emits structured verdict: PASS or FAIL with concrete feedback.
 - On FAIL: sets state.qc_feedback (text the PM must address) and bumps
   qc_retries. The graph routes back to the PM.
@@ -41,10 +41,10 @@ You will be given:
 - The PM's full decision document
 - The canonical reference snapshot from raw/reference.json
 
-Apply the 14-item checklist below to the document. For each item, decide PASS \
+Apply the 16-item checklist below to the document. For each item, decide PASS \
 or FAIL based on what's literally in the document — do not infer or extrapolate.
 
-# 14-item checklist
+# 16-item checklist
 
 1. Probabilities in the 12-month scenario table sum to exactly 100%.
 2. All three price targets are specific dollar values (e.g., "$485"), not \
@@ -89,6 +89,22 @@ picks one of {adopt, partially adopt, reject}, and provides ≥30-word reasoning
 that cites at least one specific analyst transcript. Skipping this subsection \
 or filling it with vague phrasing like "I adopt the technical setup" without \
 evidence → FAIL.
+15. **Filing-anchor temporal correctness.** If raw/sec_filing.md exists (the \
+most recent 10-Q or 10-K, already public on the trade date), no analyst \
+quote or PM claim may describe its contents as "pending", "awaiting \
+filing", "not yet disclosed", or as "the binary catalyst that will reprice \
+the trade". Filings already in raw/ are KNOWN DATA. The PM may legitimately \
+say a NEXT filing (e.g., the next 10-Q in 3 months) is the catalyst, but \
+not the one already on EDGAR. → FAIL on any "pending"/"awaiting" / "data \
+to follow" framing applied to the filing whose text is in raw/sec_filing.md.
+16. **Multi-decimal numerical claims trace to a specific source cell.** \
+Any claim of the form "X% capex-to-revenue" / "X% margin" / "Y bps \
+compression" / "Zx multiple" must trace verbatim to a cell in \
+raw/financials.json, raw/sec_filing.md, raw/peers.json, or raw/reference.json. \
+Fabricated peer-comparison ratios that don't appear in any raw/ file → FAIL. \
+The pipeline caught a prior run citing "MSFT capex/revenue 5.4%" when the \
+actual value computed from financials.json was 37.3%; that magnitude of \
+error must be blocked at this gate.
 
 # Output format
 
@@ -102,7 +118,7 @@ Or:
 QC_VERDICT: {"status": "FAIL", "feedback": "<≤300-word specific instruction \
 to the PM listing exactly which checklist items failed and what to fix>"}
 
-Before the verdict line, walk through each of the 14 items briefly with \
+Before the verdict line, walk through each of the 16 items briefly with \
 PASS/FAIL and one-sentence rationale. The PM will read your feedback and \
 revise — be specific, not vague."""
 
@@ -163,7 +179,7 @@ def create_qc_agent_node(llm):
         messages = [
             SystemMessage(content=_SYSTEM),
             HumanMessage(content=(
-                "Audit the document below. Apply the 14-item checklist and "
+                "Audit the document below. Apply the 16-item checklist and "
                 "emit your verdict on the last line.\n\n"
                 f"## Reference snapshot (from raw/reference.json)\n"
                 f"```json\n{reference_snapshot}\n```\n\n"

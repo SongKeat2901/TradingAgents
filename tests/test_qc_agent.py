@@ -131,3 +131,73 @@ def test_parse_verdict_handles_pass_and_fail():
     assert _parse_verdict("QC_VERDICT: not json") is None
     # No verdict line
     assert _parse_verdict("nothing here") is None
+
+
+def test_qc_checklist_has_16_items_and_filing_anchor_text():
+    """The QC system prompt must (a) declare a 16-item checklist (was 14 pre-Phase-6.3),
+    (b) include item 15 with key filing-anchor phrasing, (c) include item 16 with
+    key numerical-trace phrasing."""
+    from tradingagents.agents.managers.qc_agent import _SYSTEM
+
+    assert "16-item checklist" in _SYSTEM
+    # Item 15: filing-anchor temporal correctness
+    assert "Filing-anchor temporal correctness" in _SYSTEM
+    assert "raw/sec_filing.md" in _SYSTEM
+    assert "pending adjudication" in _SYSTEM or "awaiting filing" in _SYSTEM
+    # Item 16: numerical claims trace to source
+    assert "Multi-decimal numerical claims" in _SYSTEM
+    assert "trace" in _SYSTEM.lower()
+    assert "raw/financials.json" in _SYSTEM
+
+
+def test_qc_fails_pm_draft_calling_filed_10q_pending(tmp_path):
+    """When raw/sec_filing.md exists and the PM draft frames its content as
+    'pending adjudication', the QC verdict must be FAIL with feedback that
+    references item 15. Catches the exact Run-#2 failure mode."""
+    from tradingagents.agents.managers.qc_agent import create_qc_agent_node
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "reference.json").write_text(
+        '{"ticker": "MSFT", "trade_date": "2026-05-01", "reference_price": 410.0}',
+        encoding="utf-8",
+    )
+    (raw / "sec_filing.md").write_text(
+        "# SEC Filing — MSFT 10-Q filed 2026-04-29\n\n"
+        "Azure revenue increased 40%.\n",
+        encoding="utf-8",
+    )
+
+    pm_draft = (
+        "## Inputs to this decision\n"
+        "Reference price: $410.00 ...\n\n"
+        "## Catalyst path\n"
+        "The mid-May 10-Q is the binary catalyst pending adjudication ...\n"
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=(
+        "Item 1: PASS\n"
+        "...\n"
+        "Item 15: FAIL — PM frames the already-filed 2026-04-29 10-Q as "
+        "'pending adjudication' but raw/sec_filing.md contains its full text.\n"
+        "Item 16: PASS\n"
+        "QC_VERDICT: {\"status\": \"FAIL\", \"feedback\": "
+        "\"Item 15 violation: the 10-Q referenced as 'pending' is already "
+        "in raw/sec_filing.md (filed 2026-04-29). Rewrite the catalyst "
+        "narrative around the NEXT 10-Q (~2026-07).\"}"
+    ))
+
+    node = create_qc_agent_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(raw),
+        "final_trade_decision": pm_draft,
+        "qc_retries": 0,
+    }
+    out = node(state)
+
+    assert out.get("qc_passed") is False
+    assert "Item 15" in out.get("qc_feedback", "") or "item 15" in out.get("qc_feedback", "").lower()
+    assert "raw/sec_filing.md" in out.get("qc_feedback", "")
