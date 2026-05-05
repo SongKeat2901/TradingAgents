@@ -156,3 +156,33 @@ def test_ta_agent_v2_substitutes_deterministic_classification(tmp_path):
     assert "DETERMINISTIC CLASSIFICATION" in system_msg
     assert "BREAKDOWN" in system_msg
     assert "v2 stub rationale" in system_msg
+
+
+def test_ta_v2_reads_sec_filing_md_when_present(monkeypatch, tmp_path):
+    """TA v2 must include sec_filing.md in its prompt context so the second-pass
+    technical reviewer has fundamental context to anchor pattern interpretation.
+    TA v1 (the first-pass narrow chart-read) intentionally does NOT load it."""
+    from tradingagents.agents.analysts import ta_agent
+
+    captured_v2 = {}
+
+    def fake_format(raw_dir, files):
+        captured_v2["files"] = list(files)
+        return "stubbed context"
+
+    monkeypatch.setattr(ta_agent, "format_for_prompt", fake_format)
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="ta v2 report")
+
+    node = ta_agent.create_ta_agent_v2_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path),
+        "market_report": "stub v1 report",
+    }
+    node(state)
+
+    assert "sec_filing.md" in captured_v2["files"]
+    assert "technicals.md" in captured_v2["files"]  # existing context preserved

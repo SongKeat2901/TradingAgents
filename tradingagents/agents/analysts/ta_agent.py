@@ -170,7 +170,7 @@ def create_ta_agent_v2_node(llm):
 
         v1_context = format_for_prompt(
             raw_dir,
-            files=["technicals.md", "reference.json", "prices.json"],
+            files=["technicals.md", "reference.json", "prices.json", "sec_filing.md"],
         )
         analyst_block = (
             f"\n## Market Analyst Report\n{state.get('market_report', '(missing)')}\n\n"
