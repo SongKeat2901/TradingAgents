@@ -50,11 +50,17 @@ def _load_classification_block(raw_dir: str) -> str:
         'numbers in your "## Asymmetry" section. You may add prose, '
         "qualifying language, and additional context — but the classification "
         "name and the asymmetry numbers are fixed.\n\n"
-        "If you disagree with the classification (e.g., you see a chart "
-        "pattern the rules missed), document the disagreement under a new "
-        '"## Notes for next pass" subsection BUT still emit the '
-        "classification verbatim. The rules are load-bearing for cross-run "
-        "consistency; your prose is for nuance.\n"
+        "If — and ONLY if — you disagree with the classification (e.g., you "
+        "see a chart pattern the rules missed), document the disagreement "
+        'under a "## Notes for next pass" subsection limited to ≤3 bullets, '
+        "≤30 words each. Otherwise, omit that subsection entirely. Do not "
+        "use it as a place to monologue about the rule engine's design or "
+        "to write 'Action for downstream agents' — the rules are load-bearing "
+        "for cross-run consistency; your prose is for nuance, not "
+        "pipeline meta-commentary.\n\n"
+        "Do not append any 'Report prepared', 'Data sources', or 'Framework' "
+        "metadata footer at the bottom of your output — that information "
+        "lives in git history, not in trader-facing reports.\n"
     )
 
 

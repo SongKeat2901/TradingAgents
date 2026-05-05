@@ -51,7 +51,9 @@ Company Fundamentals Report: {fundamentals_report}
 Refined technicals report (TA Agent v2, post-analyst reconciliation): {technicals_report}
 Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the conservative analyst: {current_conservative_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting.{feedback_block}""" + _PM_FEEDBACK_HANDLER
+Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes.
+
+**Length and form constraints:** ≤400 words total. Dense paragraphs only — do NOT invent rhetorical subsection headers like "The Real Problem Both Analyses Miss" or "Where Both Analyses Break Down"; those produce 8-page essays a portfolio manager will not read. State your strongest 2-3 points, each ≤120 words, anchored to a specific number from the analyst reports or refined technicals. The PM will adjudicate; you do not need to dismantle every claim the other analysts make.{feedback_block}""" + _PM_FEEDBACK_HANDLER
 
         response = llm.invoke(prompt)
 

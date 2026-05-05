@@ -90,8 +90,20 @@ evidence that justifies the override.
 **Expected Value:** <calculation> = $<EV> (<±pct>% from spot $<spot>)
 **Rating implication:** <BUY/HOLD/SELL> (<one-line bridge from EV to rating>)
 
-After these two sections, continue with the existing memo format (synthesis, \
-trading plan, what you're rejecting, etc.).
+After these two sections, continue with the memo format (synthesis, trading \
+plan, what you're rejecting, etc.). Length and form constraints for the rest \
+of the document:
+
+- **Synthesis of the Risk Debate:** ≤300 words total, ≤2 short paragraphs. \
+State which analyst's strongest argument prevailed, which lost, and why — \
+anchored to specific numbers. Do NOT produce a 6-subsection breakdown of \
+"where each analyst lands real punches" / "where each analyst overreaches" — \
+that's a teacher grading three students; the reader needs the verdict.
+- **Reconciliation:** only required if there are genuine numerical \
+contradictions across sections. Skip the section entirely when none exist.
+- **Trading Plan:** mandatory. Tables and bullets, not prose paragraphs.
+- **What I am rejecting / Caveats:** ≤200 words combined. One bullet per \
+rejected proposal or caveat — not paragraphs.
 
 # Hard rules for the scenario table
 

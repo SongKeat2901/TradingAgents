@@ -51,7 +51,9 @@ Company Fundamentals Report: {fundamentals_report}
 Refined technicals report (TA Agent v2, post-analyst reconciliation): {technicals_report}
 Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting.{feedback_block}""" + _PM_FEEDBACK_HANDLER
+Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches.
+
+**Length and form constraints:** ≤400 words total. Dense paragraphs only — do NOT invent rhetorical subsection headers like "The Consolidation Signal is NOT a Contradiction" or "Why X is Backwards"; those produce 8-page essays a portfolio manager will not read. State your strongest 2-3 points, each ≤120 words, anchored to a specific number from the analyst reports or refined technicals. The PM will adjudicate; you do not need to dismantle every claim the other analysts make.{feedback_block}""" + _PM_FEEDBACK_HANDLER
 
         response = llm.invoke(prompt)
 

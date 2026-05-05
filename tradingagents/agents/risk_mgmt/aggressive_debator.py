@@ -51,7 +51,9 @@ Company Fundamentals Report: {fundamentals_report}
 Refined technicals report (TA Agent v2, post-analyst reconciliation): {technicals_report}
 Here is the current conversation history: {history} Here are the last arguments from the conservative analyst: {current_conservative_response} Here are the last arguments from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting.{feedback_block}""" + _PM_FEEDBACK_HANDLER
+Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal.
+
+**Length and form constraints:** ≤400 words total. Dense paragraphs only — do NOT invent rhetorical subsection headers like "The Fatal Flaw in X" or "Why Y is Backwards"; those produce 8-page essays a portfolio manager will not read. State your strongest 2-3 points, each ≤120 words, anchored to a specific number from the analyst reports or refined technicals. The PM will adjudicate; you do not need to dismantle every claim the other analysts make.{feedback_block}""" + _PM_FEEDBACK_HANDLER
 
         response = llm.invoke(prompt)
 

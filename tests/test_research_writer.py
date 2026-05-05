@@ -69,6 +69,23 @@ def test_decision_md_falls_back_to_risk_judge_decision(tmp_path):
     assert "PM: BUY at half size" in decision
 
 
+def test_debate_risk_md_does_not_duplicate_pm_decision(tmp_path):
+    """The PM judge_decision is the canonical content of decision.md and must
+    NOT also appear inside debate_risk.md — the PDF renderer renders both
+    files separately, so any inclusion here produces a duplicated 9-page
+    block. Regression test for the run-#2 PDF audit (2026-05-05)."""
+    from cli.research_writer import write_research_outputs
+
+    write_research_outputs(_stub_state(), str(tmp_path))
+    risk = (tmp_path / "debate_risk.md").read_text()
+    assert "## Aggressive" in risk
+    assert "## Neutral" in risk
+    assert "## Conservative" in risk
+    # PM decision must not be re-rendered here.
+    assert "## Portfolio Manager Decision" not in risk
+    assert "PM: BUY at half size" not in risk
+
+
 def test_state_json_round_trips(tmp_path):
     from cli.research_writer import write_research_outputs
 

@@ -50,12 +50,14 @@ def _bull_bear_md(state: dict[str, Any]) -> str:
 
 def _risk_md(state: dict[str, Any]) -> str:
     risk = state.get("risk_debate_state", {})
+    # The PM's judge_decision is the canonical content of decision.md and is
+    # rendered as its own section in the PDF. Including it here too produces
+    # a duplicated 9-page block in the final PDF.
     return (
         "# Risk Team Debate\n\n"
         f"## Aggressive\n\n{risk.get('aggressive_history', '_(empty)_')}\n\n"
         f"## Neutral\n\n{risk.get('neutral_history', '_(empty)_')}\n\n"
-        f"## Conservative\n\n{risk.get('conservative_history', '_(empty)_')}\n\n"
-        f"## Portfolio Manager Decision\n\n{risk.get('judge_decision', '_(empty)_')}\n"
+        f"## Conservative\n\n{risk.get('conservative_history', '_(empty)_')}\n"
     )
 
 
