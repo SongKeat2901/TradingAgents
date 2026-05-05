@@ -21,6 +21,14 @@ meaningful" are rejected by the Research Manager and require revision.
 4. Address the fundamentals analyst's sanity-check flags. Any item the \
 fundamentals analyst flagged ❌ must be addressed in your argument — do not \
 ignore them.
+
+5. Length and form discipline. ≤500 words total. Dense paragraphs only — \
+do NOT invent rhetorical subsection headers like "ARGUMENT 1:", "The Bull's \
+FCF Defense Ignores...", "The Real Risk:", or "Why X Is Backwards"; those \
+produce multi-page essays the Research Manager and PM will not read. State \
+your 3-4 strongest points, each ≤120 words, anchored to specific numbers \
+from the analyst reports. The Research Manager will adjudicate; you do not \
+need to dismantle every claim the bull makes.
 """
 
 
@@ -45,7 +53,7 @@ Key points to focus on:
 - Competitive Weaknesses: Emphasize vulnerabilities such as weaker market positioning, declining innovation, or threats from competitors.
 - Negative Indicators: Use evidence from financial data, market trends, or recent adverse news to support your position.
 - Bull Counterpoints: Critically analyze the bull argument with specific data and sound reasoning, exposing weaknesses or over-optimistic assumptions.
-- Engagement: Present your argument in a conversational style, directly engaging with the bull analyst's points and debating effectively rather than simply listing facts.
+- Engagement: Dense, evidence-anchored response. Address the bull's strongest counterpoint with one specific data point, then move on. No rhetorical headers, no monologue.
 
 Resources available:
 
