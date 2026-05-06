@@ -286,3 +286,33 @@ def fetch_research_pack(state: dict) -> None:
 
     with open(pm_brief_path, "a", encoding="utf-8") as f:
         f.write(peer_block)
+
+    # Phase 6.5 deterministic net-debt block: the 2026-05-06 audit found
+    # APA cited `Total Debt $6.0B` (raw=$4.59B) and ORCL had definition
+    # drift between yfinance Net Debt ($96.2B) and `Total Debt − Cash`
+    # ($114B). Append the authoritative balance-sheet cells to pm_brief.md
+    # so downstream agents quote them verbatim and QC item 16(b) becomes a
+    # cell-match check.
+    from tradingagents.agents.utils.net_debt import (
+        compute_net_debt,
+        format_net_debt_block,
+    )
+    net_debt = compute_net_debt(financials)
+    (raw / "net_debt.json").write_text(
+        json.dumps(net_debt, indent=2, default=str), encoding="utf-8"
+    )
+    net_debt_block = format_net_debt_block(net_debt)
+    if not net_debt_block:
+        # Total Debt cell missing — surface explicitly rather than letting
+        # the LLM invent figures from memory.
+        net_debt_block = (
+            f"\n\n## Net debt (computed from raw/financials.json balance_sheet, "
+            f"trade_date {date})\n\n"
+            f"**Balance-sheet net-debt cells unavailable** — "
+            f"{net_debt.get('unavailable_reason') or 'required rows missing'}. "
+            f"**Do not cite net-debt arithmetic in this report.** If leverage is "
+            f"essential to the thesis, flag it as `(balance-sheet data unavailable)` "
+            f"and do not invent figures from memory.\n"
+        )
+    with open(pm_brief_path, "a", encoding="utf-8") as f:
+        f.write(net_debt_block)

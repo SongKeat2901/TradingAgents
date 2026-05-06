@@ -132,6 +132,15 @@ some raw cell, because the label's directionality is unverified. The same \
 inline-computation requirement applies to any sign-sensitive aggregate \
 (net working capital, free-cash-flow ex-acquisitions, etc.). Ratio-vs- \
 multiplier mislabels (0.04x net-debt/EBITDA presented as 4%) are also FAIL. \
+**Stricter when the deterministic "## Net debt" block exists in raw/pm_brief.md \
+(Phase-6.5):** if the block lists authoritative balance-sheet cells (Total Debt, \
+Long Term Debt, Cash And Cash Equivalents, Cash + Short Term Investments, \
+yfinance Net Debt), every inline net-cash/net-debt arithmetic in the document \
+MUST use those exact cell values. Citing a Total Debt cell that does not match \
+the block → FAIL even when the structural form is correct; the 2026-05-06 \
+cadence's APA run showed inline arithmetic with `Total Debt $6.0B` against \
+actual $4.59B from raw/financials.json — exactly the fabricated-cell failure \
+mode the deterministic block is designed to catch. \
 (c) **Peer-comparison deltas reconcile.** Any "MSFT capex N% above peers" or \
 "$X higher than peer average" claim must reconcile with the explicit peer \
 ratios cited elsewhere in the same document (analyst reports, debates) OR \

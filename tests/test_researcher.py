@@ -260,6 +260,113 @@ def test_researcher_writes_peer_ratios_json_and_appends_block(tmp_path, monkeypa
     assert brief.rfind("## Peer ratios") > brief.rfind("## Reporting status")
 
 
+def test_researcher_writes_net_debt_json_and_appends_block(tmp_path, monkeypatch):
+    """Phase 6.5: the Researcher must compute raw/net_debt.json from the
+    main ticker's balance_sheet and append a "## Net debt" block to
+    pm_brief.md AFTER the Phase 6.4 peer-ratios block."""
+    from tradingagents.agents import researcher
+
+    main_balance_sheet = (
+        ",2025-12-31,2025-09-30\n"
+        "Net Debt,5888685000.0,8119618000.0\n"
+        "Total Debt,8236290000.0,8222065000.0\n"
+        "Long Term Debt,8158842000.0,8173587000.0\n"
+        "Current Debt,31313000.0,316000.0\n"
+        "Capital Lease Obligations,46135000.0,48162000.0\n"
+        "Cash And Cash Equivalents,2301470000.0,54285000.0\n"
+        "Cash Cash Equivalents And Short Term Investments,2301470000.0,54285000.0\n"
+    )
+
+    def fake_financials(t, d):
+        if t == "MSFT":
+            return {
+                "ticker": "MSFT", "trade_date": d, "fundamentals": "",
+                "balance_sheet": main_balance_sheet,
+                "cashflow": "", "income_statement": "",
+            }
+        # Peer must have full data for the Phase-6.4 block to render normally.
+        return {
+            "ticker": t, "trade_date": d,
+            "fundamentals": "PE Ratio (TTM): 29.23\nForward PE: 26.68\n",
+            "balance_sheet": "", "cashflow": "# header\nCapital Expenditure,-35700000000\n",
+            "income_statement": (
+                "# header\nTotal Revenue,109900000000\nOperating Income,39700000000\n"
+            ),
+        }
+
+    monkeypatch.setattr(researcher, "_fetch_financials", fake_financials)
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    state = _stub_state(tmp_path, peers=("GOOGL",))
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
+    researcher.fetch_research_pack(state)
+
+    nd_path = raw / "net_debt.json"
+    assert nd_path.exists()
+    nd = json.loads(nd_path.read_text())
+    assert nd["unavailable"] is False
+    assert nd["net_debt"] == 5_888_685_000.0
+    assert nd["net_debt_source"] == "yfinance"
+    assert nd["total_debt"] == 8_236_290_000.0
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Net debt" in brief
+    assert "Authoritative Net Debt: $5.89B" in brief
+    assert "$8.24B" in brief  # Total Debt cell — verbatim
+    # Net-debt block must follow the peer-ratios block.
+    assert brief.rfind("## Net debt") > brief.rfind("## Peer ratios")
+
+
+def test_researcher_appends_unavailable_warning_when_balance_sheet_missing(
+    tmp_path, monkeypatch
+):
+    """If Total Debt cell is missing, append an explicit "do not cite
+    net-debt arithmetic" warning instead of silently skipping."""
+    from tradingagents.agents import researcher
+
+    def fake_financials(t, d):
+        if t == "MSFT":
+            return {"ticker": "MSFT", "trade_date": d, "balance_sheet": ""}
+        return {
+            "ticker": t, "trade_date": d,
+            "fundamentals": "PE Ratio (TTM): 29.23\nForward PE: 26.68\n",
+            "balance_sheet": "", "cashflow": "# h\nCapital Expenditure,-35700000000\n",
+            "income_statement": "# h\nTotal Revenue,109900000000\nOperating Income,39700000000\n",
+        }
+
+    monkeypatch.setattr(researcher, "_fetch_financials", fake_financials)
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    state = _stub_state(tmp_path, peers=("GOOGL",))
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
+    researcher.fetch_research_pack(state)
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Net debt" in brief
+    assert "Balance-sheet net-debt cells unavailable" in brief
+    assert "Do not cite net-debt arithmetic" in brief
+
+
 def test_researcher_raises_when_peers_empty(tmp_path, monkeypatch):
     """Phase 6.4 invariant (post-2026-05-06 RCL audit): an empty peers list
     causes the LLM to fabricate peer ratios downstream. Researcher must
