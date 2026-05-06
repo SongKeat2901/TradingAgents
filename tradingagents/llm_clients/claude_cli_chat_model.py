@@ -112,9 +112,11 @@ class ClaudeCliChatModel(BaseChatModel):
     for hosts where claude is at a non-standard nvm path (e.g. trueknot
     has it at ``/Users/trueknot/.nvm/versions/node/v24.14.1/bin/claude``)."""
 
-    timeout_seconds: float = 600.0
-    """Subprocess timeout in seconds. 10 min default — accommodates the
-    occasional Opus prompt-warmup latency on cold OAuth caches."""
+    timeout_seconds: float = 900.0
+    """Subprocess timeout in seconds. 15 min default — 600s headroom proved
+    insufficient on the 2026-05-06 cadence (TSCO Fundamentals Analyst hit
+    the limit on a verbose retail-cohort peers prompt and crashed the run).
+    900s adds margin without affecting cost or steady-state behavior."""
 
     @property
     def _llm_type(self) -> str:
