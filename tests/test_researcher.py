@@ -52,9 +52,11 @@ def test_researcher_writes_all_expected_files(tmp_path, monkeypatch):
     })
 
     state = _stub_state(tmp_path)
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
     researcher.fetch_research_pack(state)
 
-    raw = Path(state["raw_dir"])
     for f in ("financials.json", "peers.json", "news.json", "insider.json",
               "social.json", "prices.json", "reference.json"):
         assert (raw / f).exists(), f"missing: {f}"
@@ -80,9 +82,12 @@ def test_researcher_writes_reference_with_numeric_values(tmp_path, monkeypatch):
     })
 
     state = _stub_state(tmp_path)
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
     researcher.fetch_research_pack(state)
 
-    ref = json.loads((Path(state["raw_dir"]) / "reference.json").read_text())
+    ref = json.loads((raw / "reference.json").read_text())
     assert ref["ticker"] == "MSFT"
     assert ref["trade_date"] == "2026-05-01"
     assert ref["reference_price"] == 410.0  # parsed from CSV row for 2026-05-01
@@ -138,9 +143,12 @@ def test_researcher_writes_peer_per_ticker(tmp_path, monkeypatch):
     monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {})
 
     state = _stub_state(tmp_path, peers=("GOOG", "META", "AAPL"))
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
     researcher.fetch_research_pack(state)
 
-    peers_data = json.loads((Path(state["raw_dir"]) / "peers.json").read_text())
+    peers_data = json.loads((raw / "peers.json").read_text())
     assert set(peers_data.keys()) == {"GOOG", "META", "AAPL"}
     assert peers_data["GOOG"]["revenue"] == 200
     # Main ticker also fetched
@@ -166,9 +174,12 @@ def test_researcher_writes_classification_json(tmp_path, monkeypatch):
     })
 
     state = _stub_state(tmp_path)
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
     researcher.fetch_research_pack(state)
 
-    cls_path = Path(state["raw_dir"]) / "classification.json"
+    cls_path = raw / "classification.json"
     assert cls_path.exists()
     cls = json.loads(cls_path.read_text())
     # Schema check — every documented key present
@@ -249,8 +260,10 @@ def test_researcher_writes_peer_ratios_json_and_appends_block(tmp_path, monkeypa
     assert brief.rfind("## Peer ratios") > brief.rfind("## Reporting status")
 
 
-def test_researcher_skips_peer_ratios_when_no_peers(tmp_path, monkeypatch):
-    """No peers in state → no peer_ratios.json + no peer block."""
+def test_researcher_raises_when_peers_empty(tmp_path, monkeypatch):
+    """Phase 6.4 invariant (post-2026-05-06 RCL audit): an empty peers list
+    causes the LLM to fabricate peer ratios downstream. Researcher must
+    raise rather than silently skip the peer-ratios block."""
     from tradingagents.agents import researcher
 
     monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {})
@@ -269,16 +282,19 @@ def test_researcher_skips_peer_ratios_when_no_peers(tmp_path, monkeypatch):
     raw.mkdir(parents=True, exist_ok=True)
     (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
 
-    researcher.fetch_research_pack(state)
+    with pytest.raises(RuntimeError, match="peers_data is empty"):
+        researcher.fetch_research_pack(state)
 
-    assert not (raw / "peer_ratios.json").exists()
-    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
-    assert "## Peer ratios" not in brief
+    # Upstream artifacts (reference / classification / financials) should
+    # still have been written — the raise happens at the peer-ratios gate.
+    assert (raw / "reference.json").exists()
+    assert (raw / "classification.json").exists()
 
 
-def test_researcher_handles_peer_ratios_compute_exception(tmp_path, monkeypatch):
-    """If compute_peer_ratios raises, the Researcher degrades gracefully:
-    no peer_ratios.json, no peer block, but the rest of the run continues."""
+def test_researcher_propagates_peer_ratios_compute_exception(tmp_path, monkeypatch):
+    """If compute_peer_ratios raises, the exception must propagate (no bare
+    `except: pass`). Shipping a peer-less brief lets the LLM fabricate
+    ratios — fail-fast is the safer default."""
     from tradingagents.agents import researcher
 
     monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {})
@@ -303,10 +319,68 @@ def test_researcher_handles_peer_ratios_compute_exception(tmp_path, monkeypatch)
     raw.mkdir(parents=True, exist_ok=True)
     (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
 
-    researcher.fetch_research_pack(state)  # must not raise
-
-    assert not (raw / "peer_ratios.json").exists()
-    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
-    assert "## Peer ratios" not in brief
-    # The rest of the run should still produce reference.json etc.
+    with pytest.raises(RuntimeError, match="simulated peer-compute crash"):
+        researcher.fetch_research_pack(state)
     assert (raw / "reference.json").exists()
+
+
+def test_researcher_raises_when_pm_brief_missing(tmp_path, monkeypatch):
+    """If PM Pre-flight failed (pm_brief.md absent), Researcher must raise
+    rather than continue without the deterministic blocks."""
+    from tradingagents.agents import researcher
+
+    monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    state = _stub_state(tmp_path, peers=("GOOGL",))
+    # NOTE: deliberately do NOT create pm_brief.md
+    with pytest.raises(RuntimeError, match="pm_brief.md does not exist"):
+        researcher.fetch_research_pack(state)
+
+
+def test_researcher_appends_unavailable_warning_when_all_peers_unavailable(tmp_path, monkeypatch):
+    """When peers_data has entries but every peer's compute returns
+    `unavailable: True` (yfinance returned degenerate rows), the Researcher
+    must still append an explicit "do not fabricate" warning to pm_brief.md
+    so the LLM sees the gap rather than inventing numbers from memory."""
+    from tradingagents.agents import researcher
+
+    # Peers return non-empty fetch results but with NO income_statement /
+    # cashflow rows, so compute_peer_ratios marks them all unavailable.
+    monkeypatch.setattr(
+        researcher, "_fetch_financials",
+        lambda t, d: {"ticker": t, "trade_date": d, "fundamentals": "",
+                      "balance_sheet": "", "cashflow": "", "income_statement": ""},
+    )
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0),
+        "close_200_sma": _INDICATOR_STUB(460.0),
+        "atr": _INDICATOR_STUB(8.0),
+    })
+
+    state = _stub_state(tmp_path, peers=("CCL", "NCLH"))
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
+    researcher.fetch_research_pack(state)
+
+    assert (raw / "peer_ratios.json").exists()
+    ratios = json.loads((raw / "peer_ratios.json").read_text())
+    assert set(ratios["_unavailable"]) == {"CCL", "NCLH"}
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Peer ratios" in brief
+    assert "All peers unavailable" in brief
+    assert "Do not cite peer ratios" in brief

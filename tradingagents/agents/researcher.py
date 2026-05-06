@@ -217,21 +217,72 @@ def fetch_research_pack(state: dict) -> None:
     # only written here — PM Pre-flight runs before this node and would
     # find peers_path.exists() == False. See docs/superpowers/specs/
     # 2026-05-05-deterministic-peer-ratios-design.md.
+    # Phase 6.4 invariant: the deterministic peer-ratios block must land in
+    # pm_brief.md every run, or downstream LLM agents fill the void with
+    # fabricated peer numbers (RCL 2026-05-06: peers.json was {}, the block
+    # never appended, decision.md cited NCLH/CCL/VIK ratios that came from
+    # nowhere). Three guarded paths replace the prior silent-skip:
+    #
+    #   1. pm_brief.md missing → PM Pre-flight failed; raise.
+    #   2. peers_data empty   → upstream peer-discovery returned nothing;
+    #                           raise rather than ship a peer-less brief.
+    #   3. all peers unavailable → write peer_ratios.json with the
+    #                              `_unavailable` list AND append an explicit
+    #                              "do not fabricate" warning block so the
+    #                              LLM sees the gap and refuses to invent
+    #                              numbers.
     pm_brief_path = raw / "pm_brief.md"
-    if peers_data and pm_brief_path.exists():
-        try:
-            from tradingagents.agents.utils.peer_ratios import (
-                compute_peer_ratios,
-                format_peer_ratios_block,
+    if not pm_brief_path.exists():
+        raise RuntimeError(
+            "Phase 6.4 invariant: pm_brief.md does not exist before the "
+            "Researcher's peer-ratios block runs. PM Pre-flight likely "
+            "failed silently; investigate before re-running."
+        )
+    if not peers_data:
+        raise RuntimeError(
+            "Phase 6.4 invariant: peers_data is empty (peers.json wrote `{}`). "
+            "Upstream peer-discovery returned no peers; the LLM will fabricate "
+            "peer ratios downstream if this run is allowed to proceed. Fix the "
+            "peer-lookup path for this ticker rather than shipping without a "
+            "peer-ratios block."
+        )
+
+    from tradingagents.agents.utils.peer_ratios import (
+        compute_peer_ratios,
+        format_peer_ratios_block,
+    )
+    ratios = compute_peer_ratios(peers_data, date)
+    (raw / "peer_ratios.json").write_text(
+        json.dumps(ratios, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+    # If every peer is unavailable, the standard format renders a table of
+    # `(unavailable)` rows — technically correct but the same trailing
+    # "Use these values verbatim" footer can read as "use these unavailable
+    # cells", which the LLM may interpret as license to substitute memory.
+    # Override with an explicit "do not fabricate" warning instead.
+    unavailable = set(ratios.get("_unavailable", []))
+    peer_keys = [k for k in ratios.keys() if k not in ("trade_date", "_unavailable")]
+    if peer_keys and unavailable == set(peer_keys):
+        peer_block = (
+            f"\n\n## Peer ratios (computed from raw/peers.json, trade_date {date})\n\n"
+            "**All peers unavailable** — yfinance returned degenerate or missing "
+            "data (revenue/operating-income/capex rows) for every peer in "
+            "raw/peers.json. **Do not cite peer ratios in this report.** If a "
+            "peer comparison is essential to the thesis, flag it as `(peer data "
+            "unavailable)` and do not invent figures from memory.\n"
+        )
+    else:
+        peer_block = format_peer_ratios_block(ratios)
+        if not peer_block:
+            # Defensive: peers_data was non-empty but format returned ""
+            # (all entries were non-dict, etc.). Surface the gap loudly.
+            peer_block = (
+                f"\n\n## Peer ratios (computed from raw/peers.json, trade_date {date})\n\n"
+                "**Peer-ratios table could not be rendered** from raw/peers.json. "
+                "**Do not cite peer ratios in this report.**\n"
             )
-            ratios = compute_peer_ratios(peers_data, date)
-            (raw / "peer_ratios.json").write_text(
-                json.dumps(ratios, indent=2, default=str),
-                encoding="utf-8",
-            )
-            peer_block = format_peer_ratios_block(ratios)
-            if peer_block:
-                with open(pm_brief_path, "a", encoding="utf-8") as f:
-                    f.write(peer_block)
-        except Exception:  # noqa: BLE001 — graceful degradation
-            pass
+
+    with open(pm_brief_path, "a", encoding="utf-8") as f:
+        f.write(peer_block)
