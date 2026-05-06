@@ -56,7 +56,13 @@ def _parse_ohlcv(ohlcv_csv: str) -> list[tuple[str, float, float, float, float, 
 
 
 def _gap_pct(spot: float, target: float) -> float:
-    return (spot - target) / spot * 100.0
+    # Standard finance convention: percentage move from the reference (target)
+    # to the spot, denominator = reference. Earlier drafts divided by spot,
+    # which silently understated upside gaps and overstated downside gaps
+    # whenever spot diverged materially from the MA — surfaced by the
+    # 2026-05-06 cadence audit (APA: 35.9 reported vs 56.0 correct;
+    # RCL: -12.38 reported vs -11.02 correct).
+    return (spot - target) / target * 100.0
 
 
 def _is_top_decile_volume(latest_volume: float, recent_volumes: list[float]) -> bool:

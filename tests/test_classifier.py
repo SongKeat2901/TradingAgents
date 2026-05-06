@@ -198,6 +198,40 @@ def test_top_decile_handles_thin_history():
     assert _is_top_decile_volume(40, [50]) is False
 
 
+def test_gap_pct_uses_reference_as_denominator_apa_rcl_fixtures():
+    # Regression for the 2026-05-06 cadence audit: gap_to_200dma_pct must
+    # use 200-DMA as the denominator, not spot. The earlier formula
+    # ((spot-MA)/spot) understated APA's gap (+35.9 vs correct +56.0) and
+    # overstated RCL's downside (-12.38 vs correct -11.02).
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    apa = _ref(
+        reference_price=41.78,
+        spot_50dma=37.05,
+        spot_200dma=26.78,
+        ytd_high=45.36,
+        ytd_low=22.88,
+        atr_14=1.71,
+    )
+    out = compute_classification(apa, _ohlcv(_flat_history(41.78)))
+    assert out["setup_class"] == "UPTREND"
+    assert abs(out["gap_to_200dma_pct"] - 56.01) < 0.05
+    assert abs(out["gap_to_50dma_pct"] - 12.77) < 0.05
+
+    rcl = _ref(
+        reference_price=263.98,
+        spot_50dma=277.24,
+        spot_200dma=296.67,
+        ytd_high=354.50,
+        ytd_low=250.38,
+        atr_14=12.45,
+    )
+    out = compute_classification(rcl, _ohlcv(_flat_history(263.98)))
+    assert out["setup_class"] == "DOWNTREND"
+    assert abs(out["gap_to_200dma_pct"] - (-11.02)) < 0.05
+    assert abs(out["gap_to_50dma_pct"] - (-4.78)) < 0.05
+
+
 def test_asymmetry_math_basic():
     from tradingagents.agents.utils.classifier import compute_classification
 
