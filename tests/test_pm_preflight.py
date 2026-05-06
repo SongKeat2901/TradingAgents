@@ -119,6 +119,34 @@ def test_pm_preflight_extracts_peers_with_markdown_bold(tmp_path):
     assert sorted(out["peers"]) == ["AMZN", "GOOGL", "ORCL"]
 
 
+def test_pm_preflight_extracts_peers_with_parenthesized_company_name(tmp_path):
+    """Regression for TSCO 2026-05-06: the LLM emits the form
+    `- **BOOT** (Boot Barn): rationale` for retail/specialty peers. The prior
+    regex required `**:` directly and silently dropped these lines, causing
+    peers.json to write `{}` and the Researcher's Phase 6.4 invariant gate
+    to fire. The expanded regex must accept the parenthesized expansion."""
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    tsco_brief = """\
+# PM Pre-flight Brief: TSCO 2026-05-06
+
+## Peer set
+- **BOOT** (Boot Barn): rural/Western-lifestyle specialty retailer with overlapping customer.
+- **CHWY** (Chewy): pet-category benchmark — pet/livestock is ~half of TSCO's revenue.
+- **DKS** (Dick's Sporting Goods): comparable specialty big-box hardlines retailer.
+- **ORLY** (O'Reilly Automotive): cleanest publicly-traded comp for "specialty hardlines".
+"""
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=tsco_brief)
+    node = create_pm_preflight_node(fake_llm)
+    out = node({
+        "company_of_interest": "TSCO",
+        "trade_date": "2026-05-06",
+        "raw_dir": str(tmp_path / "raw"),
+    })
+    assert sorted(out["peers"]) == ["BOOT", "CHWY", "DKS", "ORLY"]
+
+
 def test_pm_preflight_handles_no_peers_etf(tmp_path):
     from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
 

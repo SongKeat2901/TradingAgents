@@ -93,7 +93,13 @@ to enumerate them yourself in the brief."""
 
 
 _PEER_LINE = re.compile(
-    r"^-\s+(?:\*{1,2})?([A-Z]{1,5})(?:\*{1,2})?\s*:\s",
+    # `- TICKER: ...` / `- **TICKER**: ...` / `- *TICKER*: ...` and now also
+    # `- **TICKER** (Company Name): ...` (the format the LLM emitted for
+    # TSCO 2026-05-06, which the prior regex's strict `**:` requirement
+    # silently dropped — peers.json wrote `{}` and the run crashed at the
+    # Phase 6.4 invariant gate). The optional `(...)` group consumes a
+    # parenthesized company-name expansion before the colon.
+    r"^-\s+(?:\*{1,2})?([A-Z]{1,5})(?:\*{1,2})?(?:\s+\([^)\n]+\))?\s*:\s",
     re.MULTILINE,
 )
 
