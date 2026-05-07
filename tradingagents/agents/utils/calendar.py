@@ -72,6 +72,22 @@ def _compute_one_ticker(symbol: str, trade_date: str) -> dict[str, Any]:
     """Pull earnings_dates for one ticker; split past/future."""
     try:
         ticker = yf.Ticker(symbol)
+        # Phase 6.8: detect ETFs / mutual funds / indices upfront. They
+        # don't report earnings, so attempting an earnings_dates call and
+        # rendering "(yfinance unavailable)" misleads the reader into
+        # thinking data was supposed to exist. Surface the structural
+        # truth instead. yfinance .info is a dict; quoteType is the
+        # canonical field. Some ETFs return None / missing — fall through
+        # to the earnings path in that case (rare; safer to try).
+        info = getattr(ticker, "info", None) or {}
+        quote_type = (info.get("quoteType") or "").upper()
+        if quote_type in ("ETF", "MUTUALFUND", "INDEX"):
+            return {
+                "unavailable": True,
+                "structural": True,
+                "instrument_type": quote_type,
+                "reason": f"{quote_type.lower()} — no earnings reporting",
+            }
         earnings = ticker.earnings_dates
     except Exception as exc:
         return {"unavailable": True, "reason": f"yfinance error: {exc}"}

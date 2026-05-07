@@ -642,8 +642,25 @@ def _clean_agentic_vocabulary(text: str) -> str:
 _LLM_DIRECTIVE_PATTERNS: list[str] = [
     # Calendar block instruction tail (italic standalone paragraph).
     r"\*Use these dates verbatim\..*?catalyst windows\.\*",
-    # Peer ratios block instruction tail (italic standalone paragraph).
-    r"\*Use these values verbatim\..*?from memory\.\*",
+    # Peer ratios block instruction tail. The Phase 6.4 v1 footer ended at
+    # "from memory.*"; the v2 footer (commit bc7f289) extended past that with
+    # the ND/EBITDA = (n/m) explanation, ending at "substitute multiple).*".
+    # The original `from memory\.\*` regex broke once v2 shipped because the
+    # closing `*` is no longer adjacent to "from memory." — the new pattern
+    # captures through the ND/EBITDA paragraph.
+    r"\*Use these values verbatim\..*?(?:substitute multiple\)|from memory)\.\*",
+    # Phase 6.5 net-debt block footer. v1 ended at "Do not introduce cells
+    # not in this table.***"; v2 (commit 499f4bd) extended with the AMD
+    # 10-Q crosscheck reference, ending at "...not present in either source.***".
+    # The non-greedy regex captures both shapes.
+    r"\*Use the cells above verbatim\..*?(?:in either source|in this table)\.\*\*\*",
+    # Phase 6.4 v2 + Phase 6.5 v2 unavailable warnings. These appear when
+    # peer_ratios.json or net_debt cells couldn't be computed; the warning
+    # itself is an LLM imperative ("Do not cite peer ratios in this report")
+    # that an executive reader doesn't need to see.
+    r"\*\*All peers unavailable\*\*[\s\S]*?from memory\.\n",
+    r"\*\*Balance-sheet net-debt cells unavailable\*\*[\s\S]*?from memory\.\n",
+    r"\*\*Peer-ratios table could not be rendered\*\*[\s\S]*?\.\n",
     # SEC filing footer suffix: "; full text in raw/sec_filing.md. Treat as
     # **known data**, never as "pending adjudication" or "awaiting filing"."
     # The whole tail is operational metadata + LLM imperative; an executive
@@ -697,18 +714,40 @@ def _extract_section(md_text: str, section_pattern: str) -> str | None:
 
 
 def _build_executive_summary_md(decision_md: str) -> str:
-    """Distil decision.md into a 1–2-page executive summary.
+    """Distil decision_executive.md (Phase 6.7) or decision.md into a 1-page
+    executive summary for page 2 of the PDF.
 
-    Pulls the scenario table, the trading plan immediate-action block, and
-    the bottom-line rating + reasoning. Skips the agent-debate synthesis,
-    the rejecting/caveats block, and the operational reconciliation tables.
-    Sections are renamed for executive presentation."""
+    Phase 6.7 path (preferred): when the input has the "## Executive Summary"
+    header, pull that section + "## Rating and Trading Plan" verbatim. The
+    Executive PM has already produced stakeholder-voiced content; no
+    additional regex extraction needed beyond picking the load-bearing
+    sections.
+
+    Pre-Phase-6.7 fallback: input is the old PM working-notes format (Bottom
+    Line / 12-Month Scenario Analysis / Immediate action). Used when the
+    Executive PM output is missing — e.g., older runs, or runs where the
+    working notes were empty so the Executive PM short-circuited.
+    """
     if not decision_md:
         return "_(no decision document available)_"
 
     parts: list[str] = []
 
-    # 1. Pull final rating from any of: "## Final Rating", "## Rating: X", "## Bottom Line"
+    # Phase 6.7 path: input is decision_executive.md with the new template.
+    if "## Executive Summary" in decision_md:
+        exec_sum = _extract_section(decision_md, r"^## Executive Summary\s*$")
+        if exec_sum:
+            parts.append(exec_sum)
+        rating_plan = _extract_section(decision_md, r"^## Rating and Trading Plan\s*$")
+        if rating_plan:
+            parts.append(rating_plan)
+        if parts:
+            return "\n\n".join(parts)
+        # If the new sections somehow weren't found despite the header,
+        # fall through to the pre-Phase-6.7 path (defensive).
+
+    # Pre-Phase-6.7 path: input is decision.md with old section names.
+    # 1. Pull final rating from "## Bottom Line".
     bottom = _extract_section(decision_md, r"^## Bottom Line\s*$")
     if bottom:
         # Promote h2 → h2 (kept) and replace "Bottom Line" with "Verdict"

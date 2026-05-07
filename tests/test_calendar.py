@@ -121,6 +121,56 @@ def test_fiscal_period_derivation_calendar_year_company():
     assert out["GOOGL"]["fiscal_period"] == "Q1 2026"
 
 
+def test_etf_returns_structural_unavailable():
+    """Phase 6.8: ETFs / mutual funds / indices don't have earnings, so the
+    calendar must short-circuit with a structural N/A label rather than
+    fetching earnings_dates and stamping `(yfinance unavailable)`. Surfaced
+    by the COIN 2026-05-06 run where IBIT (iShares Bitcoin Trust) appeared
+    in the calendar table as `IBIT (yfinance unavailable) unknown
+    (yfinance unavailable)` — misleading because it wasn't a transient data
+    failure, it was a structural truth (ETFs don't report earnings)."""
+    from tradingagents.agents.utils.calendar import compute_calendar
+
+    fake_etf = MagicMock()
+    fake_etf.info = {"quoteType": "ETF", "shortName": "iShares Bitcoin Trust"}
+    # earnings_dates should not be fetched on an ETF — set a tripwire.
+    type(fake_etf).earnings_dates = property(
+        lambda self: (_ for _ in ()).throw(
+            AssertionError("earnings_dates should not be queried for ETFs")
+        )
+    )
+
+    with patch("tradingagents.agents.utils.calendar.yf.Ticker", return_value=fake_etf):
+        out = compute_calendar("2026-05-06", ["IBIT"])
+
+    assert out["IBIT"]["unavailable"] is True
+    assert out["IBIT"].get("structural") is True
+    assert out["IBIT"].get("instrument_type") == "ETF"
+    assert "no earnings reporting" in out["IBIT"]["reason"].lower()
+    assert "IBIT" in out["_unavailable"]
+
+
+def test_mutualfund_and_index_treated_as_structural_unavailable():
+    """Same path for mutual funds and indices."""
+    from tradingagents.agents.utils.calendar import compute_calendar
+
+    def _ticker_factory(symbol):
+        m = MagicMock()
+        if symbol == "FXAIX":
+            m.info = {"quoteType": "MUTUALFUND"}
+        elif symbol == "^GSPC":
+            m.info = {"quoteType": "INDEX"}
+        return m
+
+    with patch("tradingagents.agents.utils.calendar.yf.Ticker", side_effect=_ticker_factory):
+        out = compute_calendar("2026-05-06", ["FXAIX", "^GSPC"])
+
+    assert out["FXAIX"]["structural"] is True
+    assert out["FXAIX"]["instrument_type"] == "MUTUALFUND"
+    assert out["^GSPC"]["structural"] is True
+    assert out["^GSPC"]["instrument_type"] == "INDEX"
+
+
 def test_no_past_earnings_returns_unavailable():
     from tradingagents.agents.utils.calendar import compute_calendar
 

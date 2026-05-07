@@ -141,9 +141,21 @@ def _format_calendar_block(raw_dir: str) -> str:
         if key in ("trade_date", "_unavailable"):
             continue
         if key in unavailable_set or val.get("unavailable"):
-            rows.append(
-                f"| {key} | (yfinance unavailable) | unknown | (yfinance unavailable) |"
-            )
+            # Phase 6.8: separate structural-N/A (passive ETF / index — no
+            # earnings concept) from transient-unavailable (yfinance returned
+            # nothing for what should be a reporting equity). The former
+            # gets a clear "passive instrument" label; the latter keeps the
+            # original "yfinance unavailable" so the LLM doesn't fabricate.
+            if val.get("structural"):
+                instrument = (val.get("instrument_type") or "passive").lower()
+                rows.append(
+                    f"| {key} | (N/A — {instrument}; no earnings reporting) | "
+                    f"n/a | (N/A — {instrument}) |"
+                )
+            else:
+                rows.append(
+                    f"| {key} | (yfinance unavailable) | unknown | (yfinance unavailable) |"
+                )
             continue
         last = val.get("last_reported", "?")
         period = val.get("fiscal_period", "?")

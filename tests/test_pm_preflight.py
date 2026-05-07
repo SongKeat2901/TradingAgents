@@ -305,6 +305,55 @@ def test_pm_preflight_calendar_block_renders_unavailable_tickers(tmp_path, monke
     assert "yfinance unavailable" in brief.lower() or "(yfinance unavailable)" in brief
 
 
+def test_pm_preflight_calendar_block_renders_etf_as_structural_na(tmp_path, monkeypatch):
+    """Phase 6.8: ETF rows in the calendar must render with the structural
+    N/A label (passive instrument — no earnings reporting), NOT as
+    `(yfinance unavailable)`. Surfaced by COIN 2026-05-06 where IBIT
+    appeared as `IBIT (yfinance unavailable) unknown (yfinance
+    unavailable)` — misleading because ETFs don't report earnings."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: {
+            "trade_date": "2026-05-06",
+            "_unavailable": ["IBIT"],
+            "COIN": {
+                "last_reported": "2026-02-12",
+                "fiscal_period": "Q4 2025",
+                "next_expected": "2026-05-07",
+                "source": "yfinance",
+            },
+            "IBIT": {
+                "unavailable": True,
+                "structural": True,
+                "instrument_type": "ETF",
+                "reason": "etf — no earnings reporting",
+            },
+        },
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="# Brief")
+
+    node = create_pm_preflight_node(fake_llm)
+    node({
+        "company_of_interest": "COIN",
+        "trade_date": "2026-05-06",
+        "raw_dir": str(tmp_path / "raw"),
+    })
+
+    brief = (Path(tmp_path) / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    # The misleading "yfinance unavailable" must NOT appear for the ETF
+    ibit_line = next(line for line in brief.splitlines() if line.startswith("| IBIT"))
+    assert "yfinance unavailable" not in ibit_line.lower()
+    # Instead the structural N/A label is shown
+    assert "no earnings reporting" in ibit_line.lower()
+    assert "etf" in ibit_line.lower()
+
+
 def test_pm_preflight_system_prompt_has_temporal_anchor():
     """Option A: PM Pre-flight _SYSTEM must include a Temporal anchor section
     instructing the LLM not to fabricate past-vs-future status."""

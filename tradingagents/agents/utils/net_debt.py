@@ -195,12 +195,23 @@ def format_net_debt_block(net_debt: dict[str, Any]) -> str:
     nd = net_debt.get("net_debt")
     nd_source = net_debt.get("net_debt_source") or "?"
 
-    nd_line = (
-        f"**Authoritative Net Debt: {_fmt_b(nd)}**"
-        f" (source: {nd_source}, col 0 of raw/financials.json balance_sheet)"
-        if nd is not None
-        else "**Net Debt: (n/a)** — yfinance Net Debt row absent and inputs incomplete."
-    )
+    # Phase 6.8 stakeholder-polish: when net_debt is negative, the company
+    # is net-cash-positive (cash + STI exceeds total debt). Calling that
+    # "Net Debt: $-4.08B" forces the reader to flip the sign mentally.
+    # Standard finance convention is to relabel as "Net Cash" with the
+    # absolute value displayed.
+    if nd is None:
+        nd_line = "**Net Debt: (n/a)** — yfinance Net Debt row absent and inputs incomplete."
+    elif nd < 0:
+        nd_line = (
+            f"**Authoritative Net Cash: {_fmt_b(-nd)}**"
+            f" (source: {nd_source}, col 0 of raw/financials.json balance_sheet)"
+        )
+    else:
+        nd_line = (
+            f"**Authoritative Net Debt: {_fmt_b(nd)}**"
+            f" (source: {nd_source}, col 0 of raw/financials.json balance_sheet)"
+        )
 
     # When both Cash And Cash Equivalents and a separate STI row are present,
     # render the STI cell explicitly so the LLM sees the composite breakdown
@@ -213,12 +224,31 @@ def format_net_debt_block(net_debt: dict[str, Any]) -> str:
         else ""
     )
 
+    # Phase 6.8: same sign-flip applies to the yfinance-row line in the
+    # cell table — render as "Net Cash" with the positive magnitude when
+    # the underlying value is negative, so the table reads coherently
+    # rather than `Net Debt | $-4.08B`.
+    yf_nd = net_debt.get("net_debt") if net_debt.get("net_debt_source") == "yfinance" else None
+    if yf_nd is None:
+        yf_label = "Net Debt (yfinance row)"
+        yf_display = _fmt_b(None)
+    elif yf_nd < 0:
+        yf_label = "Net Cash (yfinance row)"
+        yf_display = _fmt_b(-yf_nd)
+    else:
+        yf_label = "Net Debt (yfinance row)"
+        yf_display = _fmt_b(yf_nd)
+
+    # Section header also relabels for the net-cash case so the section
+    # title doesn't read "## Net debt" for a net-cash-positive ticker.
+    section_label = "Net cash" if (nd is not None and nd < 0) else "Net debt"
+
     return (
-        f"\n\n## Net debt (computed from raw/financials.json balance_sheet, "
+        f"\n\n## {section_label} (computed from raw/financials.json balance_sheet, "
         f"trade_date {trade_date}, col 0 = quarter ending {as_of})\n\n"
         "| Cell | Value (col 0) |\n"
         "|---|---|\n"
-        f"| Net Debt (yfinance row) | {_fmt_b(net_debt.get('net_debt') if net_debt.get('net_debt_source') == 'yfinance' else None)} |\n"
+        f"| {yf_label} | {yf_display} |\n"
         f"| Total Debt | {_fmt_b(net_debt.get('total_debt'))} |\n"
         f"| Long Term Debt | {_fmt_b(net_debt.get('long_term_debt'))} |\n"
         f"| Current Debt | {_fmt_b(net_debt.get('current_debt'))} |\n"

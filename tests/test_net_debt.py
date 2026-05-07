@@ -244,6 +244,66 @@ def test_format_net_debt_block_omits_sti_line_when_only_composite_present():
     assert sti_lines == []
 
 
+def test_format_net_debt_block_relabels_negative_as_net_cash():
+    """Phase 6.8 stakeholder-polish: negative net debt → relabel as
+    "Net Cash" with positive magnitude, instead of `Net Debt: $-4.08B`
+    which forces the reader to flip the sign mentally. The COIN
+    2026-05-06 run surfaced this — −$4.08B is net-cash-positive, not
+    "negative net debt"."""
+    from tradingagents.agents.utils.net_debt import format_net_debt_block
+
+    nd = {
+        "trade_date": "2026-05-06",
+        "as_of_quarter": "2025-12-31",
+        "net_debt": -4_082_607_000.0,  # COIN net-cash-positive
+        "net_debt_source": "computed",
+        "total_debt": 7_830_000_000.0,
+        "long_term_debt": 5_940_000_000.0,
+        "current_debt": 1_720_000_000.0,
+        "capital_lease_obligations": 173_000_000.0,
+        "cash_and_equivalents": 11_290_000_000.0,
+        "cash_plus_short_term_investments": 11_910_000_000.0,
+        "unavailable": False,
+    }
+    block = format_net_debt_block(nd)
+
+    # No awkward `$-X.XXB` artifacts in the rendered block (it should
+    # have been flipped to a positive Net Cash value).
+    assert "Net Cash" in block
+    assert "Authoritative Net Cash: $4.08B" in block
+    # Section header also relabels for the net-cash case
+    assert "## Net cash" in block
+    # The old confusing rendering must NOT appear
+    assert "$-4.08B" not in block
+    assert "Authoritative Net Debt:" not in block
+
+
+def test_format_net_debt_block_keeps_net_debt_label_when_positive():
+    """Sanity: positive net debt (typical leveraged company) still
+    renders as Net Debt; the relabel only fires for negative values."""
+    from tradingagents.agents.utils.net_debt import format_net_debt_block
+
+    nd = {
+        "trade_date": "2026-05-06",
+        "as_of_quarter": "2025-12-31",
+        "net_debt": 5_888_685_000.0,  # MSTR net-debt-positive
+        "net_debt_source": "yfinance",
+        "total_debt": 8_236_290_000.0,
+        "long_term_debt": 8_158_842_000.0,
+        "current_debt": 31_313_000.0,
+        "capital_lease_obligations": 46_135_000.0,
+        "cash_and_equivalents": 2_301_470_000.0,
+        "cash_plus_short_term_investments": 2_301_470_000.0,
+        "unavailable": False,
+    }
+    block = format_net_debt_block(nd)
+
+    assert "Authoritative Net Debt: $5.89B" in block
+    assert "## Net debt" in block
+    # No accidental "Net Cash" relabel
+    assert "Authoritative Net Cash" not in block
+
+
 def test_format_net_debt_block_includes_period_crosscheck_note():
     """The block must explicitly tell the LLM that 10-Q cells in raw/sec_filing.md
     may be more current than balance_sheet col 0 — the AMD 2026-05-06 finding
