@@ -112,11 +112,13 @@ class ClaudeCliChatModel(BaseChatModel):
     for hosts where claude is at a non-standard nvm path (e.g. trueknot
     has it at ``/Users/trueknot/.nvm/versions/node/v24.14.1/bin/claude``)."""
 
-    timeout_seconds: float = 900.0
-    """Subprocess timeout in seconds. 15 min default — 600s headroom proved
-    insufficient on the 2026-05-06 cadence (TSCO Fundamentals Analyst hit
-    the limit on a verbose retail-cohort peers prompt and crashed the run).
-    900s adds margin without affecting cost or steady-state behavior."""
+    timeout_seconds: float = 1800.0
+    """Subprocess timeout in seconds. 30 min default — 900s proved insufficient
+    on the 2026-05-06 re-run cadence (COIN Fundamentals Analyst timed out at
+    900s on a Phase-6.4/6.5-augmented prompt with crypto-exchange peers and
+    full sec_filing.md context). 1800s adds margin without affecting cost or
+    steady-state behavior; if a ticker is still hitting this, the prompt
+    itself needs trimming (sec_filing.md excerpt instead of full 10-K text)."""
 
     @property
     def _llm_type(self) -> str:
