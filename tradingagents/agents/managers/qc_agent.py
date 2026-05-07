@@ -148,7 +148,20 @@ mode the deterministic block is designed to catch. \
 ratios cited elsewhere in the same document (analyst reports, debates) OR \
 with values in raw/peers.json. If the bull says "GOOGL/AMZN average 8–9% \
 capex/revenue" and a sibling section says "MSFT 5% above peers", the peer \
-delta is internally inconsistent → FAIL.
+delta is internally inconsistent → FAIL. \
+**Stricter for peer leverage / valuation multiples (Phase-6.4 extension):** \
+the deterministic "## Peer ratios" block in raw/pm_brief.md now lists seven \
+columns per peer — Q1 capex/revenue, Q1 op margin, TTM P/E, Forward P/E, \
+**Net Debt, TTM EBITDA, ND/EBITDA**. Any peer Net Debt, EBITDA, or ND/EBITDA \
+claim in the document MUST use the block's authoritative values. Inventing \
+"RIOT EV/EBITDA ~12×, CIFR ND/EBITDA ~1.5×, CLSK op margin ~5%" when the \
+block's actual cells say something else (the 2026-05-06 MARA decision \
+fabricated those exact numbers; CLSK op margin was -37.83%, sign-flipped) → \
+FAIL. **Column-consistent retrieval:** when the block lists both TTM and \
+Forward P/E for a peer, do not cite a Forward value labeled as TTM or vice \
+versa (the 2026-05-06 REGN re-run cited "BIIB 11.5x TTM" when 11.52 is \
+BIIB's Forward P/E and BIIB's TTM is 20.44 — column drift that reverses \
+the bear-case compression target).
 
 # Output format
 

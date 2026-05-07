@@ -6,7 +6,8 @@ pytestmark = pytest.mark.unit
 
 def _stub_peer(income_rows: list[tuple[str, list[float]]],
                cashflow_rows: list[tuple[str, list[float]]],
-               fundamentals_text: str = "") -> dict:
+               fundamentals_text: str = "",
+               balance_sheet_rows: list[tuple[str, list[float]]] | None = None) -> dict:
     """Build a minimal peers.json sub-tree for one peer."""
     def _csv(rows):
         out = "# header line\n"
@@ -17,7 +18,7 @@ def _stub_peer(income_rows: list[tuple[str, list[float]]],
         "ticker": "TEST",
         "trade_date": "2026-05-01",
         "fundamentals": fundamentals_text,
-        "balance_sheet": "",
+        "balance_sheet": _csv(balance_sheet_rows) if balance_sheet_rows else "",
         "cashflow": _csv(cashflow_rows),
         "income_statement": _csv(income_rows),
     }
@@ -183,3 +184,194 @@ def test_compute_peer_ratios_top_level_metadata():
     assert out["_unavailable"] == []
     # Empty input — no peers in output beyond bookkeeping
     assert set(out.keys()) == {"trade_date", "_unavailable"}
+
+
+# ---------------------------------------------------------------------------
+# Phase-6.4 leverage extension (2026-05-07): Net Debt + TTM EBITDA + ND/EBITDA
+# ---------------------------------------------------------------------------
+
+def test_compute_peer_ratios_extracts_net_debt_and_ebitda():
+    """When balance_sheet has Net Debt and fundamentals has EBITDA, the
+    output dict must include net_debt + ttm_ebitda + nd_ebitda. Regression
+    for the 2026-05-06 MARA decision that fabricated `RIOT EV/EBITDA ~12×,
+    CIFR ND/EBITDA ~1.5×, CLSK op margin ~5%` (actual CLSK op margin
+    -37.83%, sign-flipped) — the Phase-6.4 deterministic block had no
+    leverage cells to anchor the LLM."""
+    from tradingagents.agents.utils.peer_ratios import compute_peer_ratios
+
+    peers_data = {
+        "RIOT": _stub_peer(
+            income_rows=[
+                ("Total Revenue", [167_219_000]),
+                ("Operating Income", [-121_348_000]),
+            ],
+            cashflow_rows=[
+                ("Capital Expenditure", [-131_649_000]),
+            ],
+            balance_sheet_rows=[
+                ("Net Debt", [636_497_000]),
+                ("Total Debt", [877_185_000]),
+                ("Cash And Cash Equivalents", [205_666_000]),
+            ],
+            fundamentals_text=(
+                "PE Ratio (TTM): 0\nForward PE: 0\nEBITDA: -326712000\n"
+            ),
+        ),
+    }
+    out = compute_peer_ratios(peers_data, "2026-05-06")
+    r = out["RIOT"]
+    assert r["net_debt"] == 636_497_000
+    assert r["ttm_ebitda"] == -326_712_000
+    # EBITDA negative → ND/EBITDA uninterpretable → None (formatter renders n/m)
+    assert r["nd_ebitda"] is None
+
+
+def test_compute_peer_ratios_nd_ebitda_when_positive_ebitda():
+    """ND/EBITDA computes when TTM EBITDA > 0 (typical mature peer case)."""
+    from tradingagents.agents.utils.peer_ratios import compute_peer_ratios
+
+    peers_data = {
+        "DVN": _stub_peer(
+            income_rows=[
+                ("Total Revenue", [3_840_000_000]),
+                ("Operating Income", [785_000_000]),
+            ],
+            cashflow_rows=[
+                ("Capital Expenditure", [-870_000_000]),
+            ],
+            balance_sheet_rows=[
+                ("Net Debt", [6_960_000_000]),
+            ],
+            fundamentals_text="PE Ratio (TTM): 12.33\nForward PE: 9.49\nEBITDA: 5_000_000_000\n".replace("_", ""),
+        ),
+    }
+    out = compute_peer_ratios(peers_data, "2026-05-06")
+    d = out["DVN"]
+    assert d["net_debt"] == 6_960_000_000
+    assert d["ttm_ebitda"] == 5_000_000_000
+    assert d["nd_ebitda"] is not None
+    assert abs(d["nd_ebitda"] - 1.39) < 0.05  # 6.96 / 5.00
+
+
+def test_compute_peer_ratios_falls_back_to_total_debt_minus_cash():
+    """If balance_sheet lacks the Net Debt row, compute net_debt from
+    Total Debt - (Cash + STI)."""
+    from tradingagents.agents.utils.peer_ratios import compute_peer_ratios
+
+    peers_data = {
+        "NONETDEBTROW": _stub_peer(
+            income_rows=[
+                ("Total Revenue", [10_000_000_000]),
+                ("Operating Income", [2_000_000_000]),
+            ],
+            cashflow_rows=[
+                ("Capital Expenditure", [-1_000_000_000]),
+            ],
+            balance_sheet_rows=[
+                # Net Debt row deliberately absent
+                ("Total Debt", [3_000_000_000]),
+                ("Cash And Cash Equivalents", [800_000_000]),
+            ],
+            fundamentals_text="PE Ratio (TTM): 15.0\nForward PE: 13.0\nEBITDA: 1_500_000_000\n".replace("_", ""),
+        ),
+    }
+    out = compute_peer_ratios(peers_data, "2026-05-06")
+    p = out["NONETDEBTROW"]
+    assert p["net_debt"] == 2_200_000_000  # 3B - 0.8B
+    assert p["ttm_ebitda"] == 1_500_000_000
+    # 2.2 / 1.5 = 1.467
+    assert abs(p["nd_ebitda"] - 1.47) < 0.05
+
+
+def test_format_peer_ratios_block_renders_seven_columns():
+    """The rendered table must include Net Debt + TTM EBITDA + ND/EBITDA
+    columns AFTER the four original columns; (n/m) renders for negative
+    EBITDA peers."""
+    from tradingagents.agents.utils.peer_ratios import (
+        compute_peer_ratios,
+        format_peer_ratios_block,
+    )
+
+    peers_data = {
+        "DVN": _stub_peer(
+            income_rows=[
+                ("Total Revenue", [3_840_000_000]),
+                ("Operating Income", [785_000_000]),
+            ],
+            cashflow_rows=[
+                ("Capital Expenditure", [-870_000_000]),
+            ],
+            balance_sheet_rows=[
+                ("Net Debt", [6_960_000_000]),
+            ],
+            fundamentals_text="PE Ratio (TTM): 12.33\nForward PE: 9.49\nEBITDA: 5000000000\n",
+        ),
+        "RIOT": _stub_peer(
+            income_rows=[
+                ("Total Revenue", [167_219_000]),
+                ("Operating Income", [-121_348_000]),
+            ],
+            cashflow_rows=[
+                ("Capital Expenditure", [-131_649_000]),
+            ],
+            balance_sheet_rows=[
+                ("Net Debt", [636_497_000]),
+            ],
+            fundamentals_text="PE Ratio (TTM): 0\nForward PE: 0\nEBITDA: -326712000\n",
+        ),
+    }
+    ratios = compute_peer_ratios(peers_data, "2026-05-06")
+    block = format_peer_ratios_block(ratios)
+
+    # Header has 7 data columns
+    assert "Net Debt" in block
+    assert "TTM EBITDA" in block
+    assert "ND/EBITDA" in block
+    # DVN: positive EBITDA → ND/EBITDA renders (~1.39x)
+    assert "$6.96B" in block
+    assert "1.39x" in block
+    # RIOT: negative EBITDA → ND/EBITDA renders (n/m), not a fabricated number
+    assert "(n/m)" in block
+    # Footer warns about negative-EBITDA peers
+    assert "(n/m)" in block.lower() or "uninterpretable" in block.lower()
+
+
+def test_format_peer_ratios_block_unavailable_row_has_seven_columns():
+    """When a peer is unavailable, the (unavailable) row must still match the
+    new 7-column width to keep the markdown table structurally valid."""
+    from tradingagents.agents.utils.peer_ratios import (
+        compute_peer_ratios,
+        format_peer_ratios_block,
+    )
+
+    peers_data = {
+        "GOOD": _stub_peer(
+            income_rows=[
+                ("Total Revenue", [100_000_000_000]),
+                ("Operating Income", [25_000_000_000]),
+            ],
+            cashflow_rows=[
+                ("Capital Expenditure", [-10_000_000_000]),
+            ],
+            balance_sheet_rows=[("Net Debt", [10_000_000_000])],
+            fundamentals_text="PE Ratio (TTM): 20.0\nForward PE: 18.0\nEBITDA: 30000000000\n",
+        ),
+        "BAD": _stub_peer(
+            income_rows=[("Total Revenue", [50_000_000_000])],  # no Op Income
+            cashflow_rows=[("Operating Cash Flow", [10_000_000_000])],  # no Capex
+            fundamentals_text="(empty)",
+        ),
+    }
+    ratios = compute_peer_ratios(peers_data, "2026-05-06")
+    block = format_peer_ratios_block(ratios)
+
+    # Find the BAD row and count cells
+    for line in block.split("\n"):
+        if line.startswith("| BAD |"):
+            # 1 ticker + 7 data + trailing empty = 9 pipe-separated cells
+            cell_count = line.count("|")
+            assert cell_count == 9, f"BAD row has {cell_count} pipes; expected 9"
+            assert line.count("(unavailable)") == 7
+            break
+    else:
+        raise AssertionError("BAD row not found in rendered block")
