@@ -70,6 +70,14 @@ class AgentState(MessagesState):
         RiskDebateState, "Current state of the debate on evaluating risk"
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
+    final_trade_decision_executive: Annotated[
+        str,
+        "Stakeholder-voice executive translation of final_trade_decision (Phase 6.7). "
+        "Same numerical content; multi-agent process language stripped; section "
+        "template fixed (Executive Summary → Thesis → Rating → Risks → Catalysts → "
+        "Supporting Analysis → Caveats). PDF renders this as the prominent "
+        "Investment Recommendation when present.",
+    ]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
 
     # Quant-research rebuild (2026-05-03 spec): pre-flight + raw data folder + retry loop

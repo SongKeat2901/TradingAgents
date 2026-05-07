@@ -2,6 +2,8 @@
 
 Output layout per run (under output_dir):
   decision.md
+  decision_executive.md       (Phase 6.7 — stakeholder-voice translation; written
+                               only when state has final_trade_decision_executive)
   analyst_market.md
   analyst_social.md
   analyst_news.md
@@ -32,6 +34,22 @@ def _decision_md(state: dict[str, Any]) -> str:
         or state.get("risk_debate_state", {}).get("judge_decision", "")
     ).strip()
     return f"# {ticker} — {date}\n\n{pm_body}\n"
+
+
+def _decision_executive_md(state: dict[str, Any]) -> str | None:
+    """Render the Phase-6.7 Executive PM stakeholder-voice translation.
+
+    Returns ``None`` when the state has no executive translation (older
+    runs pre-dating Phase 6.7, or runs where the working notes were
+    empty so the Executive PM short-circuited). Returning None signals
+    the writer to skip the file rather than write an empty placeholder.
+    """
+    body = (state.get("final_trade_decision_executive") or "").strip()
+    if not body:
+        return None
+    ticker = state.get("company_of_interest", "?")
+    date = state.get("trade_date", "?")
+    return f"# {ticker} — {date}\n\n{body}\n"
 
 
 def _analyst_md(title: str, body: str) -> str:
@@ -96,6 +114,9 @@ def write_research_outputs(
         ("debate_bull_bear.md", _bull_bear_md(state)),
         ("debate_risk.md", _risk_md(state)),
     ]
+    executive = _decision_executive_md(state)
+    if executive is not None:
+        files.append(("decision_executive.md", executive))
 
     written: list[Path] = []
     for name, content in files:

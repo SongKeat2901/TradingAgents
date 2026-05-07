@@ -442,7 +442,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 {technicals_html}
 
 <h1>Investment Recommendation</h1>
-<div class="section-pretitle">Synthesizes the analyst stack and debate into the final actionable verdict.</div>
+<div class="section-pretitle">Stakeholder-voice executive read of the final actionable verdict.</div>
 {decision_html}
 
 <h1 class="appendix-divider">Appendix</h1>
@@ -471,6 +471,10 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <h1>Appendix F — Social Sentiment Analyst Notes</h1>
 <div class="section-pretitle">Public sentiment and social-media mood.</div>
 {analyst_social_html}
+
+<h1>Appendix G — PM Working Notes</h1>
+<div class="section-pretitle">Unfiltered PM decision document — multi-agent process, reconciliation tables, "what I am rejecting" — kept verbatim for audit. The Investment Recommendation above is the stakeholder-voice translation of this material.</div>
+{decision_working_notes_html}
 
 </body>
 </html>
@@ -812,10 +816,26 @@ def build_research_pdf(
     if decision_md_path.exists():
         decision_md_text = decision_md_path.read_text(encoding="utf-8")
 
-    decision_short = _summarize_decision(decision_md_text or decision)
+    # Phase 6.7: prefer decision_executive.md as the prominent Investment
+    # Recommendation source. The original decision.md (PM working notes) is
+    # preserved as Appendix F for audit. Falls back to decision.md when the
+    # executive translation is absent (older runs pre-dating Phase 6.7, or
+    # runs where the working notes were empty).
+    decision_executive_md_text = ""
+    decision_executive_md_path = out / "decision_executive.md"
+    if decision_executive_md_path.exists():
+        decision_executive_md_text = decision_executive_md_path.read_text(encoding="utf-8")
 
-    # Phase 6.5: Executive Summary (page 2) — distilled from decision.md.
-    executive_summary_md = _build_executive_summary_md(decision_md_text)
+    decision_short = _summarize_decision(
+        decision_executive_md_text or decision_md_text or decision
+    )
+
+    # Executive Summary section (page 2) — extracted from the executive
+    # document when present (cleaner section names + already stakeholder-
+    # voiced); falls back to regex extraction from decision.md for older runs.
+    executive_summary_md = _build_executive_summary_md(
+        decision_executive_md_text or decision_md_text
+    )
     executive_summary_md = _strip_llm_directives(executive_summary_md)
     executive_summary_md = _clean_agentic_vocabulary(executive_summary_md)
     executive_summary_html = _demote_h1_to_h2(md.reset().convert(executive_summary_md))
@@ -828,6 +848,20 @@ def build_research_pdf(
         technicals_v2 if technicals_v2.exists() else technicals_v1
     )
 
+    # Phase 6.7: Investment Recommendation = decision_executive.md when
+    # present (stakeholder voice); fall back to decision.md for runs that
+    # pre-date Phase 6.7. Working notes always rendered as Appendix G.
+    if decision_executive_md_path.exists():
+        decision_html = render_md_polished("decision_executive.md")
+        decision_working_notes_html = render_md("decision.md")
+    else:
+        decision_html = render_md_polished("decision.md")
+        decision_working_notes_html = (
+            "<em>(working notes are the same document as the Investment "
+            "Recommendation above — this run pre-dates Phase 6.7 stakeholder-"
+            "voice translation)</em>"
+        )
+
     html = _HTML_TEMPLATE.format(
         ticker=ticker,
         date=date,
@@ -838,7 +872,8 @@ def build_research_pdf(
         executive_summary_html=executive_summary_html,
         pm_brief_html=pm_brief_html,
         technicals_html=technicals_html,
-        decision_html=render_md_polished("decision.md"),
+        decision_html=decision_html,
+        decision_working_notes_html=decision_working_notes_html,
         debate_risk_html=render_md("debate_risk.md"),
         debate_bull_bear_html=render_md("debate_bull_bear.md"),
         analyst_market_html=render_md("analyst_market.md"),

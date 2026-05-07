@@ -135,3 +135,70 @@ def test_creates_output_dir_if_missing(tmp_path):
     out = tmp_path / "deep" / "nested" / "dir"
     write_research_outputs(_stub_state(), str(out))
     assert (out / "decision.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# Phase 6.7 (2026-05-07): stakeholder-voice executive translation
+# ---------------------------------------------------------------------------
+
+def test_writes_decision_executive_md_when_state_has_executive_translation(tmp_path):
+    """When ``state["final_trade_decision_executive"]`` is populated by the
+    Phase-6.7 Executive PM, the writer must emit decision_executive.md
+    alongside the working-notes decision.md."""
+    from cli.research_writer import write_research_outputs
+
+    state = _stub_state()
+    state["final_trade_decision_executive"] = (
+        "## Executive Summary\nNVDA at $850 — Buy.\n\n"
+        "## Thesis\n### Bull case\n...\n\n### Bear case\n..."
+    )
+    write_research_outputs(state, str(tmp_path))
+
+    exec_path = tmp_path / "decision_executive.md"
+    assert exec_path.exists()
+    content = exec_path.read_text(encoding="utf-8")
+    assert content.startswith("# NVDA — 2024-05-10")
+    assert "## Executive Summary" in content
+    assert "Buy" in content
+
+
+def test_skips_decision_executive_md_when_executive_field_missing(tmp_path):
+    """Older runs (pre-Phase-6.7) won't have the field. The writer must
+    not emit an empty placeholder file."""
+    from cli.research_writer import write_research_outputs
+
+    state = _stub_state()
+    # No final_trade_decision_executive key
+    write_research_outputs(state, str(tmp_path))
+
+    assert not (tmp_path / "decision_executive.md").exists()
+    # decision.md still written
+    assert (tmp_path / "decision.md").exists()
+
+
+def test_skips_decision_executive_md_when_executive_field_empty(tmp_path):
+    """Empty-string executive translation (Executive PM short-circuited on
+    empty working notes) must also skip the file."""
+    from cli.research_writer import write_research_outputs
+
+    state = _stub_state()
+    state["final_trade_decision_executive"] = ""
+    write_research_outputs(state, str(tmp_path))
+
+    assert not (tmp_path / "decision_executive.md").exists()
+
+
+def test_decision_executive_md_uses_ticker_date_header(tmp_path):
+    """Header format `# <TICKER> — <DATE>` must match the working-notes
+    decision.md header for consistency in PDF rendering."""
+    from cli.research_writer import write_research_outputs
+
+    state = _stub_state()
+    state["final_trade_decision_executive"] = "Body content"
+    write_research_outputs(state, str(tmp_path))
+
+    exec_md = (tmp_path / "decision_executive.md").read_text()
+    decision_md = (tmp_path / "decision.md").read_text()
+    # Both have the same header
+    assert exec_md.startswith("# NVDA — 2024-05-10\n")
+    assert decision_md.startswith("# NVDA — 2024-05-10\n")

@@ -7,6 +7,7 @@ from langgraph.prebuilt import ToolNode
 from tradingagents.agents import *
 from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+from tradingagents.agents.managers.executive_pm import create_executive_pm_node
 from tradingagents.agents.managers.qc_agent import create_qc_agent_node
 from tradingagents.agents.analysts.ta_agent import create_ta_agent_node, create_ta_agent_v2_node
 from tradingagents.agents.researcher import fetch_research_pack
@@ -87,6 +88,10 @@ class GraphSetup:
         # QC agent runs on a Sonnet-tier (quick) model to keep cost low; the
         # checklist work doesn't require Opus reasoning.
         qc_agent_node = create_qc_agent_node(self.quick_thinking_llm)
+        # Phase 6.7 Executive PM runs on the deep tier (Opus) — stakeholder
+        # voice + numerical fidelity require careful prose, and it's the
+        # last LLM call in the pipeline so the marginal cost is small.
+        executive_pm_node = create_executive_pm_node(self.deep_thinking_llm)
 
         def researcher_node(state):
             """Wraps the Python data fetcher as a LangGraph node."""
@@ -102,6 +107,7 @@ class GraphSetup:
         workflow.add_node("TA Agent", ta_agent_node)
         workflow.add_node("TA Agent v2", ta_agent_v2_node)
         workflow.add_node("QC Agent", qc_agent_node)
+        workflow.add_node("Executive PM", executive_pm_node)
 
         # Add analyst nodes to the graph (no tool-loop nodes in rebuild)
         for analyst_type, node in analyst_nodes.items():
@@ -203,10 +209,11 @@ class GraphSetup:
             },
         )
 
-        # QC routing: PASS → END, FAIL with retries left → re-run PM with feedback.
+        # QC routing: PASS → Executive PM (Phase 6.7 stakeholder-voice
+        # translation) → END; FAIL with retries left → re-run PM with feedback.
         def qc_router(state):
             if state.get("qc_passed", False):
-                return END
+                return "Executive PM"
             return "Portfolio Manager"
 
         workflow.add_conditional_edges(
@@ -214,8 +221,9 @@ class GraphSetup:
             qc_router,
             {
                 "Portfolio Manager": "Portfolio Manager",
-                END: END,
+                "Executive PM": "Executive PM",
             },
         )
+        workflow.add_edge("Executive PM", END)
 
         return workflow
