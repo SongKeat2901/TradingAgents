@@ -230,3 +230,48 @@ class TestResearchManagerAgent:
         rm = create_research_manager(llm)
         result = rm(_make_rm_state())
         assert result["investment_plan"] == plain_response
+
+
+@pytest.mark.unit
+class TestExtractLlmContent:
+    """Phase 6.7: detect degenerate LLM responses (empty content) and raise.
+
+    The 2026-05-06 COIN cadence shipped UNDERWEIGHT with the literal LangChain
+    envelope `content='' additional_kwargs={} ... tool_calls=[]` written into
+    `analyst_fundamentals.md` (165 chars). The pre-existing
+    `report = raw_content if raw_content else str(result)` pattern silently
+    fell back to `str(result)` on empty content — this helper raises instead."""
+
+    def test_returns_content_when_substantive(self):
+        from tradingagents.agents.utils.structured import extract_llm_content
+        result = MagicMock(content="This is the analyst's full report. " * 10)
+        out = extract_llm_content(result, "Test Analyst")
+        assert out.startswith("This is the analyst's full report.")
+
+    def test_raises_on_empty_string_content(self):
+        from tradingagents.agents.utils.structured import extract_llm_content
+        result = MagicMock(content="")
+        with pytest.raises(RuntimeError, match="Test Analyst.*empty content"):
+            extract_llm_content(result, "Test Analyst")
+
+    def test_raises_on_whitespace_only_content(self):
+        from tradingagents.agents.utils.structured import extract_llm_content
+        result = MagicMock(content="   \n\t  \n  ")
+        with pytest.raises(RuntimeError, match="empty content"):
+            extract_llm_content(result, "Test Analyst")
+
+    def test_raises_on_missing_content_attribute(self):
+        from tradingagents.agents.utils.structured import extract_llm_content
+
+        class _NoContent:
+            pass
+
+        with pytest.raises(RuntimeError, match="empty content"):
+            extract_llm_content(_NoContent(), "Test Analyst")
+
+    def test_error_message_names_the_agent(self):
+        """The agent name is essential for debugging which node failed."""
+        from tradingagents.agents.utils.structured import extract_llm_content
+        result = MagicMock(content="")
+        with pytest.raises(RuntimeError, match="Fundamentals Analyst"):
+            extract_llm_content(result, "Fundamentals Analyst")

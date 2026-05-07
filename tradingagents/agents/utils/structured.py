@@ -71,3 +71,36 @@ def invoke_structured_or_freetext(
 
     response = plain_llm.invoke(prompt)
     return response.content
+
+
+def extract_llm_content(result: Any, agent_name: str) -> str:
+    """Return ``result.content`` or raise if empty / non-substantive.
+
+    The 2026-05-06 COIN cadence run surfaced a degenerate failure mode where
+    the claude CLI subprocess returned an LLM result whose ``.content`` was
+    the empty string. The pre-existing call-site pattern was::
+
+        raw_content = result.content if hasattr(result, "content") else None
+        report = raw_content if raw_content else str(result)
+
+    The truthiness check ``if raw_content`` returns ``False`` on the empty
+    string, so the report falls through to ``str(result)`` — which renders
+    the LangChain envelope ``"content='' additional_kwargs={} ... tool_calls=[]"``.
+    Downstream agents (debate, risk, decision) consumed that 140-char stub
+    as if it were the analyst's actual report, and the 16-item QC accepted
+    it. The COIN run shipped UNDERWEIGHT with zero fundamentals analysis.
+
+    Raise instead of falling back. The caller should let the exception
+    propagate so the run dies before debaters / PM / QC see garbage.
+    """
+    raw = result.content if hasattr(result, "content") else None
+    if raw is None or not raw.strip():
+        raise RuntimeError(
+            f"{agent_name}: LLM returned empty content. "
+            f"This is a degenerate response — falling back to str(result) "
+            f"would write a LangChain envelope stub that downstream agents "
+            f"would consume as a real report (observed COIN 2026-05-06). "
+            f"Re-run the node; if the failure persists, check prompt size "
+            f"and CLI subprocess behaviour."
+        )
+    return raw

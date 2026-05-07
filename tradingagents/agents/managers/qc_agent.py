@@ -29,6 +29,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from tradingagents.agents.utils.structured import extract_llm_content
+
 logger = logging.getLogger(__name__)
 
 
@@ -229,8 +231,7 @@ def create_qc_agent_node(llm):
             )),
         ]
         result = llm.invoke(messages)
-        raw_content = result.content if hasattr(result, "content") else None
-        report = raw_content if raw_content else str(result)
+        report = extract_llm_content(result, "QC Agent")
 
         verdict = _parse_verdict(report)
         if verdict is None:

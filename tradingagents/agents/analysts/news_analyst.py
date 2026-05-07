@@ -9,6 +9,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
 )
 from tradingagents.agents.utils.raw_data import format_for_prompt
+from tradingagents.agents.utils.structured import extract_llm_content
 
 
 _SYSTEM = """\
@@ -71,11 +72,10 @@ def create_news_analyst(llm):
             ),
         ]
         result = llm.invoke(messages)
-        raw_content = result.content if hasattr(result, "content") else None
-        report = raw_content if raw_content else str(result)
+        report = extract_llm_content(result, "News Analyst")
 
         return {
-            "messages": [result] if raw_content is not None else [],
+            "messages": [result],
             "news_report": report,
         }
 

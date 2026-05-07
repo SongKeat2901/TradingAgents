@@ -22,6 +22,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from tradingagents.agents.utils.structured import extract_llm_content
+
 _logger = logging.getLogger(__name__)
 
 
@@ -181,8 +183,7 @@ def create_pm_preflight_node(llm):
             HumanMessage(content=f"Produce the PM Pre-flight brief for {ticker} on {date}."),
         ]
         result = llm.invoke(messages)
-        raw_content = result.content if hasattr(result, "content") else None
-        brief = raw_content if raw_content else str(result)
+        brief = extract_llm_content(result, "PM Pre-flight")
 
         (raw_dir / "pm_brief.md").write_text(brief, encoding="utf-8")
 
@@ -245,7 +246,7 @@ def create_pm_preflight_node(llm):
         # and docs/superpowers/specs/2026-05-05-deterministic-peer-ratios-design.md.
 
         return {
-            "messages": [result] if raw_content is not None else [],
+            "messages": [result],
             "pm_brief": brief,
             "peers": peers,
         }
