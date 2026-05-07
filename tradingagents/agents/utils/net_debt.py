@@ -112,10 +112,21 @@ def compute_net_debt(financials_data: dict[str, Any]) -> dict[str, Any]:
     total_debt = _col0(rows, _TOTAL_DEBT_ROW)
     cash = _col0(rows, _CASH_ROW)
     cash_plus_sti = _col0(rows, _CASH_PLUS_STI_ROW)
+    short_term_investments = _col0(rows, _STI_ROW)
+    other_short_term_investments = _col0(rows, _OTHER_STI_ROW)
     if cash_plus_sti is None and cash is not None:
-        # Some tickers have only Cash And Cash Equivalents (no Cash+STI
-        # composite) — surface cash alone in that slot.
+        # Some tickers don't emit the `Cash Cash Equivalents And Short Term
+        # Investments` composite row but DO populate Cash + a separate STI
+        # row (e.g. SOFI 2026-05-06: Cash $4.93B + Other Short Term
+        # Investments $2.43B; the prior fallback that surfaced Cash alone
+        # understated liquid assets by $2.43B and the audit's net-debt math
+        # inherited the gap). Build the composite from whichever STI rows
+        # are present; ignore None contributions.
         cash_plus_sti = cash
+        if short_term_investments is not None:
+            cash_plus_sti += short_term_investments
+        if other_short_term_investments is not None:
+            cash_plus_sti += other_short_term_investments
 
     net_debt_yf = _col0(rows, _NET_DEBT_ROW)
 
@@ -151,6 +162,8 @@ def compute_net_debt(financials_data: dict[str, Any]) -> dict[str, Any]:
         "current_debt": _col0(rows, _CURRENT_DEBT_ROW),
         "capital_lease_obligations": _col0(rows, _CAP_LEASE_ROW),
         "cash_and_equivalents": cash,
+        "short_term_investments": short_term_investments,
+        "other_short_term_investments": other_short_term_investments,
         "cash_plus_short_term_investments": cash_plus_sti,
         "unavailable": unavailable,
         "unavailable_reason": unavailable_reason,
@@ -189,6 +202,17 @@ def format_net_debt_block(net_debt: dict[str, Any]) -> str:
         else "**Net Debt: (n/a)** — yfinance Net Debt row absent and inputs incomplete."
     )
 
+    # When both Cash And Cash Equivalents and a separate STI row are present,
+    # render the STI cell explicitly so the LLM sees the composite breakdown
+    # (SOFI 2026-05-06: $4.93B cash + $2.43B Other STI = $7.36B). When only
+    # the composite row is present (typical case), skip the breakdown line.
+    sti_value = net_debt.get("short_term_investments") or net_debt.get("other_short_term_investments")
+    sti_line = (
+        f"| Short Term Investments | {_fmt_b(sti_value)} |\n"
+        if sti_value is not None
+        else ""
+    )
+
     return (
         f"\n\n## Net debt (computed from raw/financials.json balance_sheet, "
         f"trade_date {trade_date}, col 0 = quarter ending {as_of})\n\n"
@@ -200,6 +224,7 @@ def format_net_debt_block(net_debt: dict[str, Any]) -> str:
         f"| Current Debt | {_fmt_b(net_debt.get('current_debt'))} |\n"
         f"| Capital Lease Obligations | {_fmt_b(net_debt.get('capital_lease_obligations'))} |\n"
         f"| Cash And Cash Equivalents | {_fmt_b(net_debt.get('cash_and_equivalents'))} |\n"
+        f"{sti_line}"
         f"| Cash + Short Term Investments | {_fmt_b(net_debt.get('cash_plus_short_term_investments'))} |\n\n"
         f"{nd_line}\n\n"
         "*Use the cells above verbatim. If you cite inline net-debt arithmetic, "
@@ -207,5 +232,13 @@ def format_net_debt_block(net_debt: dict[str, Any]) -> str:
         "`Total Debt − (Cash + STI)`). Note that yfinance's Net Debt row may "
         "differ from `Total Debt − Cash` because of capital-lease and "
         "short-term-investment definitions — surface the discrepancy if both "
-        "appear in the report. **Do not introduce cells not in this table.***\n"
+        "appear in the report. "
+        "**Period crosscheck:** these cells are from the most-recent quarter "
+        "yfinance has indexed — if `raw/sec_filing.md` contains a 10-Q for a "
+        "later period, those balance-sheet cells may be more current. The "
+        "AMD 2026-05-06 re-run cited 10-Q (Mar 28) cells while this block had "
+        "the prior quarter's (Dec 31) yfinance data — both verbatim from raw "
+        "but covering different periods. If you cite 10-Q-period cells, "
+        "disclose the quarter explicitly so the discrepancy with this block "
+        "is auditable. **Do not introduce cells not present in either source.***\n"
     )

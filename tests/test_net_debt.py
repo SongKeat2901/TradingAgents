@@ -118,7 +118,7 @@ def test_format_net_debt_block_renders_authoritative_cells_for_mstr():
     assert "Cash + Short Term Investments" in block
     # Anti-fabrication footer
     assert "verbatim" in block.lower()
-    assert "do not introduce cells not in this table" in block.lower()
+    assert "do not introduce cells not present in either source" in block.lower()
 
 
 def test_format_net_debt_block_renders_apa_cells_correctly():
@@ -155,3 +155,106 @@ def test_format_b_handles_billions_millions_thousands():
     assert _fmt_b(None) == "(n/a)"
     # Negative values (e.g., net cash position) handled correctly
     assert _fmt_b(-2_500_000_000.0) == "$-2.50B"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6.5 v2 (2026-05-07): Other STI fallback + 10-Q period crosscheck note
+# ---------------------------------------------------------------------------
+
+# SOFI 2026-05-06 balance sheet — has Cash + Other STI but NO composite row.
+# Real cells from raw/financials.json on macmini-trueknot.
+_SOFI_BS = (
+    "# Balance Sheet for SOFI (quarterly)\n"
+    "\n"
+    ",2025-12-31,2025-09-30,2025-06-30,2025-03-31,2024-12-31\n"
+    "Total Debt,1934625000.0,2050000000.0,2100000000.0,2200000000.0,2300000000.0\n"
+    "Long Term Debt,1329682000.0,1400000000.0,1450000000.0,1500000000.0,1600000000.0\n"
+    "Current Debt,486000000.0,500000000.0,500000000.0,550000000.0,560000000.0\n"
+    "Capital Lease Obligations,118943000.0,120000000.0,120000000.0,120000000.0,125000000.0\n"
+    "Other Short Term Investments,2430980000.0,2393242000.0,2266588000.0,2153456000.0,1804043000.0\n"
+    "Cash And Cash Equivalents,4929452000.0,3246351000.0,2122502000.0,2085697000.0,2538293000.0\n"
+)
+
+
+def test_compute_net_debt_includes_other_sti_when_composite_row_missing():
+    """SOFI 2026-05-06 audit: the prior block surfaced cash_plus_sti = $4.93B
+    (Cash only) when actual liquid assets were $4.93B + $2.43B Other STI =
+    $7.36B. Composite row absent; Other STI must be added to the aggregate."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt
+
+    out = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": _SOFI_BS})
+
+    assert out["unavailable"] is False
+    assert out["cash_and_equivalents"] == 4_929_452_000.0
+    assert out["other_short_term_investments"] == 2_430_980_000.0
+    assert out["short_term_investments"] is None
+    # The aggregate is now Cash + Other STI = $4.93B + $2.43B = $7.36B
+    assert abs(out["cash_plus_short_term_investments"] - 7_360_432_000.0) < 1.0
+    # Net Debt = Total Debt − (Cash + STI) = 1.935B − 7.36B = −$5.43B
+    # (yfinance Net Debt row absent in this fixture; falls back to computed)
+    assert out["net_debt_source"] == "computed"
+    assert abs(out["net_debt"] - (1_934_625_000.0 - 7_360_432_000.0)) < 1.0
+
+
+def test_compute_net_debt_uses_short_term_investments_when_other_absent():
+    """When `Short Term Investments` row exists (some tickers use this name
+    instead of the `Other` variant), it must also feed the composite."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt
+
+    bs = (
+        ",2025-12-31\n"
+        "Total Debt,1000000000.0\n"
+        "Cash And Cash Equivalents,500000000.0\n"
+        "Short Term Investments,300000000.0\n"
+    )
+    out = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": bs})
+    assert out["short_term_investments"] == 300_000_000.0
+    assert out["cash_plus_short_term_investments"] == 800_000_000.0
+
+
+def test_format_net_debt_block_renders_sti_breakdown_line_when_present():
+    """When STI is present as a separate row from cash, the rendered block
+    must include an explicit `Short Term Investments` line so the LLM sees
+    the breakdown rather than just the composite."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt, format_net_debt_block
+
+    nd = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": _SOFI_BS})
+    block = format_net_debt_block(nd)
+
+    assert "Short Term Investments" in block
+    assert "$2.43B" in block  # Other STI cell — surfaced explicitly
+    assert "$4.93B" in block  # Cash cell — distinct from STI
+    assert "$7.36B" in block  # Composite cell (Cash + STI)
+
+
+def test_format_net_debt_block_omits_sti_line_when_only_composite_present():
+    """When only the composite row is present (typical case for non-fintech),
+    the breakdown line is omitted to keep the table clean."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt, format_net_debt_block
+
+    nd = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": _MSTR_BS})
+    block = format_net_debt_block(nd)
+
+    # MSTR doesn't have separate STI row, so no "Short Term Investments" line
+    # except in the existing "Cash + Short Term Investments" composite line
+    sti_lines = [
+        line for line in block.split("\n")
+        if line.startswith("| Short Term Investments")
+    ]
+    assert sti_lines == []
+
+
+def test_format_net_debt_block_includes_period_crosscheck_note():
+    """The block must explicitly tell the LLM that 10-Q cells in raw/sec_filing.md
+    may be more current than balance_sheet col 0 — the AMD 2026-05-06 finding
+    where decision.md cited 10-Q (Mar 28) cells while pm_brief had Dec 31 data,
+    period mismatch never reconciled."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt, format_net_debt_block
+
+    nd = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": _MSTR_BS})
+    block = format_net_debt_block(nd)
+
+    # The note must mention sec_filing.md and disclose the AMD-style period gap
+    assert "sec_filing.md" in block
+    assert "10-Q" in block
+    assert "disclose" in block.lower() or "crosscheck" in block.lower() or "period" in block.lower()
