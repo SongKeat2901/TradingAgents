@@ -104,3 +104,35 @@ def extract_llm_content(result: Any, agent_name: str) -> str:
             f"and CLI subprocess behaviour."
         )
     return raw
+
+
+def invoke_with_empty_retry(
+    llm: Any,
+    messages: Any,
+    agent_name: str,
+) -> tuple[Any, str]:
+    """Invoke ``llm`` and return ``(result, content)``; retry once on empty content.
+
+    The 2026-05-06 cadence surfaced an intermittent claude-CLI flake where
+    the subprocess exits cleanly but the resulting ``BaseMessage.content``
+    is the empty string. Three occurrences across ~10 runs (SOFI prior,
+    COIN prior, COIN re-run attempt 1) — common enough that fail-loud-on-
+    first-empty kills good runs that would have succeeded on a single
+    retry. Single-shot retry squares the per-call failure probability:
+    a 30% transient rate becomes a 9% effective rate; the rare double-
+    empty still raises so the run dies fast rather than shipping a stub.
+
+    Returns ``(result, content)`` so callers can keep ``result`` for the
+    LangGraph ``messages`` channel and use ``content`` as the report.
+    """
+    result = llm.invoke(messages)
+    raw = result.content if hasattr(result, "content") else None
+    if raw and raw.strip():
+        return result, raw
+
+    logger.warning(
+        "%s: LLM returned empty content on first call; retrying once before raising",
+        agent_name,
+    )
+    result = llm.invoke(messages)
+    return result, extract_llm_content(result, agent_name)

@@ -275,3 +275,79 @@ class TestExtractLlmContent:
         result = MagicMock(content="")
         with pytest.raises(RuntimeError, match="Fundamentals Analyst"):
             extract_llm_content(result, "Fundamentals Analyst")
+
+
+@pytest.mark.unit
+class TestInvokeWithEmptyRetry:
+    """Phase 6.7 v2: 3 empty-content occurrences across recent runs (SOFI/COIN
+    ×2) showed that fail-loud-on-first-empty kills good runs that would
+    succeed on a single retry. Single-shot retry squares the per-call failure
+    probability without compromising the fail-loud guarantee."""
+
+    def test_returns_first_call_when_substantive(self):
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        llm = MagicMock()
+        substantive = MagicMock(content="A real analyst report. " * 20)
+        llm.invoke.return_value = substantive
+
+        result, content = invoke_with_empty_retry(llm, ["msg"], "Test")
+
+        assert result is substantive
+        assert content.startswith("A real analyst report.")
+        assert llm.invoke.call_count == 1
+
+    def test_retries_once_then_succeeds(self):
+        """First call returns empty content; second call returns substantive
+        content. Helper must not raise."""
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        empty = MagicMock(content="")
+        substantive = MagicMock(content="Recovered on retry. " * 20)
+        llm = MagicMock()
+        llm.invoke.side_effect = [empty, substantive]
+
+        result, content = invoke_with_empty_retry(llm, ["msg"], "News Analyst")
+
+        assert result is substantive
+        assert content.startswith("Recovered on retry.")
+        assert llm.invoke.call_count == 2
+
+    def test_raises_when_both_calls_return_empty(self):
+        """Two empty-content calls in a row → raise (a sustained
+        degenerate state, not a transient flake)."""
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        empty1 = MagicMock(content="")
+        empty2 = MagicMock(content="")
+        llm = MagicMock()
+        llm.invoke.side_effect = [empty1, empty2]
+
+        with pytest.raises(RuntimeError, match="News Analyst.*empty content"):
+            invoke_with_empty_retry(llm, ["msg"], "News Analyst")
+        assert llm.invoke.call_count == 2
+
+    def test_treats_whitespace_only_first_call_as_empty(self):
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        whitespace = MagicMock(content="  \n\t  \n  ")
+        substantive = MagicMock(content="OK on retry. " * 30)
+        llm = MagicMock()
+        llm.invoke.side_effect = [whitespace, substantive]
+
+        _result, content = invoke_with_empty_retry(llm, ["msg"], "Test")
+
+        assert content.startswith("OK on retry.")
+        assert llm.invoke.call_count == 2
+
+    def test_retry_uses_same_messages(self):
+        """The retry call must pass the same messages — re-invoking with a
+        different prompt would mask the transient flake we're guarding."""
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        empty = MagicMock(content="")
+        substantive = MagicMock(content="Substantive. " * 50)
+        llm = MagicMock()
+        llm.invoke.side_effect = [empty, substantive]
+
+        msgs = ["original prompt"]
+        invoke_with_empty_retry(llm, msgs, "Test")
+
+        first_args = llm.invoke.call_args_list[0][0]
+        second_args = llm.invoke.call_args_list[1][0]
+        assert first_args == second_args == (msgs,)

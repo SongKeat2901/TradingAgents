@@ -29,7 +29,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from tradingagents.agents.utils.structured import extract_llm_content
+from tradingagents.agents.utils.structured import invoke_with_empty_retry
 
 logger = logging.getLogger(__name__)
 
@@ -243,8 +243,7 @@ def create_qc_agent_node(llm):
                 f"## PM decision document\n\n{decision}"
             )),
         ]
-        result = llm.invoke(messages)
-        report = extract_llm_content(result, "QC Agent")
+        _result, report = invoke_with_empty_retry(llm, messages, "QC Agent")
 
         verdict = _parse_verdict(report)
         if verdict is None:

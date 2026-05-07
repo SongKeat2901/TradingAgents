@@ -9,7 +9,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
 )
 from tradingagents.agents.utils.raw_data import format_for_prompt
-from tradingagents.agents.utils.structured import extract_llm_content
+from tradingagents.agents.utils.structured import invoke_with_empty_retry
 
 
 _SYSTEM = """\
@@ -65,8 +65,7 @@ def create_social_media_analyst(llm):
                 f"Write the sentiment analyst's report."
             ),
         ]
-        result = llm.invoke(messages)
-        report = extract_llm_content(result, "Social Media Analyst")
+        result, report = invoke_with_empty_retry(llm, messages, "Social Media Analyst")
 
         return {
             "messages": [result],

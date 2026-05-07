@@ -22,7 +22,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from tradingagents.agents.utils.structured import extract_llm_content
+from tradingagents.agents.utils.structured import invoke_with_empty_retry
 
 _logger = logging.getLogger(__name__)
 
@@ -182,8 +182,7 @@ def create_pm_preflight_node(llm):
             SystemMessage(content=_SYSTEM.replace("$TICKER", ticker).replace("$DATE", date)),
             HumanMessage(content=f"Produce the PM Pre-flight brief for {ticker} on {date}."),
         ]
-        result = llm.invoke(messages)
-        brief = extract_llm_content(result, "PM Pre-flight")
+        result, brief = invoke_with_empty_retry(llm, messages, "PM Pre-flight")
 
         (raw_dir / "pm_brief.md").write_text(brief, encoding="utf-8")
 

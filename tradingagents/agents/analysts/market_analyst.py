@@ -14,7 +14,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
 )
 from tradingagents.agents.utils.raw_data import format_for_prompt
-from tradingagents.agents.utils.structured import extract_llm_content
+from tradingagents.agents.utils.structured import invoke_with_empty_retry
 
 
 _SYSTEM = """\
@@ -72,8 +72,7 @@ def create_market_analyst(llm):
                 f"Write the market analyst's commentary."
             ),
         ]
-        result = llm.invoke(messages)
-        report = extract_llm_content(result, "Market Analyst")
+        result, report = invoke_with_empty_retry(llm, messages, "Market Analyst")
 
         return {
             "messages": [result],
