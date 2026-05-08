@@ -24,10 +24,26 @@ from tradingagents.validators.price_date_validator import (
     Violation,
     validate_date_close_claims,
 )
+from tradingagents.validators.quote_attribution_validator import (
+    AttributedQuote,
+    QuoteViolation,
+    extract_attributed_quotes,
+    validate_attributed_quotes,
+)
+from tradingagents.validators.peer_metric_validator import (
+    PeerMetricViolation,
+    validate_peer_metrics,
+)
 
 __all__ = [
     "DateCloseClaim",
     "extract_date_close_claims",
     "Violation",
     "validate_date_close_claims",
+    "AttributedQuote",
+    "QuoteViolation",
+    "extract_attributed_quotes",
+    "validate_attributed_quotes",
+    "PeerMetricViolation",
+    "validate_peer_metrics",
 ]

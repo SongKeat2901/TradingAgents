@@ -37,10 +37,15 @@ from dataclasses import asdict
 from pathlib import Path
 
 from tradingagents.validators import (
+    extract_attributed_quotes,
     extract_date_close_claims,
+    validate_attributed_quotes,
     validate_date_close_claims,
+    validate_peer_metrics,
 )
+from tradingagents.validators.peer_metric_validator import render_peer_violations_text
 from tradingagents.validators.price_date_validator import render_violations_text
+from tradingagents.validators.quote_attribution_validator import render_quote_violations_text
 
 
 _FILES_TO_SCAN = (
@@ -87,7 +92,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     prices_json = run_dir / "raw" / "prices.json"
+    peer_ratios_json = run_dir / "raw" / "peer_ratios.json"
+    peers_json = run_dir / "raw" / "peers.json"
 
+    # ----- Phase 7.1: price/date validator -----
     all_claims = []
     for fname in _FILES_TO_SCAN:
         path = run_dir / fname
@@ -95,7 +103,6 @@ def main(argv: list[str] | None = None) -> int:
             continue
         text = path.read_text(encoding="utf-8")
         for claim in extract_date_close_claims(text, anchor_year=args.anchor_year):
-            # Convert frozen dataclass to a mutable copy with `file` set
             from tradingagents.validators.claim_extractor import DateCloseClaim
             all_claims.append(DateCloseClaim(
                 date_raw=claim.date_raw,
@@ -106,7 +113,38 @@ def main(argv: list[str] | None = None) -> int:
                 file=fname,
             ))
 
-    violations = validate_date_close_claims(all_claims, prices_json)
+    price_date_violations = validate_date_close_claims(all_claims, prices_json)
+
+    # ----- Phase 7.2: quote attribution validator -----
+    all_quotes = []
+    for fname in _FILES_TO_SCAN:
+        path = run_dir / fname
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for q in extract_attributed_quotes(text):
+            from tradingagents.validators.quote_attribution_validator import AttributedQuote
+            all_quotes.append(AttributedQuote(
+                quote_text=q.quote_text,
+                agent_name=q.agent_name,
+                file=fname,
+                line_no=q.line_no,
+                expected_source_file=q.expected_source_file,
+            ))
+    quote_violations = validate_attributed_quotes(all_quotes, run_dir)
+
+    # ----- Phase 7.3: peer-metric validator -----
+    peer_violations = []
+    for fname in _FILES_TO_SCAN:
+        path = run_dir / fname
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        peer_violations.extend(validate_peer_metrics(
+            text, fname, peer_ratios_json, peers_json,
+        ))
+
+    total_violations = len(price_date_violations) + len(quote_violations) + len(peer_violations)
 
     if args.json:
         out = {
@@ -114,16 +152,53 @@ def main(argv: list[str] | None = None) -> int:
             "files_scanned": [
                 f for f in _FILES_TO_SCAN if (run_dir / f).exists()
             ],
-            "claims_extracted": len(all_claims),
-            "violations": [asdict(v) for v in violations],
+            "phase_7_1_price_date": {
+                "claims_extracted": len(all_claims),
+                "violations": [asdict(v) for v in price_date_violations],
+            },
+            "phase_7_2_quote_attribution": {
+                "quotes_extracted": len(all_quotes),
+                "violations": [asdict(v) for v in quote_violations],
+            },
+            "phase_7_3_peer_metric": {
+                "violations": [asdict(v) for v in peer_violations],
+            },
+            "total_violations": total_violations,
         }
         print(json.dumps(out, indent=2))
     else:
-        print(render_violations_text(violations))
-        if all_claims and not violations:
-            print(f"\n({len(all_claims)} claims extracted, all verified)")
+        print("=" * 70)
+        print("PHASE 7.1 — Price / date claims")
+        print("=" * 70)
+        print(render_violations_text(price_date_violations))
+        if all_claims and not price_date_violations:
+            print(f"\n({len(all_claims)} date+close claims extracted, all verified)")
 
-    if args.strict and violations:
+        print()
+        print("=" * 70)
+        print("PHASE 7.2 — Quote attribution")
+        print("=" * 70)
+        print(render_quote_violations_text(quote_violations))
+        if all_quotes and not quote_violations:
+            print(f"\n({len(all_quotes)} attributed quotes extracted, all verified)")
+
+        print()
+        print("=" * 70)
+        print("PHASE 7.3 — Peer metrics")
+        print("=" * 70)
+        print(render_peer_violations_text(peer_violations))
+
+        print()
+        print("=" * 70)
+        if total_violations == 0:
+            print(f"OVERALL: VALIDATION PASS (0 violations across 3 validators)")
+        else:
+            print(f"OVERALL: VALIDATION FAIL ({total_violations} violations: "
+                  f"{len(price_date_violations)} price/date, "
+                  f"{len(quote_violations)} quote, "
+                  f"{len(peer_violations)} peer)")
+
+    if args.strict and total_violations > 0:
         return 1
     return 0
 
