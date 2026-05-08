@@ -181,6 +181,74 @@ def _format_calendar_block(raw_dir: str) -> str:
     )
 
 
+def _fetch_canonical_identity(ticker: str) -> str:
+    """Phase 7.6: fetch yfinance authoritative identity for the ticker
+    and format as a system-prompt prefix.
+
+    Closes the same-symbol-different-company failure mode (e.g., `ASX`
+    resolves in yfinance to ASE Technology Holding Co — Taiwan
+    semiconductor packaging — but the LLM's prior knowledge maps `ASX`
+    to the Australian Securities Exchange operator, generating a brief
+    about the wrong company entirely). By injecting yfinance's
+    canonical longName / country / sector / industry as IMMUTABLE
+    ground truth, we override the LLM's training-data pattern match.
+
+    Returns "" on any yfinance error — graceful degradation; the LLM
+    falls back to its existing identification logic.
+    """
+    try:
+        import yfinance as yf
+        info = getattr(yf.Ticker(ticker), "info", None) or {}
+    except Exception:  # noqa: BLE001 — yfinance is best-effort
+        return ""
+
+    long_name = info.get("longName") or info.get("shortName")
+    if not long_name:
+        return ""
+
+    country = info.get("country") or "?"
+    sector = info.get("sector") or "?"
+    industry = info.get("industry") or "?"
+    quote_type = (info.get("quoteType") or "?").upper()
+    market_cap = info.get("marketCap")
+    cap_str = ""
+    if isinstance(market_cap, (int, float)) and market_cap > 0:
+        if market_cap >= 200e9:
+            cap_str = "Mega-cap"
+        elif market_cap >= 10e9:
+            cap_str = "Large-cap"
+        elif market_cap >= 2e9:
+            cap_str = "Mid-cap"
+        else:
+            cap_str = "Small-cap"
+
+    return (
+        f"# AUTHORITATIVE TICKER IDENTITY (yfinance, fetched at run time)\n\n"
+        f"For ticker `{ticker}`, yfinance returns the following canonical "
+        f"identity. Your brief MUST describe THIS company, even if your "
+        f"prior knowledge of `{ticker}` matches a different same-symbol "
+        f"entity in another market.\n\n"
+        f"- **Long name:** {long_name}\n"
+        f"- **Country:** {country}\n"
+        f"- **Sector:** {sector}\n"
+        f"- **Industry:** {industry}\n"
+        f"- **Instrument type:** {quote_type}\n"
+        f"- **Market-cap classification:** {cap_str or '(unavailable)'}\n\n"
+        f"Concrete example of the failure mode this section prevents: the "
+        f"ticker `ASX` ambiguates between ASE Technology Holding Co (Taiwan, "
+        f"semiconductor packaging) and the Australian Securities Exchange "
+        f"operator. yfinance maps the symbol to the former; a "
+        f"prior LLM run wrote a brief describing the latter, then suggested "
+        f"foreign-listed exchange peers (S68.SI / 388.HK / DB1.DE) that "
+        f"yfinance can't fetch under US-style ticker calls — peers.json "
+        f"wrote `{{}}` and the run aborted at the Phase 6.4 fail-loud gate. "
+        f"Use the yfinance identity above as ground truth; pick US-tradable "
+        f"peers compatible with yfinance's peer-discovery (e.g., AMKR for "
+        f"ASE Technology, not foreign exchange operators).\n\n"
+        f"---\n\n"
+    )
+
+
 def create_pm_preflight_node(llm):
     """Factory: returns the PM Pre-flight LangGraph node function."""
 
@@ -190,8 +258,16 @@ def create_pm_preflight_node(llm):
         raw_dir = Path(state["raw_dir"])
         raw_dir.mkdir(parents=True, exist_ok=True)
 
+        # Phase 7.6: prefix the system prompt with yfinance authoritative
+        # identity. Empty on yfinance error (graceful degradation).
+        identity_prefix = _fetch_canonical_identity(ticker)
+
+        system_prompt = _SYSTEM.replace("$TICKER", ticker).replace("$DATE", date)
+        if identity_prefix:
+            system_prompt = identity_prefix + system_prompt
+
         messages = [
-            SystemMessage(content=_SYSTEM.replace("$TICKER", ticker).replace("$DATE", date)),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=f"Produce the PM Pre-flight brief for {ticker} on {date}."),
         ]
         result, brief = invoke_with_empty_retry(llm, messages, "PM Pre-flight")

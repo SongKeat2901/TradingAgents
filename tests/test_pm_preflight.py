@@ -305,6 +305,124 @@ def test_pm_preflight_calendar_block_renders_unavailable_tickers(tmp_path, monke
     assert "yfinance unavailable" in brief.lower() or "(yfinance unavailable)" in brief
 
 
+def test_pm_preflight_injects_canonical_ticker_identity(tmp_path, monkeypatch):
+    """Phase 7.6: when yfinance returns a canonical identity, it must be
+    prepended to the system prompt as immutable ground truth. Closes the
+    ASX same-symbol-different-company failure mode."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    captured = {}
+
+    def fake_invoke(messages):
+        captured["system"] = messages[0].content
+        captured["human"] = messages[1].content
+        return AIMessage(content=(
+            "# PM Pre-flight Brief: ASX 2026-05-07\n\n"
+            "## Peer set\n- AMKR: OSAT direct competitor\n"
+        ))
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = fake_invoke
+
+    # Mock yfinance to return ASE Technology Holding identity
+    fake_info = {
+        "longName": "ASE Technology Holding Co., Ltd.",
+        "country": "Taiwan",
+        "sector": "Technology",
+        "industry": "Semiconductor Equipment & Materials",
+        "quoteType": "EQUITY",
+        "marketCap": 12_000_000_000,  # mid-cap by global standards
+    }
+    fake_ticker = MagicMock()
+    fake_ticker.info = fake_info
+    monkeypatch.setattr("yfinance.Ticker", lambda sym: fake_ticker)
+
+    node = create_pm_preflight_node(fake_llm)
+    node({
+        "company_of_interest": "ASX",
+        "trade_date": "2026-05-07",
+        "raw_dir": str(tmp_path / "raw"),
+    })
+
+    sys_prompt = captured["system"]
+    # Prefix landed at the top
+    assert "AUTHORITATIVE TICKER IDENTITY" in sys_prompt
+    # Canonical identity present
+    assert "ASE Technology Holding Co., Ltd." in sys_prompt
+    assert "Taiwan" in sys_prompt
+    # Instruction to override prior knowledge
+    assert "MUST describe THIS company" in sys_prompt
+    # The ASX example reference (helps the LLM understand the failure mode)
+    assert "ASX" in sys_prompt and "Australian Securities Exchange" in sys_prompt
+
+
+def test_pm_preflight_skips_identity_injection_on_yfinance_error(tmp_path, monkeypatch):
+    """If yfinance fails / returns no info, the prompt falls back to the
+    existing system template — pipeline should still run."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    captured = {}
+
+    def fake_invoke(messages):
+        captured["system"] = messages[0].content
+        return AIMessage(content="# PM Pre-flight Brief: XXXX 2026-05-07\n## Peer set\n- AMKR: x\n")
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = fake_invoke
+
+    # yfinance Ticker lookup raises
+    def _raise(_sym):
+        raise RuntimeError("yfinance unreachable")
+    monkeypatch.setattr("yfinance.Ticker", _raise)
+
+    node = create_pm_preflight_node(fake_llm)
+    node({
+        "company_of_interest": "XXXX",
+        "trade_date": "2026-05-07",
+        "raw_dir": str(tmp_path / "raw"),
+    })
+
+    # No identity prefix → system prompt starts with the regular template
+    sys_prompt = captured["system"]
+    assert "AUTHORITATIVE TICKER IDENTITY" not in sys_prompt
+    # Standard template still in place
+    assert "Portfolio Manager performing pre-flight" in sys_prompt
+
+
+def test_pm_preflight_skips_identity_when_long_name_missing(tmp_path, monkeypatch):
+    """Some delisted / obscure tickers return info dicts with no longName.
+    The prefix is omitted in that case (don't inject empty fields)."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    captured = {}
+
+    def fake_invoke(messages):
+        captured["system"] = messages[0].content
+        return AIMessage(content="# PM Pre-flight Brief\n## Peer set\n- AMKR: x\n")
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = fake_invoke
+
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"sector": "Technology"}  # missing longName
+    monkeypatch.setattr("yfinance.Ticker", lambda sym: fake_ticker)
+
+    node = create_pm_preflight_node(fake_llm)
+    node({
+        "company_of_interest": "DELISTED",
+        "trade_date": "2026-05-07",
+        "raw_dir": str(tmp_path / "raw"),
+    })
+
+    assert "AUTHORITATIVE TICKER IDENTITY" not in captured["system"]
+
+
 def test_pm_preflight_calendar_block_renders_etf_as_structural_na(tmp_path, monkeypatch):
     """Phase 6.8: ETF rows in the calendar must render with the structural
     N/A label (passive instrument — no earnings reporting), NOT as
