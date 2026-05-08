@@ -116,6 +116,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--no-auto-adjust-date",
+        action="store_true",
+        help=(
+            "Disable Fix #13 auto-adjustment of trade_date. By default, if "
+            "--date is later than the latest indexed yfinance close for the "
+            "ticker, the pipeline auto-adjusts trade_date and output_dir "
+            "to the latest close (preventing the 'May 8 close $XXX.XX' "
+            "fabrication failure mode at the source). Pass this flag for "
+            "backtests / historical replays where the pipeline must run on "
+            "a specific past date even when newer closes exist."
+        ),
+    )
+    p.add_argument(
         "--skip-validation",
         action="store_true",
         help=(
@@ -258,6 +271,19 @@ def _safe_notify_failure(
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Fix #13: auto-adjust trade_date to the latest indexed yfinance close.
+    # Eliminates the "fabricated future close" failure mode at the source —
+    # when the user requests a date the market hasn't closed for yet, the
+    # LLM otherwise invents a plausible close to support its narrative.
+    if not args.no_auto_adjust_date:
+        from cli.auto_resolve_date import auto_resolve_trade_date
+        new_date, new_output_dir, was_adjusted = auto_resolve_trade_date(
+            args.ticker, args.date, args.output_dir,
+        )
+        if was_adjusted:
+            args.date = new_date
+            args.output_dir = new_output_dir
 
     # Self-daemonize by default. We can't trust callers (especially the
     # OpenClaw trader agent's synth-bash) to wrap us in nohup/&/Popen
