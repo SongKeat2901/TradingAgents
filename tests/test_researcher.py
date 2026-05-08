@@ -325,6 +325,74 @@ def test_researcher_writes_net_debt_json_and_appends_block(tmp_path, monkeypatch
     assert "$8.24B" in brief  # Total Debt cell — verbatim
     # Net-debt block must follow the peer-ratios block.
     assert brief.rfind("## Net debt") > brief.rfind("## Peer ratios")
+    # Phase 6.9: latest-session block must follow the net-debt block.
+    assert brief.rfind("## Latest available session") > brief.rfind("## Net debt")
+
+
+def test_researcher_writes_latest_session_json_and_appends_block(tmp_path, monkeypatch):
+    """Phase 6.9: the Researcher must compute raw/latest_session.json from
+    the main ticker's prices.json OHLCV and append a "## Latest available
+    session" block to pm_brief.md AFTER the Phase 6.5 net-debt block.
+
+    Validates the COIN 2026-05-08 fix: when trade_date is later than the
+    latest indexed session (the LLM forward-projection failure mode), the
+    block flags the gap loudly so the LLM can't invent a "trade-date close"
+    for a session yfinance hasn't seen yet."""
+    from tradingagents.agents import researcher
+
+    coin_ohlcv = (
+        "# Stock data for COIN\n"
+        "Date,Open,High,Low,Close,Volume,Dividends,Stock Splits\n"
+        "2026-05-05,208.88,208.88,194.4,197.75,10074200,0.0,0.0\n"
+        "2026-05-06,195.78,198.5,193.25,197.96,7764900,0.0,0.0\n"
+        "2026-05-07,196.24,198.15,190.32,192.96,8641932,0.0,0.0\n"
+    )
+
+    monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {
+        "ticker": t, "trade_date": d,
+        "fundamentals": "PE Ratio (TTM): 29.23\nForward PE: 26.68\n",
+        "balance_sheet": "", "cashflow": "# h\nCapital Expenditure,-100000000\n",
+        "income_statement": "# h\nTotal Revenue,1000000000\nOperating Income,200000000\n",
+    })
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": coin_ohlcv})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(189.82),
+        "close_200_sma": _INDICATOR_STUB(259.82),
+        "atr": _INDICATOR_STUB(11.14),
+    })
+
+    state = {
+        "company_of_interest": "COIN",
+        "trade_date": "2026-05-08",  # AFTER the latest session in OHLCV
+        "peers": ["GOOGL"],
+        "raw_dir": str(tmp_path / "raw"),
+    }
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
+    researcher.fetch_research_pack(state)
+
+    # latest_session.json written
+    ls_path = raw / "latest_session.json"
+    assert ls_path.exists()
+    ls = json.loads(ls_path.read_text())
+    assert ls["latest_session_date"] == "2026-05-07"
+    assert ls["close"] == 192.96
+    assert ls["trade_date_has_closed"] is False  # 2026-05-08 > 2026-05-07
+    assert ls["gap_calendar_days"] == 1
+
+    # pm_brief.md has the deterministic block + the loud "trade-date is
+    # after latest session" warning
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Latest available session" in brief
+    assert "**close=$192.96**" in brief
+    assert "Trade-date session has closed in yfinance? | NO" in brief
+    assert "trade_date 2026-05-08 is after the latest available session" in brief
+    # The forbidden-behaviour line names the COIN incident explicitly
+    assert "$206.50" in brief and "14.39M" in brief
 
 
 def test_researcher_appends_unavailable_warning_when_balance_sheet_missing(

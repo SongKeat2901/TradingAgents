@@ -384,6 +384,57 @@ def test_strip_llm_directives_removes_phase_65_net_debt_footer_with_amd_referenc
     assert "| Total Debt |" in cleaned
 
 
+def test_strip_llm_directives_removes_phase_69_latest_session_footer():
+    """Phase 6.9 (Fix #10): the latest-session block's instructional footer
+    + the COIN-2026-05-08 incident reference must not leak into the PDF.
+    Verifies that the COIN-specific anecdote ($206.50 / 14.39M) doesn't
+    appear in OTHER tickers' PDFs as a footnote."""
+    from cli.research_pdf import _strip_llm_directives
+
+    text = (
+        "## Latest available session (from raw/prices.json)\n\n"
+        "| Cell | Value |\n"
+        "|---|---|\n"
+        "| Latest session date | 2026-05-07 |\n"
+        "| Latest session OHLC | open=$196.24, high=$198.15, "
+        "low=$190.32, **close=$192.96** |\n"
+        "| Latest session volume | 8,641,932 |\n"
+        "| Trade date requested | 2026-05-08 |\n"
+        "| Gap (calendar days) | 1 |\n"
+        "| Trade-date session has closed in yfinance? | NO |\n\n"
+        "**Note: trade_date 2026-05-08 is after the latest available "
+        "session (2026-05-07, gap of 1 calendar days). yfinance has NOT "
+        "yet indexed that session's close.**\n\n"
+        "*Authoritative spot for this report: **$192.96** (latest yfinance "
+        "close, 2026-05-07). DO NOT cite a \"trade-date close\" for any "
+        "date later than 2026-05-07. DO NOT cite intraday volumes, opens, "
+        "or closes for sessions that have not completed in yfinance. The "
+        "Market Analyst on the prior 2026-05-08 COIN run hallucinated "
+        "`$206.50 on 14.39M shares` as the May 8 close when actual most-"
+        "recent close was $192.96 on 8.64M shares — exactly the forward-"
+        "projection failure mode this block is designed to catch. If the "
+        "report needs to discuss post-event reaction, frame it as \"options-"
+        "implied move\" or \"extended-hours indication\", never as a "
+        "realized close.*\n"
+    )
+    cleaned = _strip_llm_directives(text)
+
+    assert "Authoritative spot for this report" not in cleaned
+    assert "DO NOT cite" not in cleaned
+    # Critical: the COIN-specific incident reference must NOT leak into
+    # other tickers' PDFs.
+    assert "$206.50" not in cleaned
+    assert "14.39M" not in cleaned
+    assert "Market Analyst on the prior 2026-05-08 COIN run" not in cleaned
+    # The trade_date-after-latest warning is also stripped (it's an LLM
+    # imperative, not stakeholder content)
+    assert "Note: trade_date 2026-05-08 is after the latest available" not in cleaned
+    # The data table itself (cells, dates, prices) must remain
+    assert "| Latest session date" in cleaned
+    assert "**close=$192.96**" in cleaned
+    assert "8,641,932" in cleaned
+
+
 def test_strip_llm_directives_removes_unavailable_warning_blocks():
     """Phase 6.4 v2 + Phase 6.5 v2 added explicit `Do not cite peer
     ratios` / `Do not cite net-debt arithmetic` warnings when the

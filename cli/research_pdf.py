@@ -654,6 +654,16 @@ _LLM_DIRECTIVE_PATTERNS: list[str] = [
     # 10-Q crosscheck reference, ending at "...not present in either source.***".
     # The non-greedy regex captures both shapes.
     r"\*Use the cells above verbatim\..*?(?:in either source|in this table)\.\*\*\*",
+    # Phase 6.9 latest-session block footer. The text starts with
+    # `*Authoritative spot for this report:` and runs through the closing
+    # asterisk after "...never as a realized close.*". Non-greedy match
+    # captures the whole instructional paragraph (incl. the COIN
+    # 2026-05-08 incident reference) so it doesn't leak into the PDF.
+    r"\*Authoritative spot for this report:.*?never as a realized close\.\*",
+    # Phase 6.9 unavailable warning when raw/prices.json has no rows.
+    r"\*\*Price-history unavailable\*\*[\s\S]*?from memory\.\n",
+    # Phase 6.9 trade-date-after-latest-session note (italic standalone).
+    r"\*\*Note: trade_date .*? has NOT yet indexed that session's close\.\*\*",
     # Phase 6.4 v2 + Phase 6.5 v2 unavailable warnings. These appear when
     # peer_ratios.json or net_debt cells couldn't be computed; the warning
     # itself is an LLM imperative ("Do not cite peer ratios in this report")

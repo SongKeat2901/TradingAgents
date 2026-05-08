@@ -316,3 +316,33 @@ def fetch_research_pack(state: dict) -> None:
         )
     with open(pm_brief_path, "a", encoding="utf-8") as f:
         f.write(net_debt_block)
+
+    # Phase 6.9 deterministic latest-session block: the 2026-05-08 COIN run
+    # surfaced a forward-projection failure mode where the Market Analyst
+    # invented a "May 8 trade-date close of $206.50 on 14.39M shares" when
+    # yfinance had only indexed through the 2026-05-07 close ($192.96 on
+    # 8.64M shares). The fabricated number then anchored the entire trading
+    # plan (no-new-longs at $206.50, R/R math, "trim into intraday strength
+    # toward $210-$215"). Append a deterministic block stating exactly which
+    # session is the latest in raw/prices.json and forbidding the LLM from
+    # citing a later "trade-date close".
+    from tradingagents.agents.utils.latest_session import (
+        compute_latest_session,
+        format_latest_session_block,
+    )
+    latest_session = compute_latest_session(prices, date)
+    (raw / "latest_session.json").write_text(
+        json.dumps(latest_session, indent=2, default=str), encoding="utf-8"
+    )
+    latest_session_block = format_latest_session_block(latest_session)
+    if not latest_session_block:
+        latest_session_block = (
+            f"\n\n## Latest available session (from raw/prices.json)\n\n"
+            f"**Price-history unavailable** — "
+            f"{latest_session.get('reason') or 'no parseable OHLCV rows'}. "
+            f"**Do not cite intraday or trade-date close prices in this report.** "
+            f"If price action is essential to the thesis, flag it as `(price "
+            f"data unavailable)` and do not invent figures from memory.\n"
+        )
+    with open(pm_brief_path, "a", encoding="utf-8") as f:
+        f.write(latest_session_block)
