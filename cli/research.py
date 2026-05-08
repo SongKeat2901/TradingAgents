@@ -116,6 +116,29 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help=(
+            "Skip Phase 7 post-output validators. Default behaviour runs "
+            "the price/date, quote-attribution, and peer-metric validators "
+            "after write_research_outputs and gates Telegram delivery on "
+            "the result (a validation failure aborts the Telegram push and "
+            "writes validation_report.json to the run dir). Use this flag "
+            "for testing or when validators are known-bad."
+        ),
+    )
+    p.add_argument(
+        "--no-gate-telegram",
+        action="store_true",
+        help=(
+            "Run validators but DO NOT gate Telegram delivery on the "
+            "result. Validation report still written to validation_report.json "
+            "and the run still completes; operator gets the report alongside "
+            "the decision push. Use during validator rollout to compare "
+            "validator output against operator review."
+        ),
+    )
+    p.add_argument(
         "--pacing-seconds", type=float, default=30.0,
         help=(
             "Minimum seconds between any two LLM calls (shared rate limiter "
@@ -285,11 +308,57 @@ def main(argv: list[str] | None = None) -> int:
     }
     print(json.dumps(payload), flush=True)
 
-    if tg is not None:
+    # Phase 7.4: post-output validation gate (Phase 7.1 price/date +
+    # 7.2 quote attribution + 7.3 peer metric). Default behaviour:
+    # validate after write_research_outputs and gate Telegram delivery
+    # on the result. Failed validators block the push and write
+    # validation_report.json to the run dir for operator review.
+    validation_failed = False
+    validation_summary = ""
+    if not args.skip_validation:
+        from cli.research_validation import (
+            run_phase_7_validators,
+            write_validation_report,
+            format_validation_summary,
+        )
         try:
-            notify_success(tg[0], tg[1], args.output_dir, decision)
-        except TelegramSendError as te:
-            print(f"telegram notify failed: {te}", file=sys.stderr)
+            results = run_phase_7_validators(args.output_dir)
+            write_validation_report(args.output_dir, results)
+            validation_summary = format_validation_summary(results)
+            validation_failed = results["total_violations"] > 0
+            if validation_failed:
+                print(f"\n{validation_summary}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 - validators must not crash the run
+            print(
+                f"validation: validator error (non-fatal): {exc}",
+                file=sys.stderr,
+            )
+
+    if tg is not None:
+        if validation_failed and not args.no_gate_telegram:
+            print(
+                "telegram notify SUPPRESSED — validators failed; see "
+                f"{args.output_dir}/validation_report.json",
+                file=sys.stderr,
+            )
+            try:
+                _safe_notify_failure(
+                    tg, args.ticker, args.date,
+                    f"validation failed — {validation_summary}",
+                )
+            except Exception:  # noqa: BLE001 - failure-notify is best-effort
+                pass
+        else:
+            try:
+                notify_success(tg[0], tg[1], args.output_dir, decision)
+            except TelegramSendError as te:
+                print(f"telegram notify failed: {te}", file=sys.stderr)
+
+    # Exit non-zero when validation failed AND gating is enforced — surfaces
+    # the issue to the wrapper script (e.g., the cadence runner can decide
+    # whether to continue with the next ticker).
+    if validation_failed and not args.no_gate_telegram:
+        return 3
     return 0
 
 
