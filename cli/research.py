@@ -272,19 +272,6 @@ def _safe_notify_failure(
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    # Fix #13: auto-adjust trade_date to the latest indexed yfinance close.
-    # Eliminates the "fabricated future close" failure mode at the source —
-    # when the user requests a date the market hasn't closed for yet, the
-    # LLM otherwise invents a plausible close to support its narrative.
-    if not args.no_auto_adjust_date:
-        from cli.auto_resolve_date import auto_resolve_trade_date
-        new_date, new_output_dir, was_adjusted = auto_resolve_trade_date(
-            args.ticker, args.date, args.output_dir,
-        )
-        if was_adjusted:
-            args.date = new_date
-            args.output_dir = new_output_dir
-
     # Self-daemonize by default. We can't trust callers (especially the
     # OpenClaw trader agent's synth-bash) to wrap us in nohup/&/Popen
     # correctly — they tend to invent broken patterns (nohup fails on macOS
@@ -298,6 +285,27 @@ def main(argv: list[str] | None = None) -> int:
             / f"tradingresearch-{args.date}-{args.ticker}.log"
         )
         _daemonize(str(log_path))
+
+    # Fix #13: auto-adjust trade_date to the latest indexed yfinance close.
+    # MUST run AFTER daemonize — yfinance opens HTTP connection pools that
+    # don't survive a fork() cleanly, so calling it in the parent and then
+    # forking corrupted the pipeline's own yfinance calls (Researcher node
+    # silently exited mid-fetch). Running in the post-fork daemon keeps
+    # all yfinance state local to one process.
+    if not args.no_auto_adjust_date:
+        from cli.auto_resolve_date import auto_resolve_trade_date
+        new_date, new_output_dir, was_adjusted = auto_resolve_trade_date(
+            args.ticker, args.date, args.output_dir,
+        )
+        if was_adjusted:
+            args.date = new_date
+            args.output_dir = new_output_dir
+            # The daemon's log path was opened in the parent using the
+            # ORIGINAL date string. After this point, args.date and
+            # args.output_dir have been adjusted; downstream pipeline
+            # uses the new values. The log file name remains pinned to
+            # the original date — this is documented in the auto-resolve
+            # message printed to the now-redirected stderr above.
 
     config = _build_config(args)
     progress = ProgressCallback()
