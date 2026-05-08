@@ -308,6 +308,21 @@ def main(argv: list[str] | None = None) -> int:
     }
     print(json.dumps(payload), flush=True)
 
+    # Build the PDF unconditionally — even when validators flag the run.
+    # The operator needs the PDF on disk to review what the LLM produced
+    # (matching the markdown artifacts already written by write_research_
+    # outputs). Telegram delivery is gated separately below; PDF is not.
+    try:
+        from cli.research_pdf import build_research_pdf
+        build_research_pdf(
+            output_dir=args.output_dir,
+            ticker=args.ticker,
+            date=args.date,
+            decision=decision,
+        )
+    except Exception as exc:  # noqa: BLE001 - PDF build is best-effort
+        print(f"PDF build failed (non-fatal): {exc}", file=sys.stderr)
+
     # Phase 7.4: post-output validation gate (Phase 7.1 price/date +
     # 7.2 quote attribution + 7.3 peer metric). Default behaviour:
     # validate after write_research_outputs and gate Telegram delivery
