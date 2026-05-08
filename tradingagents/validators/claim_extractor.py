@@ -117,6 +117,26 @@ _PATTERN_PRICES_JSON_TUPLE = re.compile(
 )
 
 
+# Phase 7.1 v2 (Fix #11): when the bridge between an outer date and the
+# close contains ANOTHER date reference (parenthetical or semicolon-
+# separated), the close belongs to the INNER date, not the outer.
+# Examples from the MSFT 2026-05-08 run:
+#   - "Jan 7, 2026 peak before the FY26 Q2 earnings crash (Jan 29, 2026:
+#     close $432.51 on 128.9M shares)"  →  close belongs to Jan 29
+#   - "intraday high range of May 7 session; Apr 22 close at $432.92"
+#     →  close belongs to Apr 22
+# This pattern matches a date occurring anywhere; we scan the bridge for
+# the LAST occurrence (closest to the close) and use that.
+_PATTERN_DATE_ONLY = re.compile(
+    r"\d{4}-\d{2}-\d{2}"
+    r"|"
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|"
+    r"January|February|March|April|June|July|August|September|"
+    r"October|November|December)\s+\d{1,2}(?:,?\s+\d{4})?",
+    re.IGNORECASE,
+)
+
+
 def _line_no(text: str, char_offset: int) -> int:
     """1-indexed line number for a character offset."""
     return text[:char_offset].count("\n") + 1
@@ -150,6 +170,21 @@ def extract_date_close_claims(text: str, anchor_year: int = 2026) -> list[DateCl
                 continue
             seen.add(key)
             date_raw = m.group("date")
+
+            # Phase 7.1 v2: if the bridge contains another date reference
+            # (parenthetical or semicolon-separated), bind the close to the
+            # LAST date in the bridge — that's the date semantically nearest
+            # the close. Drops false positives like "Jan 7 peak (Jan 29:
+            # close $432.51)" pairing Jan 7 with $432.51.
+            try:
+                bridge = m.group("bridge")
+            except IndexError:
+                bridge = ""
+            if bridge:
+                inner_dates = list(_PATTERN_DATE_ONLY.finditer(bridge))
+                if inner_dates:
+                    date_raw = inner_dates[-1].group(0)
+
             iso = _resolve_iso(date_raw, anchor_year)
             # Capture surrounding sentence (up to 120 chars) for human review
             ctx_start = max(0, m.start() - 20)

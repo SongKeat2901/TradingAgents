@@ -136,6 +136,71 @@ def test_handles_multiple_claims_in_order():
     assert "2026-05-07" in iso_dates
 
 
+def test_v2_inner_date_in_parens_overrides_outer_date():
+    """Phase 7.1 v2 (Fix #11): when bridge contains a date in parens, the
+    close binds to the INNER date, not the outer.
+
+    MSFT 2026-05-08 false positive:
+      "Jan 7, 2026 peak before the FY26 Q2 earnings crash
+       (Jan 29, 2026: close $432.51 on 128.9M shares)"
+
+    Pre-fix: bound Jan 7, 2026 ↔ $432.51 (wrong; Jan 7 close was $482.37).
+    Post-fix: binds Jan 29, 2026 ↔ $432.51 (correct)."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = (
+        "Jan 7, 2026 peak before the FY26 Q2 earnings crash "
+        "(Jan 29, 2026: close $432.51 on 128.9M shares)"
+    )
+    claims = extract_date_close_claims(text)
+    assert len(claims) == 1
+    # Inner date (Jan 29) wins over outer (Jan 7)
+    assert claims[0].date_iso == "2026-01-29"
+    assert claims[0].price == 432.51
+
+
+def test_v2_inner_date_after_semicolon_overrides_outer_date():
+    """MSFT 2026-05-08 false positive #2:
+      "intraday high range of May 7 session; Apr 22 close at $432.92"
+
+    Pre-fix: bound May 7 ↔ $432.92 (wrong).
+    Post-fix: binds Apr 22 ↔ $432.92 (correct)."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "intraday high range of May 7 session; Apr 22 close at $432.92"
+    claims = extract_date_close_claims(text, anchor_year=2026)
+    assert len(claims) == 1
+    assert claims[0].date_iso == "2026-04-22"
+    assert claims[0].price == 432.92
+
+
+def test_v2_keeps_real_fabrication_when_no_inner_date_in_bridge():
+    """The 2 REAL MSFT fabrications must still fire after the v2 fix:
+      "The May 8 close at $434.84 on 23.5M shares"
+
+    Bridge between May 8 and the close contains no other date, so the
+    outer date stands. The validator still flags this as
+    fabricated_future_close."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "The May 8 close at $434.84 on 23.5M shares is constructive."
+    claims = extract_date_close_claims(text, anchor_year=2026)
+    assert len(claims) == 1
+    assert claims[0].date_iso == "2026-05-08"  # outer date stands
+    assert claims[0].price == 434.84
+
+
+def test_v2_real_coin_fabrication_still_caught():
+    """COIN regression — fix must not break Phase 7.1's load-bearing case."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "the May 8 session subsequently closed at $206.50 per prices.json"
+    claims = extract_date_close_claims(text, anchor_year=2026)
+    assert len(claims) == 1
+    assert claims[0].date_iso == "2026-05-08"
+    assert claims[0].price == 206.50
+
+
 def test_match_text_includes_surrounding_context():
     """Match_text should include enough surrounding prose for human review
     of the violation (typically 100-150 chars)."""
