@@ -144,9 +144,17 @@ def extract_net_debt_claims(text: str) -> list[NetDebtClaim]:
                 continue
             value_dollars = abs(value_dollars)
 
-            ctx_start = max(0, m.start() - 30)
-            ctx_end = min(len(text), m.end() + 30)
-            match_text = text[ctx_start:ctx_end].replace("\n", " ").strip()
+            # Phase 7.5 v1.2: capture the FULL surrounding paragraph (back to
+            # last newline) so peer-attribution detection can find ticker
+            # prefixes that appear earlier in the same sentence. The prior
+            # 30-char window missed cases like
+            #   "FN trades at 36.6x forward with $956M in net cash"
+            # where "FN" is ~37 chars before "$956M".
+            paragraph_start = text.rfind("\n", 0, m.start()) + 1
+            paragraph_end = text.find("\n", m.end())
+            if paragraph_end == -1:
+                paragraph_end = len(text)
+            match_text = text[paragraph_start:paragraph_end].replace("\n", " ").strip()
 
             claims.append(NetDebtClaim(
                 label=label,

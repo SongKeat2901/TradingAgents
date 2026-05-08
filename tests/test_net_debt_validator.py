@@ -255,6 +255,65 @@ def test_does_not_pair_label_to_dollar_across_semicolon(tmp_path):
     assert claims == []
 
 
+def test_v1_2_peer_attribution_detection_uses_full_line(tmp_path):
+    """Phase 7.5 v1.2 false-positive fix: when a peer ticker prefix appears
+    earlier in the SAME LINE (not just within 30 chars), peer-attribution
+    detection must still skip the claim. Surfaced by the 2026-05-08 AAOI
+    run where 'FN trades at 36.6x forward with $956M in organically-
+    generated net cash' had FN ~37 chars before $956M — outside the prior
+    lookback window."""
+    from tradingagents.validators import (
+        extract_net_debt_claims,
+        validate_net_debt_claims,
+    )
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+    nd_path = _write_net_debt(tmp_path)
+
+    text = (
+        "Meanwhile FN trades at 36.6x forward with $956M in organically-"
+        "generated net cash and positive FCF every quarter."
+    )
+    claims = extract_net_debt_claims(text)
+    claims = [NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file="debate_risk.md",
+        line_no=c.line_no, match_text=c.match_text,
+    ) for c in claims]
+    # Validator with main_ticker="MSFT" should detect FN in the line and skip
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    assert violations == []  # FN-attributed, deferred to Phase 7.3
+
+
+def test_v1_2_peer_attribution_with_pm_brief_reference(tmp_path):
+    """Same v1.2 fix, second variant: 'FN carries zero net debt
+    (ND/EBITDA = −1.99×, net debt −$956M per pm_brief.md)' — peer ticker
+    is at the start of a parenthetical sentence."""
+    from tradingagents.validators import (
+        extract_net_debt_claims,
+        validate_net_debt_claims,
+    )
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+    nd_path = _write_net_debt(tmp_path)
+
+    text = (
+        "FN carries zero net debt (ND/EBITDA = -1.99x, net debt -$956M "
+        "per pm_brief.md) vs. AAOI's $42M net debt position."
+    )
+    claims = extract_net_debt_claims(text)
+    claims = [NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file="analyst_news.md",
+        line_no=c.line_no, match_text=c.match_text,
+    ) for c in claims]
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    # FN's $956M and AAOI's $42M both appear; both have peer ticker context
+    # (FN before $956M; AAOI's before $42M is the main ticker so wouldn't
+    # be skipped — but $42M is far below all canonical MSFT derivations
+    # so it would still flag if we treated AAOI as the ticker. With
+    # main_ticker=MSFT, both should defer.)
+    assert violations == []
+
+
 def test_to_dollars_handles_billions_and_millions():
     from tradingagents.validators.net_debt_validator import _to_dollars
     assert _to_dollars("8.16", "B") == 8_160_000_000.0
