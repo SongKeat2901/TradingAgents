@@ -45,6 +45,7 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
     prices_json = rd / "raw" / "prices.json"
     peer_ratios_json = rd / "raw" / "peer_ratios.json"
     peers_json = rd / "raw" / "peers.json"
+    net_debt_json = rd / "raw" / "net_debt.json"
 
     files_present = [f for f in _FILES_TO_SCAN if (rd / f).exists()]
 
@@ -52,15 +53,19 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
     from tradingagents.validators import (
         extract_attributed_quotes,
         extract_date_close_claims,
+        extract_net_debt_claims,
         validate_attributed_quotes,
         validate_date_close_claims,
+        validate_net_debt_claims,
         validate_peer_metrics,
     )
     from tradingagents.validators.claim_extractor import DateCloseClaim
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
     from tradingagents.validators.quote_attribution_validator import AttributedQuote
 
     price_date_claims: list[DateCloseClaim] = []
     quote_claims: list[AttributedQuote] = []
+    net_debt_claims: list[NetDebtClaim] = []
     peer_violations = []
 
     for fname in files_present:
@@ -76,12 +81,29 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
                 file=fname, line_no=q.line_no,
                 expected_source_file=q.expected_source_file,
             ))
+        for n in extract_net_debt_claims(text):
+            net_debt_claims.append(NetDebtClaim(
+                label=n.label, is_cash=n.is_cash,
+                value_raw=n.value_raw, value_dollars=n.value_dollars,
+                file=fname, line_no=n.line_no, match_text=n.match_text,
+            ))
         peer_violations.extend(
             validate_peer_metrics(text, fname, peer_ratios_json, peers_json)
         )
 
+    # Read main ticker from state.json (skips Phase 7.5 peer-attributed claims)
+    main_ticker: str | None = None
+    state_path = rd / "state.json"
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            main_ticker = state.get("company_of_interest")
+        except (OSError, json.JSONDecodeError):
+            pass
+
     price_date_violations = validate_date_close_claims(price_date_claims, prices_json)
     quote_violations = validate_attributed_quotes(quote_claims, rd)
+    net_debt_violations = validate_net_debt_claims(net_debt_claims, net_debt_json, main_ticker=main_ticker)
 
     def _ser(obj):
         return asdict(obj) if is_dataclass(obj) else obj
@@ -100,8 +122,15 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
         "phase_7_3_peer_metric": {
             "violations": [_ser(v) for v in peer_violations],
         },
+        "phase_7_5_net_debt": {
+            "claims_extracted": len(net_debt_claims),
+            "violations": [_ser(v) for v in net_debt_violations],
+        },
         "total_violations": (
-            len(price_date_violations) + len(quote_violations) + len(peer_violations)
+            len(price_date_violations)
+            + len(quote_violations)
+            + len(peer_violations)
+            + len(net_debt_violations)
         ),
     }
 
@@ -123,10 +152,11 @@ def format_validation_summary(results: dict[str, Any]) -> str:
     n_pd = len(results.get("phase_7_1_price_date", {}).get("violations", []))
     n_q = len(results.get("phase_7_2_quote_attribution", {}).get("violations", []))
     n_pm = len(results.get("phase_7_3_peer_metric", {}).get("violations", []))
+    n_nd = len(results.get("phase_7_5_net_debt", {}).get("violations", []))
     total = results.get("total_violations", 0)
     if total == 0:
         return "VALIDATION PASS (0 violations)"
     return (
         f"VALIDATION FAIL ({total} violation(s): "
-        f"{n_pd} price/date, {n_q} quote, {n_pm} peer)"
+        f"{n_pd} price/date, {n_q} quote, {n_pm} peer, {n_nd} net-debt)"
     )

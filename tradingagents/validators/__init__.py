@@ -34,6 +34,12 @@ from tradingagents.validators.peer_metric_validator import (
     PeerMetricViolation,
     validate_peer_metrics,
 )
+from tradingagents.validators.net_debt_validator import (
+    NetDebtClaim,
+    NetDebtViolation,
+    extract_net_debt_claims,
+    validate_net_debt_claims,
+)
 
 __all__ = [
     "DateCloseClaim",
@@ -46,4 +52,8 @@ __all__ = [
     "validate_attributed_quotes",
     "PeerMetricViolation",
     "validate_peer_metrics",
+    "NetDebtClaim",
+    "NetDebtViolation",
+    "extract_net_debt_claims",
+    "validate_net_debt_claims",
 ]

@@ -39,10 +39,13 @@ from pathlib import Path
 from tradingagents.validators import (
     extract_attributed_quotes,
     extract_date_close_claims,
+    extract_net_debt_claims,
     validate_attributed_quotes,
     validate_date_close_claims,
+    validate_net_debt_claims,
     validate_peer_metrics,
 )
+from tradingagents.validators.net_debt_validator import render_net_debt_violations_text
 from tradingagents.validators.peer_metric_validator import render_peer_violations_text
 from tradingagents.validators.price_date_validator import render_violations_text
 from tradingagents.validators.quote_attribution_validator import render_quote_violations_text
@@ -94,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     prices_json = run_dir / "raw" / "prices.json"
     peer_ratios_json = run_dir / "raw" / "peer_ratios.json"
     peers_json = run_dir / "raw" / "peers.json"
+    net_debt_json = run_dir / "raw" / "net_debt.json"
 
     # ----- Phase 7.1: price/date validator -----
     all_claims = []
@@ -144,7 +148,37 @@ def main(argv: list[str] | None = None) -> int:
             text, fname, peer_ratios_json, peers_json,
         ))
 
-    total_violations = len(price_date_violations) + len(quote_violations) + len(peer_violations)
+    # ----- Phase 7.5: net-debt definitional consistency validator -----
+    all_net_debt_claims = []
+    for fname in _FILES_TO_SCAN:
+        path = run_dir / fname
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for n in extract_net_debt_claims(text):
+            from tradingagents.validators.net_debt_validator import NetDebtClaim
+            all_net_debt_claims.append(NetDebtClaim(
+                label=n.label, is_cash=n.is_cash,
+                value_raw=n.value_raw, value_dollars=n.value_dollars,
+                file=fname, line_no=n.line_no, match_text=n.match_text,
+            ))
+    # Resolve main ticker from state.json so Phase 7.5 skips peer-attributed claims
+    main_ticker: str | None = None
+    state_path = run_dir / "state.json"
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            main_ticker = state.get("company_of_interest")
+        except (OSError, json.JSONDecodeError):
+            pass
+    net_debt_violations = validate_net_debt_claims(
+        all_net_debt_claims, net_debt_json, main_ticker=main_ticker,
+    )
+
+    total_violations = (
+        len(price_date_violations) + len(quote_violations)
+        + len(peer_violations) + len(net_debt_violations)
+    )
 
     if args.json:
         out = {
@@ -162,6 +196,10 @@ def main(argv: list[str] | None = None) -> int:
             },
             "phase_7_3_peer_metric": {
                 "violations": [asdict(v) for v in peer_violations],
+            },
+            "phase_7_5_net_debt": {
+                "claims_extracted": len(all_net_debt_claims),
+                "violations": [asdict(v) for v in net_debt_violations],
             },
             "total_violations": total_violations,
         }
@@ -190,13 +228,22 @@ def main(argv: list[str] | None = None) -> int:
 
         print()
         print("=" * 70)
+        print("PHASE 7.5 — Net-debt definitional consistency")
+        print("=" * 70)
+        print(render_net_debt_violations_text(net_debt_violations))
+        if all_net_debt_claims and not net_debt_violations:
+            print(f"\n({len(all_net_debt_claims)} net-debt/cash claims extracted, all verified)")
+
+        print()
+        print("=" * 70)
         if total_violations == 0:
-            print(f"OVERALL: VALIDATION PASS (0 violations across 3 validators)")
+            print(f"OVERALL: VALIDATION PASS (0 violations across 4 validators)")
         else:
             print(f"OVERALL: VALIDATION FAIL ({total_violations} violations: "
                   f"{len(price_date_violations)} price/date, "
                   f"{len(quote_violations)} quote, "
-                  f"{len(peer_violations)} peer)")
+                  f"{len(peer_violations)} peer, "
+                  f"{len(net_debt_violations)} net-debt)")
 
     if args.strict and total_violations > 0:
         return 1
