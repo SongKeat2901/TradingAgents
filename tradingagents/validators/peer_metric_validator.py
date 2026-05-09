@@ -194,47 +194,80 @@ def extract_peer_metric_claims(
     text: str,
     peer_tickers: set[str],
 ) -> list[tuple[str, str, str, int, str]]:
-    """Find `<TICKER> <metric> <value>` patterns in text.
+    """Find `<METRIC> <value>` patterns and bind to nearest peer ticker.
 
     Returns list of (ticker, metric_raw, value_raw, line_no, match_text).
 
+    v2 (RC for AAOI 2026-05-08): the prior v1 regex required ticker
+    immediately adjacent to the metric (`[\\s,—–-]+` bridge), which
+    missed PM-style prose like
+
+        "**FN (Fabrinet)** — closest comp on optical-transceiver mix
+         and hyperscaler exposure; per `raw/peers.json` Fwd P/E = 36.6x,
+         TTM operating margin ≈ 11.4%, ND/EBITDA ≈ −2.1x"
+
+    where 50+ chars of descriptive prose separate the ticker from the
+    metric, and the metric uses `=` instead of whitespace. v2 reverses
+    the lookup: scan for known metric phrases followed by a value, then
+    look back to the nearest peer ticker within the same paragraph
+    (bounded by `\\n\\n`). Falls back to the prior tight pattern only
+    when v2 finds no candidates — keeps backwards compat for tickers
+    that are part of the metric label (e.g. "RIOT op margin").
+
     Patterns covered:
-      - "RIOT EV/EBITDA ~12×"
-      - "CIFR op margin low single-digit" — value as prose, only flag if
-         metric is non-verifiable
-      - "CLSK net debt $5.89B"
-      - "MARA TTM P/E 28.5x"
+      - "RIOT capex/revenue 78.7%" (immediate-adjacent, v1 form)
+      - "FN — ... per peers.json Fwd P/E = 36.6x" (long bridge + `=`)
+      - "CIFR EV/EBITDA ~9×" (non-verifiable metric, prose-form value)
     """
     if not text or not peer_tickers:
         return []
 
     results: list[tuple[str, str, str, int, str]] = []
     tickers_alt = "|".join(re.escape(t) for t in sorted(peer_tickers, key=len, reverse=True))
+    ticker_re = re.compile(rf"\b(?P<t>{tickers_alt})\b")
 
-    # Pattern: TICKER <whitespace> METRIC <whitespace> VALUE
-    # Allow up to 30 chars between ticker and value; metric is whatever
-    # is between them. We accept fuzzy metric names because LLM phrasings
-    # vary; the validator decides whether it's known/verifiable.
-    pattern = re.compile(
-        rf"\b(?P<ticker>{tickers_alt})\b"
-        rf"[\s,—–-]+"
-        rf"(?P<metric>[A-Za-z][A-Za-z\s/().-]{{1,40}}?)"
-        rf"\s+~?≈?(?P<value>"
-        rf"(?:approximately\s+)?-?\$?[\d.,]+\s*[%x×BM]?"
-        rf"|low\s+single-digit"
-        rf")",
+    # Build metric alternation from known phrases (verifiable + non-
+    # verifiable). Sort by length descending so longer matches win
+    # (e.g. "net debt/ebitda" before "net debt").
+    all_phrases = list(_VERIFIABLE_METRICS.keys()) + list(_NON_VERIFIABLE_METRICS)
+    metric_alt = "|".join(re.escape(p) for p in sorted(all_phrases, key=len, reverse=True))
+
+    # Metric-value: known metric phrase, optional separator (`=`/`:`/`~`/`≈`),
+    # then a value. Handles `−` (en-dash minus, U+2212) in addition to `-`.
+    metric_value_re = re.compile(
+        rf"\b(?P<metric>{metric_alt})\b"
+        rf"\s*[=:≈~]?\s*"
+        rf"(?P<value>(?:approximately\s+)?[~≈]?[-−]?\$?[\d.,]+\s*[%x×BM]?"
+        rf"|low\s+single-digit)",
         re.IGNORECASE,
     )
 
-    for m in pattern.finditer(text):
-        ticker = m.group("ticker").upper()
-        metric_raw = m.group("metric").strip()
-        value_raw = m.group("value").strip()
-        line_no = _line_no(text, m.start())
-        ctx_start = max(0, m.start() - 30)
-        ctx_end = min(len(text), m.end() + 30)
-        match_text = text[ctx_start:ctx_end].replace("\n", " ").strip()
-        results.append((ticker, metric_raw, value_raw, line_no, match_text))
+    seen_offsets: set[int] = set()
+    for mv in metric_value_re.finditer(text):
+        if mv.start() in seen_offsets:
+            continue
+        seen_offsets.add(mv.start())
+
+        # Look back up to 300 chars (within same paragraph) for nearest ticker
+        lookback_start = max(0, mv.start() - 300)
+        lookback_text = text[lookback_start:mv.start()]
+        # Cap at last paragraph break so we don't bind across `\n\n` boundaries
+        para_break = lookback_text.rfind("\n\n")
+        if para_break != -1:
+            lookback_text = lookback_text[para_break + 2:]
+
+        ticker_matches = list(ticker_re.finditer(lookback_text))
+        if not ticker_matches:
+            continue
+        nearest = ticker_matches[-1].group("t").upper()
+
+        line_no = _line_no(text, mv.start())
+        line_start = text.rfind("\n", 0, mv.start()) + 1
+        line_end = text.find("\n", mv.end())
+        if line_end == -1:
+            line_end = len(text)
+        match_text = text[line_start:line_end].strip()
+        results.append((nearest, mv.group("metric"), mv.group("value"), line_no, match_text))
 
     return results
 

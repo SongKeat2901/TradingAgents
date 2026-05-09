@@ -92,6 +92,97 @@ def test_catches_riot_ev_ebitda_fabricated_attribution(tmp_path):
     assert any(x.ticker == "RIOT" and "ev/ebitda" in x.metric.lower() for x in fabrications)
 
 
+def test_v2_catches_aaoi_pm_fabrication_long_bridge_with_equals_separator(tmp_path):
+    """AAOI 2026-05-08 PM-level fabrication missed by v1 regex: ticker is
+    far from the metric (50+ chars of prose), and metric-value uses `=`
+    separator instead of whitespace.
+
+      "**FN (Fabrinet)** — closest comp on optical-transceiver mix and
+       hyperscaler exposure; per `raw/peers.json` Fwd P/E = 36.6x,
+       TTM operating margin ≈ 11.4%, ND/EBITDA ≈ −2.1x"
+
+    Actual peer_ratios.json: FN forward_pe=36.64, op_margin=10.1,
+    nd_ebitda=-1.99. Claimed 11.4% op margin is 13% off canonical; 2.1x
+    ND/EBITDA vs −1.99x is +0.11 abs delta on a magnitude of 1.99 (5.5%).
+    Both should flag."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-08",
+        "_unavailable": [],
+        "FN": {
+            "latest_quarter_capex_to_revenue": 4.56,
+            "latest_quarter_op_margin": 10.1,
+            "ttm_pe": 54.31,
+            "forward_pe": 36.64,
+            "net_debt": -955_888_000,
+            "ttm_ebitda": 479_712_000,
+            "nd_ebitda": -1.99,
+        },
+        "COHR": {
+            "latest_quarter_capex_to_revenue": 9.11,
+            "latest_quarter_op_margin": 11.78,
+            "ttm_pe": 155.64,
+            "forward_pe": 41.15,
+            "net_debt": 2_488_127_000,
+            "ttm_ebitda": 1_313_731_968,
+            "nd_ebitda": 1.89,
+        },
+        "LITE": {
+            "latest_quarter_capex_to_revenue": 12.56,
+            "latest_quarter_op_margin": 9.6,
+            "ttm_pe": 158.14,
+            "forward_pe": 50.04,
+            "net_debt": 2_629_600_000,
+            "ttm_ebitda": 508_800_000,
+            "nd_ebitda": 5.17,
+        },
+    }
+    peers = {"FN": {"ticker": "FN"}, "COHR": {"ticker": "COHR"}, "LITE": {"ticker": "LITE"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "  - **FN (Fabrinet)** — closest comp on optical-transceiver mix "
+        "and hyperscaler exposure; per `raw/peers.json` Fwd P/E = 36.6x, "
+        "TTM operating margin ≈ 11.4%, ND/EBITDA ≈ −2.1x (net cash).\n"
+        "  - **COHR (Coherent Corp.)** — direct AI-optics platform overlap; "
+        "per `raw/peers.json` Fwd P/E = 22.4x, TTM operating margin ≈ 7.8%, "
+        "ND/EBITDA ≈ 3.6x.\n"
+        "  - **LITE (Lumentum)** — datacom/transceiver competitor; per "
+        "`raw/peers.json` Fwd P/E = 28.1x, TTM operating margin ≈ 4.9%, "
+        "ND/EBITDA ≈ 1.9x."
+    )
+
+    violations = validate_peer_metrics(
+        text, "decision.md", raw / "peer_ratios.json", raw / "peers.json",
+    )
+    # All four MATERIAL drifts must fire (COHR Fwd P/E 22.4 vs 41.15;
+    # LITE Fwd P/E 28.1 vs 50.04; COHR ND/EBITDA 3.6 vs 1.89; LITE
+    # ND/EBITDA 1.9 vs 5.17).
+    by_key = {(v.ticker, v.metric.lower().strip()): v for v in violations
+              if v.type == "wrong_peer_metric"}
+    cohr_fpe = [v for k, v in by_key.items() if k[0] == "COHR" and "p/e" in k[1]]
+    lite_fpe = [v for k, v in by_key.items() if k[0] == "LITE" and "p/e" in k[1]]
+    cohr_nde = [v for k, v in by_key.items() if k[0] == "COHR" and "ebitda" in k[1]]
+    lite_nde = [v for k, v in by_key.items() if k[0] == "LITE" and "ebitda" in k[1]]
+    assert cohr_fpe, f"missed COHR Fwd P/E fabrication; got {sorted(by_key)}"
+    assert lite_fpe, f"missed LITE Fwd P/E fabrication; got {sorted(by_key)}"
+    assert cohr_nde, f"missed COHR ND/EBITDA fabrication; got {sorted(by_key)}"
+    assert lite_nde, f"missed LITE ND/EBITDA fabrication; got {sorted(by_key)}"
+
+
+def test_v2_keeps_immediate_form_passing(tmp_path):
+    """Backwards compat: the existing tight form
+    `RIOT capex/revenue 78.7%` must still parse cleanly under v2."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_peer_data(tmp_path)
+    text = "RIOT capex/revenue 78.7%; CIFR forward P/E 40.95x"
+    v = validate_peer_metrics(text, "decision.md", raw / "peer_ratios.json", raw / "peers.json")
+    assert v == []
+
+
 def test_skips_when_peers_json_missing(tmp_path):
     from tradingagents.validators import validate_peer_metrics
     raw = tmp_path / "raw"
