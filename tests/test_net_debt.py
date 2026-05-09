@@ -51,6 +51,28 @@ def test_compute_net_debt_extracts_yfinance_row_when_present():
     assert out["cash_plus_short_term_investments"] == 2_301_470_000.0
 
 
+def test_compute_net_debt_passes_through_financial_currency():
+    """Phase 7.5 v1.3: yfinance returns balance-sheet cells in the company's
+    reporting currency (TWD/JPY/etc.). compute_net_debt must pass the
+    `financial_currency` field through to the output dict so the validator
+    can detect non-USD reporters and skip cleanly."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt
+
+    out = compute_net_debt({
+        "trade_date": "2026-05-08",
+        "balance_sheet": _MSTR_BS,
+        "financial_currency": "TWD",
+    })
+    assert out["financial_currency"] == "TWD"
+
+    # Missing field passes through as None (legacy / older callers)
+    out = compute_net_debt({
+        "trade_date": "2026-05-08",
+        "balance_sheet": _MSTR_BS,
+    })
+    assert out["financial_currency"] is None
+
+
 def test_compute_net_debt_falls_back_when_yfinance_row_missing():
     """If the Net Debt row is absent, compute as Total Debt − (Cash + STI)
     and surface `net_debt_source = "computed"` so the LLM can disclose."""

@@ -92,6 +92,7 @@ def compute_net_debt(financials_data: dict[str, Any]) -> dict[str, Any]:
         {
           "trade_date": str | None,             # passed-through from input
           "as_of_quarter": "YYYY-MM-DD" | None, # col 0 column header
+          "financial_currency": str | None,     # yfinance reporting currency (USD/TWD/...)
           "net_debt": float | None,             # yfinance Net Debt row, col 0
           "net_debt_source": "yfinance" | "computed" | None,
           "total_debt": float | None,
@@ -103,9 +104,16 @@ def compute_net_debt(financials_data: dict[str, Any]) -> dict[str, Any]:
           "unavailable": bool,                  # True if Total Debt missing
           "unavailable_reason": str | None,
         }
+
+    The `financial_currency` field is the reporting currency of the
+    underlying balance-sheet cells (yfinance returns cells in this
+    currency, NOT in USD). Phase 7.5 v1.3 reads this so the validator
+    can skip non-USD reporters cleanly rather than flagging spurious
+    drift.
     """
     bs = financials_data.get("balance_sheet", "") if isinstance(financials_data, dict) else ""
     trade_date = financials_data.get("trade_date") if isinstance(financials_data, dict) else None
+    fin_ccy = financials_data.get("financial_currency") if isinstance(financials_data, dict) else None
     columns, rows = _parse_quarterly_csv(bs)
     as_of = columns[0] if columns else None
 
@@ -155,6 +163,7 @@ def compute_net_debt(financials_data: dict[str, Any]) -> dict[str, Any]:
     return {
         "trade_date": trade_date,
         "as_of_quarter": as_of,
+        "financial_currency": fin_ccy,
         "net_debt": net_debt,
         "net_debt_source": net_debt_source,
         "total_debt": total_debt,

@@ -79,6 +79,25 @@ def _latest_indicator_value(indicator_str: str) -> Optional[float]:
             continue
     return None
 
+def _fetch_financial_currency(ticker: str) -> str | None:
+    """Look up yfinance reporting currency for `ticker`. None on any failure.
+
+    yfinance returns balance-sheet cells in the company's reporting currency
+    (TWD for Taiwan-domiciled, JPY for Japan-domiciled, etc.) — NOT in USD.
+    Phase 7.5 v1.3 reads this from raw/net_debt.json so the validator can
+    skip non-USD reporters cleanly rather than flagging spurious drift
+    against TWD-denominated cells stored as if USD.
+    """
+    try:
+        import yfinance as yf
+        from tradingagents.dataflows.stockstats_utils import yf_retry
+        info = yf_retry(lambda: yf.Ticker(ticker.upper()).info)
+        ccy = info.get("financialCurrency") if isinstance(info, dict) else None
+        return str(ccy).upper() if ccy else None
+    except Exception:
+        return None
+
+
 def _fetch_financials(ticker: str, date: str) -> dict[str, Any]:
     """Pull fundamentals + balance sheet + cashflow + income statement for one ticker."""
     from tradingagents.agents.utils.agent_utils import (
@@ -90,6 +109,7 @@ def _fetch_financials(ticker: str, date: str) -> dict[str, Any]:
     return {
         "ticker": ticker,
         "trade_date": date,
+        "financial_currency": _fetch_financial_currency(ticker),
         "fundamentals": get_fundamentals.invoke({"ticker": ticker, "curr_date": date}),
         "balance_sheet": get_balance_sheet.invoke({"ticker": ticker, "curr_date": date}),
         "cashflow": get_cashflow.invoke({"ticker": ticker, "curr_date": date}),
