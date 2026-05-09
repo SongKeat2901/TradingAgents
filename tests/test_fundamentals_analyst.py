@@ -43,7 +43,9 @@ def test_fundamentals_reads_sec_filing_md_when_present(monkeypatch, tmp_path):
     monkeypatch.setattr(fundamentals_analyst, "format_for_prompt", fake_format)
 
     fake_llm = MagicMock()
-    fake_llm.invoke.return_value = AIMessage(content="report body")
+    # Provide enough content to clear the min_chars=2000 floor so the
+    # analyst's `invoke_with_empty_retry` doesn't raise on the stub.
+    fake_llm.invoke.return_value = AIMessage(content="report body. " * 200)
 
     node = fundamentals_analyst.create_fundamentals_analyst(fake_llm)
     state = {

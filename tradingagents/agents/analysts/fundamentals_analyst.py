@@ -139,7 +139,13 @@ def create_fundamentals_analyst(llm):
                 f"Write the fundamentals analyst's report."
             ),
         ]
-        result, report = invoke_with_empty_retry(llm, messages, "Fundamentals Analyst")
+        # ASX 2026-05-08: claude CLI returned 1168c instead of 8-17KB
+        # baseline (one-time flake; same prompt re-invoked → 9083c).
+        # Retry on sub-minimum responses. Smallest legitimate analyst
+        # response in the cadence so far: ~10KB (SPY).
+        result, report = invoke_with_empty_retry(
+            llm, messages, "Fundamentals Analyst", min_chars=2000,
+        )
 
         return {
             "messages": [result],

@@ -65,7 +65,9 @@ def create_social_media_analyst(llm):
                 f"Write the sentiment analyst's report."
             ),
         ]
-        result, report = invoke_with_empty_retry(llm, messages, "Social Media Analyst")
+        result, report = invoke_with_empty_retry(
+            llm, messages, "Social Media Analyst", min_chars=2000,
+        )
 
         return {
             "messages": [result],

@@ -351,3 +351,67 @@ class TestInvokeWithEmptyRetry:
         first_args = llm.invoke.call_args_list[0][0]
         second_args = llm.invoke.call_args_list[1][0]
         assert first_args == second_args == (msgs,)
+
+    def test_v2_retries_when_first_call_below_min_chars(self):
+        """ASX 2026-05-08: claude CLI subprocess returned 1168c instead of
+        the expected 8-17KB for the Fundamentals Analyst (one-time flake;
+        repro on the same prompt produced 9083c). Empty-content check
+        passes (1168c is non-empty), so retry didn't fire. Add `min_chars`
+        floor so callers can opt into a length-based retry for analysts
+        that have a known-large output baseline."""
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        short = MagicMock(content="margin below 9.5% would signal mix dilution. " * 5)  # ~225c
+        substantive = MagicMock(content="# Fundamentals Analyst\n\n## Section\n\n" + "Real content. " * 200)
+        llm = MagicMock()
+        llm.invoke.side_effect = [short, substantive]
+
+        result, content = invoke_with_empty_retry(
+            llm, ["msg"], "Fundamentals Analyst", min_chars=2000,
+        )
+
+        assert llm.invoke.call_count == 2
+        assert result is substantive
+        assert content.startswith("# Fundamentals Analyst")
+
+    def test_v2_default_min_chars_is_zero_for_backwards_compat(self):
+        """Existing callers (Trader, debaters) that don't pass min_chars
+        must keep the empty-only check. A 200-char response is fine when
+        no minimum is set."""
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        short = MagicMock(content="A short but legitimate response.")  # 32c
+        llm = MagicMock()
+        llm.invoke.return_value = short
+
+        _result, content = invoke_with_empty_retry(llm, ["msg"], "Trader")
+
+        assert llm.invoke.call_count == 1  # no retry
+        assert content == "A short but legitimate response."
+
+    def test_v2_does_not_retry_when_first_call_meets_min_chars(self):
+        """At-or-above the minimum threshold passes through unchanged."""
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        ok = MagicMock(content="x" * 2000)  # exactly at threshold
+        llm = MagicMock()
+        llm.invoke.return_value = ok
+
+        _result, content = invoke_with_empty_retry(
+            llm, ["msg"], "Fundamentals Analyst", min_chars=2000,
+        )
+
+        assert llm.invoke.call_count == 1
+        assert len(content) == 2000
+
+    def test_v2_raises_when_both_calls_below_min_chars(self):
+        """Sustained short output across two calls is a degenerate state,
+        not a transient flake — raise so the run dies fast."""
+        from tradingagents.agents.utils.structured import invoke_with_empty_retry
+        short1 = MagicMock(content="a" * 500)
+        short2 = MagicMock(content="b" * 600)
+        llm = MagicMock()
+        llm.invoke.side_effect = [short1, short2]
+
+        with pytest.raises(RuntimeError, match=r"Fundamentals Analyst.*sub-minimum"):
+            invoke_with_empty_retry(
+                llm, ["msg"], "Fundamentals Analyst", min_chars=2000,
+            )
+        assert llm.invoke.call_count == 2

@@ -71,7 +71,9 @@ def create_news_analyst(llm):
                 f"Write the news analyst's report."
             ),
         ]
-        result, report = invoke_with_empty_retry(llm, messages, "News Analyst")
+        result, report = invoke_with_empty_retry(
+            llm, messages, "News Analyst", min_chars=2000,
+        )
 
         return {
             "messages": [result],

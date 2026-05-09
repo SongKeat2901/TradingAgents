@@ -72,7 +72,9 @@ def create_market_analyst(llm):
                 f"Write the market analyst's commentary."
             ),
         ]
-        result, report = invoke_with_empty_retry(llm, messages, "Market Analyst")
+        result, report = invoke_with_empty_retry(
+            llm, messages, "Market Analyst", min_chars=2000,
+        )
 
         return {
             "messages": [result],

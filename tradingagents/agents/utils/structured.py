@@ -110,8 +110,10 @@ def invoke_with_empty_retry(
     llm: Any,
     messages: Any,
     agent_name: str,
+    min_chars: int = 0,
 ) -> tuple[Any, str]:
-    """Invoke ``llm`` and return ``(result, content)``; retry once on empty content.
+    """Invoke ``llm`` and return ``(result, content)``; retry once on
+    empty (or sub-minimum) content.
 
     The 2026-05-06 cadence surfaced an intermittent claude-CLI flake where
     the subprocess exits cleanly but the resulting ``BaseMessage.content``
@@ -122,17 +124,42 @@ def invoke_with_empty_retry(
     a 30% transient rate becomes a 9% effective rate; the rare double-
     empty still raises so the run dies fast rather than shipping a stub.
 
+    The 2026-05-08 ASX run surfaced a related flake: the CLI returned
+    1168 chars (mid-sentence start, missing 7 of 9 expected sections)
+    where the same prompt re-invoked produced 9083 chars. Empty-content
+    check passes (non-empty). Add ``min_chars`` so analysts with a
+    known-large output baseline can opt into a length-based retry; the
+    default 0 preserves backwards compatibility for callers that may
+    legitimately produce short responses (Trader, debate judges).
+
     Returns ``(result, content)`` so callers can keep ``result`` for the
     LangGraph ``messages`` channel and use ``content`` as the report.
     """
     result = llm.invoke(messages)
     raw = result.content if hasattr(result, "content") else None
-    if raw and raw.strip():
+
+    if raw and raw.strip() and len(raw) >= min_chars:
         return result, raw
 
+    if not raw or not raw.strip():
+        reason = "empty content"
+    else:
+        reason = f"sub-minimum content ({len(raw)}c < {min_chars}c)"
     logger.warning(
-        "%s: LLM returned empty content on first call; retrying once before raising",
-        agent_name,
+        "%s: LLM returned %s on first call; retrying once before raising",
+        agent_name, reason,
     )
+
     result = llm.invoke(messages)
-    return result, extract_llm_content(result, agent_name)
+    raw = result.content if hasattr(result, "content") else None
+
+    if not raw or not raw.strip():
+        return result, extract_llm_content(result, agent_name)
+    if min_chars and len(raw) < min_chars:
+        raise RuntimeError(
+            f"{agent_name}: LLM returned sub-minimum content twice "
+            f"({len(raw)}c < {min_chars}c on retry). Sustained short-output "
+            f"state — re-running the node would not help. Investigate prompt "
+            f"size, CLI subprocess behaviour, or model response cap."
+        )
+    return result, raw
