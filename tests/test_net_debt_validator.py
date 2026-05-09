@@ -314,6 +314,34 @@ def test_v1_2_peer_attribution_with_pm_brief_reference(tmp_path):
     assert violations == []
 
 
+def test_v1_4_does_not_pair_value_to_label_across_semicolon():
+    """AAPL 2026-05-08 false positive: a self-citing claim contained
+
+      "**AAPL net debt of $39.14B** (computed as Total Debt $84.71B
+       − Cash $45.57B; source: yfinance Net Debt row, pm_brief.md)"
+
+    The regex `_PATTERN_VALUE_FIRST` paired $45.57B (Cash) with "Net Debt"
+    in the source citation 30 chars later, bridging across `;`. The
+    sibling `_PATTERN_LABEL_FIRST` already excluded `;`; this fix brings
+    `_PATTERN_VALUE_FIRST` symmetric."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    text = (
+        "**AAPL net debt of $39.14B** (computed as Total Debt $84.71B "
+        "− Cash $45.57B; source: yfinance Net Debt row, pm_brief.md)"
+    )
+    claims = extract_net_debt_claims(text)
+    # Only the AAPL net debt of $39.14B should be extracted; $45.57B
+    # (Cash) and $84.71B (Total Debt) are not net-debt claims.
+    values = {c.value_dollars for c in claims}
+    assert 45_570_000_000.0 not in values, (
+        "$45.57B (Cash) was paired with 'Net Debt' across semicolon"
+    )
+    assert 84_710_000_000.0 not in values, (
+        "$84.71B (Total Debt) was paired with 'Net Debt' across semicolon"
+    )
+
+
 def test_v1_3_does_not_pair_label_to_dollar_across_table_cell():
     """ASX 2026-05-08 false positive: a markdown table row contained
 

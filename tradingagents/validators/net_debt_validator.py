@@ -88,9 +88,13 @@ class NetDebtViolation:
 #
 # Phase 7.5 v1.3 (RC-B): bridge excludes `|` so the regex doesn't pair
 # `net debt | $27.52` across markdown table cell boundaries.
+# Phase 7.5 v1.4 (RC for AAPL 2026-05-08 false positive): bridge also
+# excludes `;` so a value followed by a source citation (e.g.,
+# `... Cash $45.57B; source: yfinance Net Debt row`) doesn't get paired
+# with "Net Debt" from the citation. Symmetric with `_PATTERN_LABEL_FIRST`.
 _PATTERN_VALUE_FIRST = re.compile(
     r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?"
-    r"(?P<bridge>[^\n.|]{0,30}?)"
+    r"(?P<bridge>[^\n.;|]{0,30}?)"
     r"\s+(?P<label>net\s+(?:cash|debt))",
     re.IGNORECASE,
 )
