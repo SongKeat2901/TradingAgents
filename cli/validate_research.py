@@ -179,6 +179,15 @@ def main(argv: list[str] | None = None) -> int:
         len(price_date_violations) + len(quote_violations)
         + len(peer_violations) + len(net_debt_violations)
     )
+    # Phase 7.5 v1.3: count MATERIAL/blocking violations separately.
+    # MINOR notices (skipped_non_usd_reporter) are informational and must
+    # not suppress delivery; --strict gates on blocking only.
+    def _blocking(violations: list) -> int:
+        return sum(1 for v in violations if getattr(v, "severity", None) != "MINOR")
+    blocking_violations = (
+        _blocking(price_date_violations) + _blocking(quote_violations)
+        + _blocking(peer_violations) + _blocking(net_debt_violations)
+    )
 
     if args.json:
         out = {
@@ -236,16 +245,23 @@ def main(argv: list[str] | None = None) -> int:
 
         print()
         print("=" * 70)
-        if total_violations == 0:
-            print(f"OVERALL: VALIDATION PASS (0 violations across 4 validators)")
+        if blocking_violations == 0:
+            if total_violations == 0:
+                print(f"OVERALL: VALIDATION PASS (0 violations across 4 validators)")
+            else:
+                # MINOR-only — pass with notice
+                print(
+                    f"OVERALL: VALIDATION PASS "
+                    f"({total_violations - blocking_violations} MINOR notice(s); 0 blocking)"
+                )
         else:
-            print(f"OVERALL: VALIDATION FAIL ({total_violations} violations: "
-                  f"{len(price_date_violations)} price/date, "
-                  f"{len(quote_violations)} quote, "
-                  f"{len(peer_violations)} peer, "
-                  f"{len(net_debt_violations)} net-debt)")
+            print(f"OVERALL: VALIDATION FAIL ({blocking_violations} blocking violations: "
+                  f"{_blocking(price_date_violations)} price/date, "
+                  f"{_blocking(quote_violations)} quote, "
+                  f"{_blocking(peer_violations)} peer, "
+                  f"{_blocking(net_debt_violations)} net-debt)")
 
-    if args.strict and total_violations > 0:
+    if args.strict and blocking_violations > 0:
         return 1
     return 0
 

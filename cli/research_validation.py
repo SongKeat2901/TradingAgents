@@ -108,6 +108,20 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
     def _ser(obj):
         return asdict(obj) if is_dataclass(obj) else obj
 
+    # Phase 7.5 v1.3: `skipped_non_usd_reporter` is a MINOR informational
+    # notice (validator out-of-scope for non-USD reporters), not a
+    # fabrication flag. Count it separately so delivery isn't suppressed.
+    def _is_blocking(v: Any) -> bool:
+        sev = getattr(v, "severity", None) or (v.get("severity") if isinstance(v, dict) else None)
+        return sev != "MINOR"
+
+    blocking_total = (
+        sum(1 for v in price_date_violations if _is_blocking(v))
+        + sum(1 for v in quote_violations if _is_blocking(v))
+        + sum(1 for v in peer_violations if _is_blocking(v))
+        + sum(1 for v in net_debt_violations if _is_blocking(v))
+    )
+
     return {
         "run_dir": str(rd),
         "files_scanned": files_present,
@@ -132,6 +146,7 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
             + len(peer_violations)
             + len(net_debt_violations)
         ),
+        "blocking_violations": blocking_total,
     }
 
 
@@ -148,15 +163,22 @@ def write_validation_report(run_dir: str | Path, results: dict[str, Any]) -> Pat
 
 
 def format_validation_summary(results: dict[str, Any]) -> str:
-    """One-line operator summary suitable for stderr / Telegram failure msg."""
-    n_pd = len(results.get("phase_7_1_price_date", {}).get("violations", []))
-    n_q = len(results.get("phase_7_2_quote_attribution", {}).get("violations", []))
-    n_pm = len(results.get("phase_7_3_peer_metric", {}).get("violations", []))
-    n_nd = len(results.get("phase_7_5_net_debt", {}).get("violations", []))
-    total = results.get("total_violations", 0)
-    if total == 0:
+    """One-line operator summary suitable for stderr / Telegram failure msg.
+
+    Counts MATERIAL/blocking violations only — MINOR informational notices
+    (like Phase 7.5 `skipped_non_usd_reporter`) don't suppress delivery.
+    """
+    def _blocking(violations: list[dict]) -> int:
+        return sum(1 for v in violations if v.get("severity") != "MINOR")
+
+    n_pd = _blocking(results.get("phase_7_1_price_date", {}).get("violations", []))
+    n_q = _blocking(results.get("phase_7_2_quote_attribution", {}).get("violations", []))
+    n_pm = _blocking(results.get("phase_7_3_peer_metric", {}).get("violations", []))
+    n_nd = _blocking(results.get("phase_7_5_net_debt", {}).get("violations", []))
+    blocking = results.get("blocking_violations", n_pd + n_q + n_pm + n_nd)
+    if blocking == 0:
         return "VALIDATION PASS (0 violations)"
     return (
-        f"VALIDATION FAIL ({total} violation(s): "
+        f"VALIDATION FAIL ({blocking} violation(s): "
         f"{n_pd} price/date, {n_q} quote, {n_pm} peer, {n_nd} net-debt)"
     )

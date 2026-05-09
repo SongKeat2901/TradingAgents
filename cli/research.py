@@ -374,7 +374,11 @@ def main(argv: list[str] | None = None) -> int:
             results = run_phase_7_validators(args.output_dir)
             write_validation_report(args.output_dir, results)
             validation_summary = format_validation_summary(results)
-            validation_failed = results["total_violations"] > 0
+            # Phase 7.5 v1.3: gate on `blocking_violations`, not
+            # `total_violations`. MINOR notices (skipped_non_usd_reporter)
+            # are informational, not fabrication flags — don't suppress
+            # delivery for them.
+            validation_failed = results.get("blocking_violations", results["total_violations"]) > 0
             if validation_failed:
                 print(f"\n{validation_summary}", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001 - validators must not crash the run
