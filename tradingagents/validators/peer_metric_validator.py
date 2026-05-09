@@ -136,18 +136,24 @@ def _parse_value(s: str) -> tuple[float | None, str]:
             return float(m.group(1)), "ratio"
         except ValueError:
             return None, "raw"
-    # Dollars in billions: "$1.5B" or "−$2.1B"
-    m = re.fullmatch(r"-?\$?(-?[\d.,]+)\s*B", s, re.IGNORECASE)
+    # Dollars in billions: "$1.5B" / "−$2.1B" / "-$2.1B" / "$-2.1B"
+    # Capture any leading sign + optional `$` + numeric body, so negatives
+    # like "-$956M" don't lose their sign (a leading `-?` outside the
+    # capture group consumed the sign without preserving it). Strip `$`
+    # from the captured body before float-parsing.
+    m = re.fullmatch(r"((?:-)?\$?(?:-)?[\d.,]+)\s*B", s, re.IGNORECASE)
     if m:
         try:
-            return float(m.group(1).replace(",", "")), "billions"
+            body = m.group(1).replace("$", "").replace(",", "")
+            return float(body), "billions"
         except ValueError:
             return None, "raw"
     # Dollars in millions
-    m = re.fullmatch(r"-?\$?(-?[\d.,]+)\s*M", s, re.IGNORECASE)
+    m = re.fullmatch(r"((?:-)?\$?(?:-)?[\d.,]+)\s*M", s, re.IGNORECASE)
     if m:
         try:
-            return float(m.group(1).replace(",", "")), "millions"
+            body = m.group(1).replace("$", "").replace(",", "")
+            return float(body), "millions"
         except ValueError:
             return None, "raw"
     return None, "raw"

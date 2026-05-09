@@ -173,6 +173,31 @@ def test_v2_catches_aaoi_pm_fabrication_long_bridge_with_equals_separator(tmp_pa
     assert lite_nde, f"missed LITE ND/EBITDA fabrication; got {sorted(by_key)}"
 
 
+def test_v2_value_parser_keeps_sign_for_dollar_prefixed_negatives():
+    """`_parse_value("-$956M")` must return (-956, "millions") not (956,).
+    AAOI 2026-05-08 surfaced this: the FN net cash claim "−$956M" matches
+    canonical -955_888_000 within 0.01% — but the parser dropped the sign,
+    flipping a clean match into a 200%+ drift."""
+    from tradingagents.validators.peer_metric_validator import _parse_value
+
+    for prefix in ("-$956M", "−$956M", "$-956M", "-956M"):
+        val, kind = _parse_value(prefix)
+        assert val == -956.0, f"{prefix!r}: parsed {val}, expected -956"
+        assert kind == "millions"
+
+    # Sanity: positive forms still parse positive
+    val, _ = _parse_value("$956M")
+    assert val == 956.0
+    val, _ = _parse_value("956M")
+    assert val == 956.0
+
+    # Same coverage for billions
+    for prefix in ("-$2.49B", "−$2.49B", "$-2.49B", "-2.49B"):
+        val, kind = _parse_value(prefix)
+        assert val == -2.49, f"{prefix!r}: parsed {val}, expected -2.49"
+        assert kind == "billions"
+
+
 def test_v2_keeps_immediate_form_passing(tmp_path):
     """Backwards compat: the existing tight form
     `RIOT capex/revenue 78.7%` must still parse cleanly under v2."""
