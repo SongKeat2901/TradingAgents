@@ -314,6 +314,52 @@ def test_v1_2_peer_attribution_with_pm_brief_reference(tmp_path):
     assert violations == []
 
 
+def test_v1_5_recognizes_peer_ticker_with_colon_delimiter(tmp_path):
+    """RMBS 2026-05-08 false positive: a peer-comparison bullet line
+
+      "- **MRVL: net debt of $1.83B** (ND/EBITDA 0.70x on $2.63B EBITDA ...
+
+    was flagged as definitional drift on RMBS net debt. The peer-attribution
+    detector `_claim_attributed_to_other_ticker` uses regex
+    `\\b[A-Z]{2,5}(?:'s|\\s)` which doesn't match 'MRVL:' (colon-delimited
+    table-row form). Add `:` as a recognized delimiter."""
+    from tradingagents.validators import (
+        extract_net_debt_claims,
+        validate_net_debt_claims,
+    )
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+
+    rmbs_data = {
+        "trade_date": "2026-05-08",
+        "as_of_quarter": "2026-03-31",
+        "financial_currency": "USD",
+        "net_debt": -762_735_000.0,
+        "total_debt": 23_404_000.0,
+        "cash_and_equivalents": 134_324_000.0,
+        "cash_plus_short_term_investments": 786_139_000.0,
+        "unavailable": False,
+    }
+    nd_path = _write_net_debt(tmp_path, data=rmbs_data)
+
+    text = (
+        "- **MRVL: net debt of $1.83B** (ND/EBITDA 0.70x on $2.63B "
+        "EBITDA — moderate; manageable at current rate of operating cash "
+        "generation)"
+    )
+    claims = extract_net_debt_claims(text)
+    claims = [NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file="analyst_fundamentals.md",
+        line_no=c.line_no, match_text=c.match_text,
+    ) for c in claims]
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="RMBS")
+    # MRVL is the peer; the claim should be deferred to Phase 7.3.
+    assert violations == [], (
+        f"MRVL-attributed claim flagged as RMBS drift: "
+        f"{[(v.severity, v.match_text[:60]) for v in violations]}"
+    )
+
+
 def test_v1_4_does_not_pair_value_to_label_across_semicolon():
     """AAPL 2026-05-08 false positive: a self-citing claim contained
 

@@ -236,7 +236,11 @@ def _within_tolerance(claimed: float, canonical: float) -> bool:
     return abs(claimed - canonical) <= tolerance
 
 
-_PEER_TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:'s|\s)")
+# RMBS 2026-05-08 false positive: peer bullet line "MRVL: net debt of $1.83B"
+# was not recognized as peer-attributed because `:` wasn't a delimiter.
+# v1.5 adds `:` so colon-delimited table-row forms (`MRVL: net debt ...`,
+# `MU: net debt ...`) bind correctly to the peer ticker.
+_PEER_TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:'s|\s|:)")
 
 
 def _claim_attributed_to_other_ticker(match_text: str, main_ticker: str | None) -> bool:
