@@ -201,6 +201,51 @@ def test_v2_real_coin_fabrication_still_caught():
     assert claims[0].price == 206.50
 
 
+def test_v3_skips_prepositional_close_below_the_open():
+    """ASX 2026-05-08 false positive: technicals_v2.md:46 had
+
+      "lower high ($34.09 vs. $34.22 on May 6), close $0.66 below the open"
+
+    The phrase "close $0.66 below the open" describes the open→close DELTA
+    (close was $0.66 lower than the open), not the close price itself.
+    Pre-fix: bound May 6 ↔ $0.66 (wrong; May 6 close was $34.16).
+    Post-fix: extractor drops the claim because `close $X.XX` is followed
+    by a prepositional comparator (`below the open`)."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "lower high ($34.09 vs. $34.22 on May 6), close $0.66 below the open, on 8.23M shares"
+    claims = extract_date_close_claims(text, anchor_year=2026)
+    # The $0.66 must NOT be paired with May 6 — it's a delta, not a close
+    for c in claims:
+        assert c.price != 0.66, (
+            f"prepositional `close $0.66 below the open` extracted as a "
+            f"close claim: date_iso={c.date_iso}, match_text={c.match_text!r}"
+        )
+
+
+def test_v3_skips_prepositional_close_above_the_prior():
+    """Symmetric case: `close $X above the prior session` is also a delta."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "On 2026-05-08 the session printed close $1.20 above the prior session high."
+    claims = extract_date_close_claims(text)
+    for c in claims:
+        assert c.price != 1.20
+
+
+def test_v3_keeps_close_at_X_followed_by_above_zero():
+    """Defensive: the disqualifier must not eat legitimate prose like
+    `close at $206.50 above $200 support` — the `above` here qualifies a
+    different referent ($200 support), not the close itself. The close
+    is still $206.50."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "On 2026-05-08 COIN closed at $206.50, holding above $200 support."
+    claims = extract_date_close_claims(text)
+    assert len(claims) == 1
+    assert claims[0].price == 206.50
+
+
 def test_match_text_includes_surrounding_context():
     """Match_text should include enough surrounding prose for human review
     of the violation (typically 100-150 chars)."""

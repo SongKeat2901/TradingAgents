@@ -137,6 +137,21 @@ _PATTERN_DATE_ONLY = re.compile(
 )
 
 
+# Phase 7.1 v3: when `close $X.XX` is *immediately* followed by a delta-
+# comparator phrase ("below the open", "above the prior", "under its
+# previous"), the $X.XX is the open-to-close delta, not the close price.
+# ASX 2026-05-08 false positive:
+#   "close $0.66 below the open"  →  $0.66 is delta, not the close
+# Defensive: requires \s+ immediately after the price (no comma or other
+# punctuation), so `closed at $206.50, holding above $200 support` is
+# not affected (a comma intervenes).
+_PREPOSITIONAL_DELTA = re.compile(
+    r"^\s+(?:below|above|under|over|wider|narrower|tighter)\s+"
+    r"(?:the|its|prior|previous|preceding)\b",
+    re.IGNORECASE,
+)
+
+
 def _line_no(text: str, char_offset: int) -> int:
     """1-indexed line number for a character offset."""
     return text[:char_offset].count("\n") + 1
@@ -169,6 +184,14 @@ def extract_date_close_claims(text: str, anchor_year: int = 2026) -> list[DateCl
             if key in seen:
                 continue
             seen.add(key)
+
+            # Phase 7.1 v3: drop if `close $X` is followed by a delta-
+            # comparator phrase. `$0.66 below the open` is a delta, not
+            # a price.
+            tail = text[m.end():m.end() + 40]
+            if _PREPOSITIONAL_DELTA.match(tail):
+                continue
+
             date_raw = m.group("date")
 
             # Phase 7.1 v2: if the bridge contains another date reference
