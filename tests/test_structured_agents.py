@@ -401,6 +401,102 @@ class TestInvokeWithEmptyRetry:
         assert llm.invoke.call_count == 1
         assert len(content) == 2000
 
+    def test_invoke_structured_or_freetext_retries_on_min_chars_floor(self):
+        """AAPL 2026-05-08 PM-retry failure mode: after QC flagged 4 items
+        and the PM was re-invoked with feedback, the model emitted a 471-c
+        meta-comment ("decision.md has been emitted in full above with all
+        QC fail items addressed: ...") instead of the full ~10KB decision.
+
+        QC accepted because it only checked text presence. Telegram shipped
+        a half-broken PDF. Fix: `invoke_structured_or_freetext` now accepts
+        a `min_chars` floor; when the structured/free-text response is
+        below it, retry once. Default 0 preserves backwards compatibility
+        for Trader / debate judges that may legitimately run shorter."""
+        from unittest.mock import MagicMock
+        from langchain_core.messages import AIMessage
+        from tradingagents.agents.utils.structured import (
+            invoke_structured_or_freetext,
+        )
+
+        plain = MagicMock()
+        plain.invoke.side_effect = [
+            AIMessage(content="The decision has been emitted above; "
+                              "items addressed."),  # 471-style meta-stub
+            AIMessage(content="# Full decision\n\n## Inputs\n\n" + "x" * 6000),
+        ]
+
+        out = invoke_structured_or_freetext(
+            None,  # no structured wrap
+            plain,
+            "prompt",
+            lambda r: r,
+            "Portfolio Manager",
+            min_chars=5000,
+        )
+
+        assert plain.invoke.call_count == 2
+        assert out.startswith("# Full decision")
+        assert len(out) > 5000
+
+    def test_invoke_structured_or_freetext_no_retry_when_above_floor(self):
+        """At-or-above the threshold passes through unchanged."""
+        from unittest.mock import MagicMock
+        from langchain_core.messages import AIMessage
+        from tradingagents.agents.utils.structured import (
+            invoke_structured_or_freetext,
+        )
+
+        plain = MagicMock()
+        plain.invoke.return_value = AIMessage(content="x" * 5000)
+
+        out = invoke_structured_or_freetext(
+            None, plain, "prompt", lambda r: r,
+            "Portfolio Manager", min_chars=5000,
+        )
+
+        assert plain.invoke.call_count == 1
+        assert len(out) == 5000
+
+    def test_invoke_structured_or_freetext_default_min_chars_zero(self):
+        """Backwards compat: existing callers without min_chars must keep
+        receiving short responses without retry."""
+        from unittest.mock import MagicMock
+        from langchain_core.messages import AIMessage
+        from tradingagents.agents.utils.structured import (
+            invoke_structured_or_freetext,
+        )
+
+        plain = MagicMock()
+        plain.invoke.return_value = AIMessage(content="ok")
+
+        out = invoke_structured_or_freetext(
+            None, plain, "prompt", lambda r: r, "Trader",
+        )
+
+        assert plain.invoke.call_count == 1
+        assert out == "ok"
+
+    def test_invoke_structured_or_freetext_raises_when_both_below_floor(self):
+        """Sustained meta-stub across two calls raises so the run fails
+        rather than shipping a broken decision."""
+        from unittest.mock import MagicMock
+        from langchain_core.messages import AIMessage
+        from tradingagents.agents.utils.structured import (
+            invoke_structured_or_freetext,
+        )
+
+        plain = MagicMock()
+        plain.invoke.side_effect = [
+            AIMessage(content="meta-stub 1, only 100c long" + "x" * 75),
+            AIMessage(content="meta-stub 2, only 200c long" + "x" * 175),
+        ]
+
+        with pytest.raises(RuntimeError, match=r"Portfolio Manager.*sub-minimum"):
+            invoke_structured_or_freetext(
+                None, plain, "prompt", lambda r: r,
+                "Portfolio Manager", min_chars=5000,
+            )
+
     def test_v2_raises_when_both_calls_below_min_chars(self):
         """Sustained short output across two calls is a degenerate state,
         not a transient flake — raise so the run dies fast."""

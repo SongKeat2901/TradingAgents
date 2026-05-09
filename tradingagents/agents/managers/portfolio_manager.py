@@ -292,12 +292,25 @@ def create_portfolio_manager(llm):
 
         # If the QC agent failed the previous draft, surface its feedback at
         # the top of the prompt so the PM addresses every point on this pass.
+        # 2026-05-08 AAPL retry failure mode: the PM responded with a 471-c
+        # meta-stub ("decision.md has been emitted in full above with all QC
+        # fail items addressed: ...") instead of producing the full document.
+        # The directive below is emphatic about this — and the PM call below
+        # uses `min_chars=5000` to enforce the floor regardless of prompt
+        # adherence.
         qc_feedback = state.get("qc_feedback", "").strip()
         qc_block = (
             f"\n\n**QC_FAIL_FEEDBACK from prior pass — you MUST address every "
-            f"point below before re-emitting:**\n{qc_feedback}\n\nDo not "
-            "produce an identical document; revise the affected sections and "
-            "re-emit the full corrected decision.md.\n"
+            f"point below before re-emitting:**\n{qc_feedback}\n\n"
+            "**CRITICAL — RE-EMIT THE COMPLETE DOCUMENT IN THIS RESPONSE.** "
+            "This is a stateless re-invocation; you have NO prior turn to "
+            "reference. Do NOT write 'addressed in prior pass', 'see above', "
+            "'as previously emitted', or 'corrections applied'. Output every "
+            "mandated section (Inputs, 12-Month Scenario Analysis, Synthesis, "
+            "Reconciliation, Trading Plan, Caveats, etc.) IN FULL, with the "
+            "specific QC fail items resolved inline within those sections. "
+            "A response that summarizes what you changed instead of producing "
+            "the full document will be REJECTED and the run will fail.\n"
             if qc_feedback else ""
         )
 
@@ -327,12 +340,17 @@ def create_portfolio_manager(llm):
 
 Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}""" + _OUTPUT_CONTRACT + _MANDATED_SECTIONS + _QC_CHECKLIST + _RETRY_DIRECTIVE
 
+        # PM decisions are typically 8,000–15,000 characters. The 2026-05-08
+        # AAPL retry surfaced a meta-stub failure mode at 471 characters; a
+        # 5,000-char floor catches this without false-positive on legitimately
+        # tight decisions (the historical minimum is ~7,000c on simple HOLDs).
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,
             llm,
             prompt,
             render_pm_decision,
             "Portfolio Manager",
+            min_chars=5000,
         )
 
         new_risk_debate_state = {

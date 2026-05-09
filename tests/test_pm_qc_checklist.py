@@ -136,7 +136,8 @@ def test_portfolio_manager_includes_sec_block_when_sec_filing_md_present(tmp_pat
             captured["prompt"] = "\n".join(
                 m.content if hasattr(m, "content") else str(m) for m in messages
             )
-        return AIMessage(content="## Inputs\n... full PM doc ...")
+        # Padded above the PM's min_chars=5000 floor (Phase 7.7-E).
+        return AIMessage(content="## Inputs\n... full PM doc ...\n" + ("x" * 5500))
 
     fake_llm.invoke.side_effect = _capture_invoke
 
@@ -200,7 +201,8 @@ def test_portfolio_manager_omits_sec_block_when_sec_filing_md_missing(tmp_path):
             captured["prompt"] = "\n".join(
                 m.content if hasattr(m, "content") else str(m) for m in messages
             )
-        return AIMessage(content="## Inputs\n... full PM doc ...")
+        # Padded above the PM's min_chars=5000 floor (Phase 7.7-E).
+        return AIMessage(content="## Inputs\n... full PM doc ...\n" + ("x" * 5500))
 
     fake_llm.invoke.side_effect = _capture_invoke
 

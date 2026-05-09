@@ -51,6 +51,7 @@ def invoke_structured_or_freetext(
     prompt: Any,
     render: Callable[[T], str],
     agent_name: str,
+    min_chars: int = 0,
 ) -> str:
     """Run the structured call and render to markdown; fall back to free-text on any failure.
 
@@ -58,19 +59,45 @@ def invoke_structured_or_freetext(
     invocations, a list of message dicts for chat models that take that
     shape). The same value is forwarded to the free-text path so the
     fallback sees the same input the structured call did.
-    """
-    if structured_llm is not None:
-        try:
-            result = structured_llm.invoke(prompt)
-            return render(result)
-        except Exception as exc:
-            logger.warning(
-                "%s: structured-output invocation failed (%s); retrying once as free text",
-                agent_name, exc,
-            )
 
-    response = plain_llm.invoke(prompt)
-    return response.content
+    ``min_chars`` (default 0): when set, retries once if the rendered
+    response is shorter than the floor. The 2026-05-08 AAPL run
+    surfaced a PM-retry meta-stub failure mode: after QC flagged 4
+    items, the PM emitted a 471-char acknowledgment ("decision.md has
+    been emitted in full above with all QC fail items addressed: ...")
+    instead of re-emitting the full ~10KB document. min_chars catches
+    this. Default 0 preserves backwards compatibility for callers
+    (Trader, debate judges) where a short response can be legitimate.
+    """
+    def _try_once() -> str:
+        if structured_llm is not None:
+            try:
+                result = structured_llm.invoke(prompt)
+                return render(result)
+            except Exception as exc:
+                logger.warning(
+                    "%s: structured-output invocation failed (%s); retrying once as free text",
+                    agent_name, exc,
+                )
+        response = plain_llm.invoke(prompt)
+        return response.content
+
+    out = _try_once()
+    if min_chars and out and len(out) < min_chars:
+        logger.warning(
+            "%s: response sub-minimum on first call (%dc < %dc); retrying once",
+            agent_name, len(out), min_chars,
+        )
+        out = _try_once()
+        if min_chars and out and len(out) < min_chars:
+            raise RuntimeError(
+                f"{agent_name}: response sub-minimum on retry "
+                f"({len(out)}c < {min_chars}c). Likely PM-retry meta-stub "
+                f"failure mode (LLM hallucinates 'emitted in full above' "
+                f"without producing the full document). Investigate the "
+                f"retry prompt directive or the QC-feedback channel."
+            )
+    return out
 
 
 def extract_llm_content(result: Any, agent_name: str) -> str:
