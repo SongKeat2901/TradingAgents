@@ -314,6 +314,154 @@ def test_v1_2_peer_attribution_with_pm_brief_reference(tmp_path):
     assert violations == []
 
 
+def test_v1_3_does_not_pair_label_to_dollar_across_table_cell():
+    """ASX 2026-05-08 false positive: a markdown table row contained
+
+      "| FCF deficit widens to NT$190B+ projected net debt | $27.52 (Fib 38.2%) |"
+
+    The `|` is a markdown table cell separator. `$27.52` is the next cell's
+    Fib level — NOT a net-debt value. Pre-fix: extractor paired
+    `net debt | $27.52` because `|` was inside the 20-char bridge.
+    Post-fix: `|` excluded from the bridge char class."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    text = (
+        "| Bear | $30.08 break on >=9M shares; FCF deficit widens to "
+        "NT$190B+ projected net debt | $27.52 (Fib 38.2%) | ~22% |"
+    )
+    claims = extract_net_debt_claims(text)
+    # No claim should pair $27.52 with "net debt" across the | boundary.
+    for c in claims:
+        assert c.value_dollars != 27_520_000_000.0  # $27.52B
+        assert c.value_dollars != 27_520_000.0       # $27.52M
+        assert c.value_raw != "$27.52"
+
+
+def test_v1_3_skips_non_usd_currency_prefix_NTD():
+    """ASX 2026-05-08 false positive: `NT$190B+ projected net debt`
+    extracted as $190 USD. The validator's canonical is USD-only, so
+    non-USD prefixed values must be skipped (out of scope)."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    text = "projected net debt drifts toward NT$190B by year-end."
+    claims = extract_net_debt_claims(text)
+    # The NT$ prefix marks this as TWD, not USD — extractor should skip.
+    assert claims == []
+
+
+def test_v1_3_skips_non_usd_currency_prefix_other():
+    """Symmetric coverage for other foreign currency markers."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    for prefix in ("NT$", "JP¥", "€", "£", "¥", "C$", "A$", "HK$", "S$"):
+        text = f"net debt of {prefix}5.3B per the latest 10-Q"
+        claims = extract_net_debt_claims(text)
+        assert claims == [], (
+            f"non-USD prefix {prefix!r} produced claims: "
+            f"{[(c.value_raw, c.match_text) for c in claims]}"
+        )
+
+
+def test_v1_3_skips_validation_when_reporting_currency_non_usd(tmp_path):
+    """ASX (Taiwan-domiciled): yfinance balance-sheet cells are reported
+    in TWD. Storing them as if USD makes the canonical $169B (5x ASX's
+    actual $25B market cap). Phase 7.5 v1.3: when net_debt.json carries
+    `financial_currency != "USD"`, skip validation with a single MINOR
+    `skipped_non_usd_reporter` notice and do not flag any claims."""
+    from tradingagents.validators import (
+        extract_net_debt_claims,
+        validate_net_debt_claims,
+    )
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+
+    twd_data = dict(_MSFT_NET_DEBT_JSON)
+    twd_data["financial_currency"] = "TWD"
+    nd_path = _write_net_debt(tmp_path, data=twd_data)
+
+    # USD-prefixed claim that would otherwise drift against TWD canonical
+    text = "Authoritative Net Debt: $5.3B (USD-equivalent of NT$169B)."
+    claims = extract_net_debt_claims(text)
+    claims = [NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file="decision.md",
+        line_no=c.line_no, match_text=c.match_text,
+    ) for c in claims]
+
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="ASX")
+    # Exactly one MINOR notice, no MATERIAL drift flags
+    assert len(violations) == 1
+    v = violations[0]
+    assert v.severity == "MINOR"
+    assert v.type == "skipped_non_usd_reporter"
+
+
+def test_v1_3_validates_normally_when_currency_usd(tmp_path):
+    """Sanity check: financial_currency = USD validates as before."""
+    from tradingagents.validators import (
+        extract_net_debt_claims,
+        validate_net_debt_claims,
+    )
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+
+    usd_data = dict(_MSFT_NET_DEBT_JSON)
+    usd_data["financial_currency"] = "USD"
+    nd_path = _write_net_debt(tmp_path, data=usd_data)
+
+    text = "MSFT Authoritative Net Debt: $8.16B (yfinance row)"
+    claims = extract_net_debt_claims(text)
+    claims = [NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file="pm_brief.md",
+        line_no=c.line_no, match_text=c.match_text,
+    ) for c in claims]
+
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    assert violations == []  # passes against canonical
+
+
+def test_v1_3_validates_normally_when_currency_field_missing(tmp_path):
+    """Legacy net_debt.json files (pre-7.7) lack the financial_currency
+    field. Treat absence as USD (backwards compatibility) so existing
+    runs and US-ticker re-runs continue to validate."""
+    from tradingagents.validators import (
+        extract_net_debt_claims,
+        validate_net_debt_claims,
+    )
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+
+    legacy_data = dict(_MSFT_NET_DEBT_JSON)
+    # Explicitly do NOT add financial_currency
+    assert "financial_currency" not in legacy_data
+    nd_path = _write_net_debt(tmp_path, data=legacy_data)
+
+    text = "Authoritative Net Debt: $8.16B"
+    claims = extract_net_debt_claims(text)
+    claims = [NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file="pm_brief.md",
+        line_no=c.line_no, match_text=c.match_text,
+    ) for c in claims]
+
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    assert violations == []  # backwards compat: missing field treated as USD
+
+
+def test_v1_3_keeps_usd_dollar_after_non_usd_in_same_sentence():
+    """Defensive: when both NT$ and $ appear, only the $ form should be
+    extracted. ASX prose:
+      `net debt drifts toward NT$185-195B (USD 5.8-6.1B) at constant FX`
+    Only the USD figure is extractable; the NT$ form is skipped."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    text = "projected net debt of NT$185B (or $5.85B USD) at constant FX"
+    claims = extract_net_debt_claims(text)
+    # The USD claim should be extracted; the NT$ one skipped.
+    values = [c.value_dollars for c in claims]
+    assert 5_850_000_000.0 in values
+    assert 185.0 not in values  # bare $185 (no unit)
+    assert 185_000_000_000.0 not in values  # $185B
+
+
 def test_to_dollars_handles_billions_and_millions():
     from tradingagents.validators.net_debt_validator import _to_dollars
     assert _to_dollars("8.16", "B") == 8_160_000_000.0
