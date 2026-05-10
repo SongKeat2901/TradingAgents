@@ -58,6 +58,18 @@ def _collect_violations(
 
     files_present = [f for f in _FILES_TO_SCAN if (rd / f).exists()]
 
+    # Resolve main_ticker from state.json BEFORE running per-file validators
+    # so Phase 7.3 v2.1 can skip subject-attributed metrics and Phase 7.5
+    # can skip peer-attributed claims.
+    main_ticker: str | None = None
+    state_path = rd / "state.json"
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            main_ticker = state.get("company_of_interest")
+        except (OSError, json.JSONDecodeError):
+            pass
+
     from tradingagents.validators import (
         extract_attributed_quotes,
         extract_date_close_claims,
@@ -96,18 +108,11 @@ def _collect_violations(
                 file=fname, line_no=n.line_no, match_text=n.match_text,
             ))
         peer_violations.extend(
-            validate_peer_metrics(text, fname, peer_ratios_json, peers_json)
+            validate_peer_metrics(
+                text, fname, peer_ratios_json, peers_json,
+                main_ticker=main_ticker,
+            )
         )
-
-    # Resolve main_ticker from state.json so Phase 7.5 skips peer-attributed claims
-    main_ticker: str | None = None
-    state_path = rd / "state.json"
-    if state_path.exists():
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-            main_ticker = state.get("company_of_interest")
-        except (OSError, json.JSONDecodeError):
-            pass
 
     return {
         "run_dir": rd,

@@ -99,7 +99,7 @@ class NetDebtViolation:
 # with "Net Debt" from the citation. Symmetric with `_PATTERN_LABEL_FIRST`.
 _PATTERN_VALUE_FIRST = re.compile(
     r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?"
-    r"(?P<bridge>[^\n.;|]{0,30}?)"
+    r"(?P<bridge>[^\n.;|/]{0,30}?)"
     r"\s+(?P<label>net\s+(?:cash|debt))",
     re.IGNORECASE,
 )
@@ -111,7 +111,12 @@ _PATTERN_LABEL_FIRST = re.compile(
     # figure across a semicolon. 20 chars covers `of $X`, `position
     # of $X`, `: $X`, `at $X` legitimate forms.
     # `|` excluded for v1.3 markdown-table-cell defense.
-    r"[^\n.;|]{0,20}?"
+    # `/` excluded for v1.6 ratio-operator defense (NVDA 2026-05-08:
+    # `(-$51.52B net cash) / $133.2B TTM EBITDA` was paired as
+    # `$133.2B net cash` because `/` was inside the bridge — the value
+    # AFTER `/` is the ratio denominator, not a continuation of the
+    # 'net cash' label).
+    r"[^\n.;|/]{0,20}?"
     r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?",
     re.IGNORECASE,
 )

@@ -173,6 +173,72 @@ def test_v2_catches_aaoi_pm_fabrication_long_bridge_with_equals_separator(tmp_pa
     assert lite_nde, f"missed LITE ND/EBITDA fabrication; got {sorted(by_key)}"
 
 
+def test_v2_1_skips_metric_attributed_to_subject_ticker(tmp_path):
+    """NVDA 2026-05-08 false positive: a fundamentals line like
+
+      "ND/EBITDA: NVDA computed as (-$51.52B net cash) / $133.2B TTM EBITDA = -0.39x"
+
+    was flagged as 'INTC TTM EBITDA -0.39x' because Phase 7.3 v2's
+    lookback only scans for peer-set tickers. When the subject (NVDA)
+    is the closest ticker before the metric, the validator should
+    bind to the subject and skip — peer-cell verification doesn't
+    apply to subject-attributed metrics. Without this fix, the
+    lookback fell through past NVDA to the previous peer mention
+    (INTC), producing a wrong-peer-metric flag.
+
+    Fix: validate_peer_metrics now accepts main_ticker; when the
+    nearest ticker before a metric-value is the main_ticker, skip
+    the claim."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-08",
+        "_unavailable": [],
+        "INTC": {
+            "latest_quarter_capex_to_revenue": 26.78,
+            "latest_quarter_op_margin": 6.88,
+            "ttm_pe": None,
+            "forward_pe": 81.61,
+            "net_debt": 27_784_000_000,
+            "ttm_ebitda": 14_174_000_128,
+            "nd_ebitda": 1.96,
+        },
+        "AMD": {
+            "latest_quarter_capex_to_revenue": 1.0,
+            "latest_quarter_op_margin": 5.0,
+            "ttm_pe": 151.7,
+            "forward_pe": 30.0,
+            "net_debt": -6_700_000_000,
+            "ttm_ebitda": 7_400_000_000,
+            "nd_ebitda": -0.90,
+        },
+    }
+    peers = {"INTC": {"ticker": "INTC"}, "AMD": {"ticker": "AMD"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "Source notes:\n"
+        "- INTC Q1 2026 (Mar 2026) vs Q1 2025 (Mar 2025).\n"
+        "4. ND/EBITDA: NVDA computed as (-$51.52B net cash) / $133.2B "
+        "TTM EBITDA = -0.39x; peers from pm_brief.md verbatim."
+    )
+
+    violations = validate_peer_metrics(
+        text, "analyst_fundamentals.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="NVDA",
+    )
+    # The "-0.39x" is NVDA's ND/EBITDA, not INTC's TTM EBITDA. Phase 7.3
+    # should bind to NVDA (subject), recognize it as a subject-claim,
+    # and skip.
+    assert violations == [], (
+        f"NVDA-subject claim flagged as INTC peer drift: "
+        f"{[(v.ticker, v.metric, v.claimed_value) for v in violations]}"
+    )
+
+
 def test_v2_value_parser_keeps_sign_for_dollar_prefixed_negatives():
     """`_parse_value("-$956M")` must return (-956, "millions") not (956,).
     AAOI 2026-05-08 surfaced this: the FN net cash claim "−$956M" matches

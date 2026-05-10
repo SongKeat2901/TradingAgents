@@ -197,6 +197,7 @@ def _normalise_metric(s: str) -> str:
 def extract_peer_metric_claims(
     text: str,
     peer_tickers: set[str],
+    main_ticker: str | None = None,
 ) -> list[tuple[str, str, str, int, str]]:
     """Find `<METRIC> <value>` patterns and bind to nearest peer ticker.
 
@@ -227,7 +228,19 @@ def extract_peer_metric_claims(
         return []
 
     results: list[tuple[str, str, str, int, str]] = []
-    tickers_alt = "|".join(re.escape(t) for t in sorted(peer_tickers, key=len, reverse=True))
+    # Phase 7.3 v2.1 (NVDA 2026-05-08 fix): include the main_ticker in the
+    # lookup set so when the subject is the closest ticker before a
+    # metric-value, we recognize it as a subject-attributed claim and
+    # skip (subject metrics are validated by Phase 6.4 deterministic
+    # blocks, not Phase 7.3). Without this, the validator falls through
+    # past the subject and binds to a peer ticker mentioned earlier in
+    # the same paragraph (e.g. NVDA's `TTM EBITDA = -0.39x` was bound
+    # to INTC because INTC appeared in source-notes prose above).
+    lookup_tickers = set(peer_tickers)
+    main_upper = (main_ticker or "").upper() if main_ticker else None
+    if main_upper:
+        lookup_tickers = lookup_tickers | {main_upper}
+    tickers_alt = "|".join(re.escape(t) for t in sorted(lookup_tickers, key=len, reverse=True))
     ticker_re = re.compile(rf"\b(?P<t>{tickers_alt})\b")
 
     # Build metric alternation from known phrases (verifiable + non-
@@ -265,6 +278,12 @@ def extract_peer_metric_claims(
             continue
         nearest = ticker_matches[-1].group("t").upper()
 
+        # Phase 7.3 v2.1: subject-attributed claims are out of Phase 7.3's
+        # scope. Skip — Phase 6.4 deterministic block already verifies
+        # subject-ticker cells.
+        if main_upper and nearest == main_upper:
+            continue
+
         line_no = _line_no(text, mv.start())
         line_start = text.rfind("\n", 0, mv.start()) + 1
         line_end = text.find("\n", mv.end())
@@ -281,9 +300,16 @@ def validate_peer_metrics(
     file_label: str,
     peer_ratios_path: Path,
     peers_path: Path,
+    main_ticker: str | None = None,
 ) -> list[PeerMetricViolation]:
     """Scan markdown text for peer-metric claims and verify against
-    peer_ratios.json. Returns structured violations."""
+    peer_ratios.json. Returns structured violations.
+
+    Phase 7.3 v2.1: pass `main_ticker` when known so that subject-
+    attributed metrics (e.g. NVDA's own ND/EBITDA in a NVDA report) are
+    skipped — those are validated by the Phase 6.4 deterministic block,
+    not by Phase 7.3 peer cell-quote checking.
+    """
     peer_tickers = _load_peer_tickers(peers_path)
     if not peer_tickers:
         return []  # no peer data; can't validate
@@ -293,7 +319,7 @@ def validate_peer_metrics(
     seen_keys: set[tuple[str, str, int]] = set()  # dedupe overlapping matches
 
     for ticker, metric_raw, value_raw, line_no, match_text in (
-        extract_peer_metric_claims(text, peer_tickers)
+        extract_peer_metric_claims(text, peer_tickers, main_ticker=main_ticker)
     ):
         metric_norm = _normalise_metric(metric_raw)
         key = (ticker, metric_norm, line_no)

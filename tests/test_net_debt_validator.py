@@ -360,6 +360,39 @@ def test_v1_5_recognizes_peer_ticker_with_colon_delimiter(tmp_path):
     )
 
 
+def test_v1_6_does_not_pair_label_to_value_across_slash_ratio_operator():
+    """NVDA 2026-05-08 false positive: a ratio expression
+
+      "ND/EBITDA: NVDA computed as (-$51.52B net cash) / $133.2B TTM EBITDA = -0.39x"
+
+    was extracted as "$133.2B net cash" because `_PATTERN_LABEL_FIRST` bridge
+    `[^\\n.;|]{0,20}?` allowed `) / ` between 'net cash' and `$133.2B`. The
+    `/` is the ratio division operator — the value AFTER it is the
+    denominator (TTM EBITDA), not a continuation of the 'net cash' label.
+    Add `/` to the bridge exclusion."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    text = (
+        "4. ND/EBITDA: NVDA computed as (-$51.52B net cash) / $133.2B "
+        "TTM EBITDA = -0.39x; peers from pm_brief.md verbatim."
+    )
+    claims = extract_net_debt_claims(text)
+    # Only $51.52B (real net cash claim) should be extracted; $133.2B is
+    # TTM EBITDA (denominator of the ratio), not net cash.
+    # Use absolute-value tolerance because float arithmetic on `133.2 * 1e9`
+    # gives 133199999999.99998 (not the integer 133_200_000_000.0).
+    for c in claims:
+        assert abs(c.value_dollars - 133_200_000_000.0) > 1_000_000, (
+            f"$133.2B (TTM EBITDA denominator) was paired with '{c.label}' "
+            f"across `/`: value_dollars={c.value_dollars}, "
+            f"match_text={c.match_text!r}"
+        )
+    # The legitimate $51.52B net cash claim should still be extracted
+    assert any(
+        abs(c.value_dollars - 51_520_000_000.0) < 1_000_000 for c in claims
+    ), "the legitimate $51.52B net cash claim was not extracted"
+
+
 def test_v1_4_does_not_pair_value_to_label_across_semicolon():
     """AAPL 2026-05-08 false positive: a self-citing claim contained
 
