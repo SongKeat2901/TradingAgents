@@ -34,6 +34,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from tradingagents.validators._helpers import line_no as _line_no
+
 
 # Metrics that ARE in peer_ratios.json columns (Phase 6.4 v2 schema).
 # Map common LLM phrasings to the canonical field name in peer_ratios.json.
@@ -87,10 +89,6 @@ class PeerMetricViolation:
     claimed_value: str
     actual_value: str | None  # None for fabricated_metric_attribution
     match_text: str
-
-
-def _line_no(text: str, char_offset: int) -> int:
-    return text[:char_offset].count("\n") + 1
 
 
 def _load_peer_ratios(peer_ratios_path: Path) -> dict:

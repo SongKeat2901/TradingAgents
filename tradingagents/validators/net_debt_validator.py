@@ -47,6 +47,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from tradingagents.validators._helpers import (
+    claim_attributed_to_other_ticker as _claim_attributed_to_other_ticker,
+    line_no as _line_no,
+)
+
 
 @dataclass(frozen=True)
 class NetDebtClaim:
@@ -110,10 +115,6 @@ _PATTERN_LABEL_FIRST = re.compile(
     r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?",
     re.IGNORECASE,
 )
-
-
-def _line_no(text: str, char_offset: int) -> int:
-    return text[:char_offset].count("\n") + 1
 
 
 def _to_dollars(value: str, unit: str | None) -> float | None:
@@ -234,43 +235,6 @@ def _within_tolerance(claimed: float, canonical: float) -> bool:
     abs_tol = 5e8  # $0.5B
     tolerance = max(rel, abs_tol)
     return abs(claimed - canonical) <= tolerance
-
-
-# RMBS 2026-05-08 false positive: peer bullet line "MRVL: net debt of $1.83B"
-# was not recognized as peer-attributed because `:` wasn't a delimiter.
-# v1.5 adds `:` so colon-delimited table-row forms (`MRVL: net debt ...`,
-# `MU: net debt ...`) bind correctly to the peer ticker.
-_PEER_TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:'s|\s|:)")
-
-
-def _claim_attributed_to_other_ticker(match_text: str, main_ticker: str | None) -> bool:
-    """Heuristic: is the claim's surrounding prose attributing it to a
-    DIFFERENT ticker than the main one (e.g., "ORCL's net debt $96.15B"
-    in a MSFT report)? If so, skip — peer net-debt should be validated
-    against peer_ratios.json (Phase 7.3), not the main ticker's cells.
-
-    Conservative scan: looks for an uppercase 2-5-letter token followed
-    by `'s` or whitespace in the match_text. If the only ticker found is
-    the main ticker, allow. If a different ticker appears, skip.
-    """
-    main_upper = (main_ticker or "").upper()
-    found_tickers = set()
-    for m in _PEER_TICKER_PATTERN.finditer(match_text):
-        # The `\b[A-Z]{2,5}` part is what we want; rebuild without trailing
-        token = re.match(r"[A-Z]{2,5}", m.group(0)).group(0)
-        # Filter out common non-ticker uppercase words
-        if token in {"USD", "GAAP", "ARR", "CC", "EBITDA", "FCF", "AI",
-                     "PM", "TA", "CEO", "CFO", "API", "FY", "OCF",
-                     "NTM", "TTM", "SOTP", "NDR", "RPO", "SBC", "MA",
-                     "II", "QC", "RM", "SEC", "USA", "NYC"}:
-            continue
-        found_tickers.add(token)
-    if not found_tickers:
-        return False  # no ticker context — assume main-ticker claim
-    if found_tickers == {main_upper}:
-        return False  # only the main ticker mentioned — validate
-    # At least one OTHER ticker present — peer-attributed claim, skip
-    return True
 
 
 def validate_net_debt_claims(

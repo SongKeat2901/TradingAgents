@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from datetime import date as _date, datetime
 from typing import Iterator
 
+from tradingagents.validators._helpers import line_no as _line_no
+
 
 _MONTH_TO_NUM = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -150,11 +152,6 @@ _PREPOSITIONAL_DELTA = re.compile(
     r"(?:the|its|prior|previous|preceding)\b",
     re.IGNORECASE,
 )
-
-
-def _line_no(text: str, char_offset: int) -> int:
-    """1-indexed line number for a character offset."""
-    return text[:char_offset].count("\n") + 1
 
 
 def extract_date_close_claims(text: str, anchor_year: int = 2026) -> list[DateCloseClaim]:

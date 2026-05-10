@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from tradingagents.validators._helpers import line_no as _line_no
+
 
 # Mapping from agent-name (lowercase, normalised) to the source file we
 # expect their actual output to live in.
@@ -106,10 +108,6 @@ _PATTERN_NUMBER = re.compile(
     r"|"
     r"[\d.]+x"                   # 12x, 1.5x (ratios)
 )
-
-
-def _line_no(text: str, char_offset: int) -> int:
-    return text[:char_offset].count("\n") + 1
 
 
 def _normalise_agent_name(raw: str) -> str:
