@@ -197,6 +197,55 @@ def test_telegram_notify_skipped_without_env(tmp_path, monkeypatch):
     assert notify_calls == []
 
 
+def test_phase_7_7_g_pytest_blocks_auto_discovery_by_default(tmp_path, monkeypatch):
+    """Regression for the 2026-05-10 NVDA leak: a daemonize test forgot to
+    stub `_OPENCLAW_CONFIG_PATH`, so auto-discovery picked up the
+    production bot token + chat_id from `~/.openclaw/openclaw.json` and
+    shipped a 55KB stub-fixture PDF (`research-2024-05-10-NVDA.pdf`) to
+    chat -1003753140043. After Phase 7.7-G, auto-discovery is blocked
+    under pytest by default."""
+    import cli.research as research
+
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d): return _stub_state(t, d), "BUY"
+
+    notify_calls = []
+
+    def fake_notify(bot_token, chat_id, output_dir, decision):
+        notify_calls.append((bot_token, chat_id))
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(research, "notify_success", fake_notify)
+    monkeypatch.delenv("TRADINGRESEARCH_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TRADINGRESEARCH_PYTEST_ALLOW_TELEGRAM", raising=False)
+
+    # Pretend a real openclaw config exists with a default chat_id
+    fake_cfg = tmp_path / "openclaw.json"
+    fake_cfg.write_text(json.dumps({
+        "channels": {
+            "telegram": {
+                "accounts": {"default": {"botToken": "PROD_BOT_TOKEN"}},
+                "groups": {"-1003753140043": {}},
+            }
+        }
+    }), encoding="utf-8")
+    monkeypatch.setattr(research, "_OPENCLAW_CONFIG_PATH", fake_cfg)
+
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10",
+        "--output-dir", str(tmp_path / "out"),
+        # No --telegram-notify; no env var; auto-discovery WOULD fire
+        # without the Phase 7.7-G guard.
+    ])
+    assert rc == 0
+    # The defensive guard must have blocked notify_success entirely
+    assert notify_calls == [], (
+        f"auto-discovery fired during pytest WITHOUT explicit opt-in — "
+        f"this is the 2026-05-10 NVDA leak; got {notify_calls!r}"
+    )
+
+
 def test_telegram_auto_discovers_from_openclaw_config(tmp_path, monkeypatch):
     """If no --telegram-notify and no env, but ~/.openclaw/openclaw.json has a
     bot token + group, the binary discovers them and posts on completion."""
@@ -214,6 +263,11 @@ def test_telegram_auto_discovers_from_openclaw_config(tmp_path, monkeypatch):
     monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
     monkeypatch.setattr(research, "notify_success", fake_notify)
     monkeypatch.delenv("TRADINGRESEARCH_BOT_TOKEN", raising=False)
+    # Phase 7.7-G (NVDA pytest leak fix): auto-discovery is now blocked
+    # under pytest by default. This test legitimately exercises the
+    # auto-discovery code path, so opt in via the env flag — confirms
+    # the test is intentional, not an accidental leak.
+    monkeypatch.setenv("TRADINGRESEARCH_PYTEST_ALLOW_TELEGRAM", "1")
 
     fake_cfg = tmp_path / "openclaw.json"
     fake_cfg.write_text(json.dumps({

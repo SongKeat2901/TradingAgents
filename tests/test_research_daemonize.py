@@ -145,6 +145,13 @@ def test_daemonize_runs_when_foreground_env_unset(tmp_path, monkeypatch):
 
     monkeypatch.setattr(research, "_daemonize", fake_daemonize)
     monkeypatch.delenv("TRADINGRESEARCH_FOREGROUND", raising=False)
+    # CRITICAL: redirect openclaw config away from the real ~/.openclaw/openclaw.json
+    # so auto-discovery doesn't pick up the production bot token + chat_id and
+    # ship a stub-fixture PDF to a real Telegram chat. The 2026-05-09 NVDA
+    # leak (`research-2024-05-10-NVDA.pdf` from a pytest tmp folder shipped
+    # to chat -1003753140043) was caused by this test missing this stub.
+    monkeypatch.setattr(research, "_OPENCLAW_CONFIG_PATH", tmp_path / "no_openclaw.json")
+    monkeypatch.delenv("TRADINGRESEARCH_BOT_TOKEN", raising=False)
     # Stub the heavy graph so we can let main() run past the daemonize call
     # (since fake_daemonize is a no-op the main body still executes).
     class FakeGraph:

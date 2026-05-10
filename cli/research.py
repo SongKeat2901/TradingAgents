@@ -244,11 +244,27 @@ def _telegram_args(args: argparse.Namespace) -> tuple[str, str] | None:
     Resolution order:
     1. CLI --telegram-notify + env TRADINGRESEARCH_BOT_TOKEN (explicit caller).
     2. Auto-discover from ~/.openclaw/openclaw.json (OpenClaw deployment).
+
+    2026-05-10 NVDA pytest leak: a daemonize test forgot to stub the
+    `_OPENCLAW_CONFIG_PATH` redirection and shipped a 55KB stub-fixture
+    PDF (`research-2024-05-10-NVDA.pdf`) to the production chat via
+    auto-discovery. Defense: when running under pytest (detected via
+    `pytest` in `sys.modules`), skip auto-discovery. Explicit caller
+    path is unaffected — tests that legitimately want to verify the
+    delivery code path (`--telegram-notify` + env var) still fire.
     """
     chat_id = args.telegram_notify
     bot_token = os.environ.get("TRADINGRESEARCH_BOT_TOKEN")
     if chat_id and bot_token:
         return bot_token, chat_id
+
+    # Auto-discovery is the leak vector — guard during pytest unless a
+    # test explicitly opts in to verify the auto-discovery code path.
+    if (
+        "pytest" in sys.modules
+        and not os.environ.get("TRADINGRESEARCH_PYTEST_ALLOW_TELEGRAM")
+    ):
+        return None
 
     auto_token, auto_chat = _auto_discover_telegram_from_openclaw()
     bot_token = bot_token or auto_token
