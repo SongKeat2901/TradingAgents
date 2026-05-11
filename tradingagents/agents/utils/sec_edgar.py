@@ -239,6 +239,46 @@ def fetch_latest_filing(
     }
 
 
+_XBRL_SIGNATURES = ("us-gaap:", "iso4217:", "xbrli:", "<ix:")
+
+
+def _looks_like_xbrl(content: str) -> bool:
+    """Detect inline-XBRL encoded 10-Q/10-K content.
+
+    Real 10-Q text mentions GAAP concepts in prose; XBRL-encoded content
+    embeds them as machine-readable tag tokens like `us-gaap:CommonStockMember`,
+    `iso4217:USD`, `xbrli:shares`. We require ≥3 distinct XBRL tokens
+    (single-mention may be a legitimate prose reference) before flagging.
+    """
+    if not content:
+        return False
+    hits = sum(1 for sig in _XBRL_SIGNATURES if sig in content)
+    if hits >= 2:
+        return True
+    # Density check: many `us-gaap:` tokens specifically is a strong tell
+    return content.count("us-gaap:") >= 3
+
+
+_XBRL_WARNING = (
+    "\n\n> ⚠️ **XBRL ENCODING WARNING**: This filing's content is "
+    "inline-XBRL encoded. Numerical data and structural tagging are "
+    "machine-readable but **prose footnotes (e.g. \"Note 5\", "
+    "\"Note 15 — Subsequent Events\") are NOT available as readable "
+    "text**.\n\n"
+    "**Do NOT cite specific Note numbers** as if quoting a prose "
+    "footnote (e.g. \"per Subsequent Event Note 15\" or \"Note 14 "
+    "discloses $X\"). The Note structure is encoded in XBRL tags, "
+    "not narrative prose, and any citation that pretends to read the "
+    "Note's text is fabricated attribution.\n\n"
+    "**Treat narrative claims** (acquisition specifics, segment "
+    "commentary, dilution scenarios) **as news-sourced** unless you "
+    "can verify the exact dollar/share figure in `raw/financials.json` "
+    "(balance_sheet, income_statement, cashflow cells). When in doubt, "
+    "attribute to news.json / social.json rather than fabricating a "
+    "10-Q footnote cite.\n"
+)
+
+
 def format_for_prompt(filing: dict[str, Any]) -> str:
     """Render a filing dict as a Markdown block for raw/sec_filing.md.
     Returns "" if the filing is unavailable."""
@@ -249,6 +289,7 @@ def format_for_prompt(filing: dict[str, Any]) -> str:
         if filing.get("content_truncated")
         else ""
     )
+    xbrl_warning = _XBRL_WARNING if _looks_like_xbrl(filing.get("content", "")) else ""
     return (
         f"# SEC Filing — {filing['ticker']} {filing['form']} filed {filing['filing_date']}\n\n"
         f"**Accession:** {filing['accession_number']}  \n"
@@ -260,7 +301,8 @@ def format_for_prompt(filing: dict[str, Any]) -> str:
         "'pending adjudication' or 'awaiting filing'.** Look for "
         "Remaining Performance Obligations (RPO), segment revenue and "
         "operating income, capital expenditures, and Azure / cloud growth "
-        "rates in the MD&A section.\n\n"
+        "rates in the MD&A section."
+        f"{xbrl_warning}\n\n"
         "---\n\n"
         f"{filing['content']}"
         f"{truncation_note}\n"

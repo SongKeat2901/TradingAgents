@@ -149,6 +149,72 @@ def test_format_for_prompt_emits_block_with_temporal_anchor():
     assert "Azure and other cloud services revenue increased 40%" in block
 
 
+def test_phase_7_10_detects_xbrl_and_warns():
+    """ONTO 2026-05-08 attribution drift: PM cited "Note 15" / "Note 14" of
+    the 10-Q for Rigaku / Semilab specifics, but the sec_filing.md content
+    was inline-XBRL (us-gaap:/iso4217:/0001193125-style XBRL tags). Prose
+    footnotes were not in plain-text form for the LLM to read.
+
+    Fix: detect XBRL content and prepend an explicit warning so downstream
+    agents do NOT pretend to quote Note numbers as prose."""
+    from tradingagents.agents.utils import sec_edgar
+    xbrl_content = (
+        "0001158114 us-gaap:CommonStockMember 2026-01-04 2026-03-31\n"
+        "0001158114 iso4217:USD 2026-03-31\n"
+        "0001158114 us-gaap:FairValueInputsLevel1Member 2026-01-03\n"
+        "Some narrative text that mentions Rigaku Holdings Corporation but "
+        "lacks the full Note 15 prose footnote that would let a reader cite "
+        "specific amounts.\n"
+    )
+    filing = {
+        "ticker": "ONTO",
+        "form": "10-Q",
+        "filing_date": "2026-05-05",
+        "accession_number": "0001193125-26-206707",
+        "primary_document": "onto-20260331.htm",
+        "url": "https://example.com",
+        "content": xbrl_content,
+        "content_truncated": False,
+        "source": "sec.gov",
+    }
+    block = sec_edgar.format_for_prompt(filing)
+    # Warning header must surface that this is XBRL
+    assert "XBRL" in block or "xbrl" in block, (
+        "XBRL-encoded sec_filing must include an XBRL warning header"
+    )
+    # Directive must instruct NOT to cite Note numbers as prose
+    assert ("Note " in block and "do not" in block.lower()) or "do not cite" in block.lower(), (
+        "XBRL warning must instruct downstream agents not to cite Note numbers as prose"
+    )
+
+
+def test_phase_7_10_no_xbrl_warning_for_plain_prose():
+    """A plain-prose 10-Q (the happy path used by MSFT/AAPL/AAOI runs) must
+    NOT trigger the XBRL warning — we don't want the no-op block on every
+    run."""
+    from tradingagents.agents.utils import sec_edgar
+    filing = {
+        "ticker": "MSFT",
+        "form": "10-Q",
+        "filing_date": "2026-04-29",
+        "accession_number": "0001193125-26-191507",
+        "primary_document": "msft-20260331.htm",
+        "url": "https://example.com",
+        "content": (
+            "Note 5. Cash and Investments. Cash and cash equivalents totaled "
+            "$45.5 billion at the end of the quarter. Short-term investments "
+            "totaled $78.2 billion, primarily in US government securities."
+        ),
+        "content_truncated": False,
+        "source": "sec.gov",
+    }
+    block = sec_edgar.format_for_prompt(filing)
+    # No XBRL warning emitted for plain prose
+    assert "XBRL" not in block and "us-gaap:" not in block, (
+        "plain-prose 10-Q should not get XBRL warning"
+    )
+
+
 def test_format_for_prompt_returns_empty_for_unavailable():
     """Unavailable filing → empty string (no markdown emitted, downstream
     agents fall back to LLM judgment without ground truth)."""
