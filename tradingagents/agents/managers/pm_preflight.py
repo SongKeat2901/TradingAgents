@@ -326,6 +326,36 @@ def create_pm_preflight_node(llm):
                 f.write(footer)
             brief = brief + footer
 
+        # Phase 7.11: convertible tranches extracted from inline-XBRL. For
+        # tickers with material outstanding converts (MARA, MSTR, COIN
+        # etc.), the per-tranche face / conversion price / coupon are the
+        # single most important inputs to dilution + refinancing math.
+        # Write raw/convertibles.json + append a markdown block so the PM
+        # has these numbers verbatim.
+        convertibles = filing.get("convertibles", []) if isinstance(filing, dict) else []
+        if convertibles:
+            import json
+            (raw_dir / "convertibles.json").write_text(
+                json.dumps(convertibles, indent=2), encoding="utf-8",
+            )
+            # Pass reference price into the block so we get the rally-to-
+            # ITM column. If reference.json doesn't exist yet, omit.
+            spot: float | None = None
+            ref_path = raw_dir / "reference.json"
+            if ref_path.exists():
+                try:
+                    ref_data = json.loads(ref_path.read_text(encoding="utf-8"))
+                    spot = ref_data.get("reference_price")
+                except (OSError, json.JSONDecodeError):
+                    pass
+            from tradingagents.agents.utils.xbrl_convertibles import format_convertibles_block
+            convertibles_block = format_convertibles_block(
+                convertibles, spot=spot, ticker=ticker,
+            )
+            with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
+                f.write(convertibles_block)
+            brief = brief + convertibles_block
+
         # NOTE: Phase 6.4 deterministic peer-ratios injection lives in
         # researcher.py (which writes peers.json). PM Pre-flight runs
         # BEFORE the Researcher, so peers.json doesn't exist here yet.

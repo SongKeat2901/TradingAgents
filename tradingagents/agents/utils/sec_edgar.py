@@ -210,9 +210,24 @@ def fetch_latest_filing(
             "filing_date": filing["filing_date"],
         }
 
+    html_text = html.decode("utf-8", errors="replace")
+
+    # Phase 7.11: extract convertible-note specifics from inline-XBRL
+    # BEFORE the HTML stripper destroys the `<ix:nonFraction>` tags. The
+    # extractor is regex-based + tolerant; never raises. For 10-Qs without
+    # convertibles, returns an empty list.
+    convertibles: list[dict] = []
+    try:
+        from tradingagents.agents.utils.xbrl_convertibles import (
+            extract_convertibles_from_html,
+        )
+        convertibles = extract_convertibles_from_html(html_text)
+    except Exception:  # noqa: BLE001 — extraction must never block the fetch
+        convertibles = []
+
     stripper = _HTMLStripper()
     try:
-        stripper.feed(html.decode("utf-8", errors="replace"))
+        stripper.feed(html_text)
     except Exception:
         return {
             "unavailable": True,
@@ -235,6 +250,7 @@ def fetch_latest_filing(
         "url": url,
         "content": text,
         "content_truncated": truncated,
+        "convertibles": convertibles,
         "source": "sec.gov",
     }
 
