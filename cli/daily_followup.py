@@ -63,6 +63,9 @@ class FollowupResult:
     crossings: list[TriggerHit] = field(default_factory=list)
     hard_stop: float | None = None
     stop_breached: bool = False
+    btc_trigger_fired: bool = False  # Step 9-style BTC<threshold trigger
+    btc_breach_date: str | None = None
+    btc_breach_close: float | None = None
 
 
 _SCEN_ROW = re.compile(
@@ -78,8 +81,11 @@ _REF_PRICE = re.compile(
 )
 
 _RATING = re.compile(
-    r"\*\*Rating\s+implication:?\*\*\s*\*?\*?"
-    r"\s*(?P<rating>BUY|OVERWEIGHT|HOLD|UNDERWEIGHT|SELL)",
+    # Tolerant: matches "**Rating implication: HOLD.**" / "**Rating: HOLD**"
+    # / "Rating implication: HOLD" / "Rating: SELL", with optional surrounding
+    # asterisks. Up to 4 asterisks ahead of the rating word.
+    r"Rating(?:\s+implication)?:?\s*\*{0,4}\s*"
+    r"(?P<rating>BUY|OVERWEIGHT|HOLD|UNDERWEIGHT|SELL)\b",
     re.IGNORECASE,
 )
 
@@ -88,12 +94,23 @@ _EV_NUM = re.compile(
     re.IGNORECASE,
 )
 
-# Various hard-stop phrasings the reports use
-_HARD_STOP = re.compile(
-    r"(?:hard\s+stop|thesis\s+hard\s+stop|hard\s+exit)"
-    r"[^\n.]{0,60}?\$(?P<stop>[\d,]+(?:\.\d+)?)",
+# Hard PORTFOLIO stop — the "exit everything regardless" level. Distinguished
+# from per-step trim triggers that may also use the words "hard stop" inside a
+# table cell (the MARA report has a Step-2 add row with "hard stop on close <
+# $12.85" referring to the add tranche's stop, NOT the portfolio-wide stop of
+# $11.50). Require an explicit "portfolio" / "thesis" qualifier.
+_HARD_PORTFOLIO_STOP = re.compile(
+    r"(?:Hard\s+portfolio\s+stop|Thesis\s+hard\s+stop|"
+    r"Portfolio[- ]?(?:wide\s+|level\s+)?stop|hard\s+exit\s+level)"
+    r"[^\n.]{0,120}?\$(?P<stop>[\d,]+(?:\.\d+)?)",
     re.IGNORECASE,
 )
+
+# Crypto-miner / BTC-treasury tickers that have explicit BTC-price triggers in
+# their trading plans. When the digest detects one of these, also check
+# BTC-USD price action and flag the BTC trigger separately.
+_BTC_SENSITIVE_TICKERS = {"MARA", "MSTR", "RIOT", "CLSK", "HUT", "CIFR", "BITF", "COIN"}
+_BTC_THRESHOLD_USD = 80_000  # MARA's Step 9 threshold; others may differ
 
 
 def parse_research(run_dir: Path) -> dict | None:
@@ -140,7 +157,7 @@ def parse_research(run_dir: Path) -> dict | None:
             target = None
         scenarios.append(Scenario(name=m.group("name"), probability=prob, target=target))
 
-    stop_match = _HARD_STOP.search(decision)
+    stop_match = _HARD_PORTFOLIO_STOP.search(decision)
     hard_stop = float(stop_match.group("stop").replace(",", "")) if stop_match else None
 
     return {
@@ -254,7 +271,11 @@ def detect_crossings(rows: list, scenarios: list[Scenario], hard_stop: float | N
     return crossings, stop_breached
 
 
-def compute_followup(run_dir: Path, spy_ret_by_date: dict | None = None) -> FollowupResult | None:
+def compute_followup(
+    run_dir: Path,
+    spy_ret_by_date: dict | None = None,
+    btc_close_by_date: dict | None = None,
+) -> FollowupResult | None:
     parsed = parse_research(run_dir)
     if parsed is None:
         return None
@@ -282,6 +303,24 @@ def compute_followup(run_dir: Path, spy_ret_by_date: dict | None = None) -> Foll
     bucket = classify_scenario_bucket(realized_pct, parsed["scenarios"], parsed["reference_price"])
     crossings, stop_breached = detect_crossings(rows, parsed["scenarios"], parsed["hard_stop"])
 
+    # Step-9-style BTC trigger for crypto-miner / BTC-treasury tickers
+    btc_trigger_fired = False
+    btc_breach_date = None
+    btc_breach_close = None
+    if (
+        parsed["ticker"] in _BTC_SENSITIVE_TICKERS
+        and btc_close_by_date is not None
+    ):
+        research_date = datetime.strptime(parsed["research_date"], "%Y-%m-%d").date()
+        for d, c in sorted(btc_close_by_date.items()):
+            if d < research_date:
+                continue
+            if c < _BTC_THRESHOLD_USD:
+                btc_trigger_fired = True
+                btc_breach_date = d.isoformat()
+                btc_breach_close = c
+                break
+
     return FollowupResult(
         ticker=parsed["ticker"],
         research_date=parsed["research_date"],
@@ -299,6 +338,9 @@ def compute_followup(run_dir: Path, spy_ret_by_date: dict | None = None) -> Foll
         crossings=crossings,
         hard_stop=parsed["hard_stop"],
         stop_breached=stop_breached,
+        btc_trigger_fired=btc_trigger_fired,
+        btc_breach_date=btc_breach_date,
+        btc_breach_close=btc_breach_close,
     )
 
 
@@ -344,11 +386,13 @@ def format_digest(results: list[FollowupResult]) -> str:
     if not results:
         return "(no research runs to follow up)"
 
-    # Categorize
-    big_wins, tracking, lagging, stops, fresh = [], [], [], [], []
+    # Categorize. A pre-committed trigger fire (hard portfolio stop OR a
+    # BTC-correlated condition for crypto miners) goes into "ALERTS" so the
+    # operator sees it ahead of the alpha bucketing.
+    alerts, big_wins, tracking, lagging, fresh = [], [], [], [], []
     for r in results:
-        if r.stop_breached:
-            stops.append(r)
+        if r.stop_breached or r.btc_trigger_fired:
+            alerts.append(r)
         elif r.days_elapsed == 0:
             fresh.append(r)
         elif r.alpha_pct is not None and r.alpha_pct >= 5:
@@ -362,7 +406,7 @@ def format_digest(results: list[FollowupResult]) -> str:
     tracking.sort(key=lambda r: -(r.alpha_pct or r.realized_return_pct))
     fresh.sort(key=lambda r: -(r.alpha_pct or r.realized_return_pct))
     lagging.sort(key=lambda r: (r.alpha_pct if r.alpha_pct is not None else r.realized_return_pct))
-    stops.sort(key=lambda r: (r.alpha_pct if r.alpha_pct is not None else r.realized_return_pct))
+    alerts.sort(key=lambda r: (r.alpha_pct if r.alpha_pct is not None else r.realized_return_pct))
 
     def _annotate(r: FollowupResult) -> str:
         bits = []
@@ -376,6 +420,8 @@ def format_digest(results: list[FollowupResult]) -> str:
                 bits.append("RATING MISS")
         elif r.scenario_bucket == "INTO_TAIL":
             bits.append("⬇⬇ INTO TAIL")
+        if r.btc_trigger_fired:
+            bits.append(f"₿ BTC ${r.btc_breach_close:,.0f} {r.btc_breach_date[5:]}")
         return ("  " + " · ".join(bits)) if bits else ""
 
     def section(emoji: str, title: str, items: list[FollowupResult]) -> list[str]:
@@ -383,11 +429,18 @@ def format_digest(results: list[FollowupResult]) -> str:
             return []
         out = [f"{emoji} {title}", "```"]
         for r in items:
-            extra = _annotate(r)
+            bits: list[str] = []
             if r.stop_breached:
                 stop_hit = next((c for c in r.crossings if c.direction == "stop_breached"), None)
                 if stop_hit:
-                    extra = f"  🛑 stop ${stop_hit.level:.2f} on {stop_hit.date_crossed[5:]}"
+                    bits.append(f"🛑 portfolio stop ${stop_hit.level:.2f} on {stop_hit.date_crossed[5:]}")
+            if r.btc_trigger_fired:
+                bits.append(f"₿ BTC ${r.btc_breach_close:,.0f} ({r.btc_breach_date[5:]})")
+            # Also append the standard annotation (BEYOND BULL / etc) if present
+            ann = _annotate(r)
+            extra = ("  " + " · ".join(bits)) if bits else ""
+            if ann and "BTC" not in ann:
+                extra = (extra + ann) if extra else ann
             out.append(_fmt_line(r, extra))
         out.append("```")
         out.append("")
@@ -398,15 +451,15 @@ def format_digest(results: list[FollowupResult]) -> str:
     lines.append(f"📊 *Daily Research Follow-up · {date.today().isoformat()}*")
     lines.append("")
     lines.append(
-        f"{len(results)} tickers · {crossings} crossings · {len(stops)} stop breaches · "
+        f"{len(results)} tickers · {crossings} crossings · {len(alerts)} alerts · "
         f"{len(big_wins)} big wins · {len(lagging)} lagging"
     )
     lines.append("")
 
+    lines += section("🚨", "ALERTS — pre-committed trigger fired", alerts)
     lines += section("🚀", "BIG WINS (α > +5%)", big_wins)
     lines += section("🟢", "TRACKING WELL (α ≥ 0)", tracking)
     lines += section("🔻", "LAGGING (α < 0)", lagging)
-    lines += section("🛑", "HARD STOP BREACHED", stops)
     lines += section("🆕", "FRESH (research today)", fresh)
 
     return "\n".join(lines).strip()
@@ -480,9 +533,16 @@ def main(argv: list[str] | None = None) -> int:
 
     spy_idx = build_spy_return_index(earliest) if earliest else {}
 
+    # BTC close-by-date for the Step-9-style trigger on crypto-miner tickers.
+    # Fetch once; pass into each follow-up that needs it.
+    btc_closes: dict = {}
+    if earliest:
+        for d, o, h, l, c, v in fetch_history("BTC-USD", earliest):
+            btc_closes[d] = c
+
     results: list[FollowupResult] = []
     for p in runs:
-        r = compute_followup(p, spy_idx)
+        r = compute_followup(p, spy_idx, btc_closes)
         if r is not None:
             results.append(r)
 
