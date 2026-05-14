@@ -327,61 +327,89 @@ def find_runs(base: Path = _RESEARCH_DIR) -> list[Path]:
     return out
 
 
+def _fmt_line(r: FollowupResult, extra: str = "") -> str:
+    """Compact one-line per-ticker formatter. Pads ticker to 6 chars,
+    aligns return/alpha columns for easier visual scanning in Telegram."""
+    ret = f"{r.realized_return_pct:+.1f}%"
+    alpha = f"α{r.alpha_pct:+.1f}%" if r.alpha_pct is not None else "α—"
+    arrow = f"${r.reference_price:.2f}→${r.latest_close:.2f}"
+    days = f"{r.days_elapsed}d"
+    return f"  {r.ticker:<5}  {days:>3}  {arrow:<22}  {ret:>7}  {alpha:>9}{extra}"
+
+
 def format_digest(results: list[FollowupResult]) -> str:
-    """Markdown digest, one line per ticker, sorted by alpha descending."""
+    """Grouped-by-status digest for Telegram. Sections:
+    🚀 BIG WINS · 🟢 TRACKING · 🔻 LAGGING · 🛑 STOP BREACHED · 🆕 FRESH
+    """
     if not results:
-        return "_(no research runs to follow up)_"
+        return "(no research runs to follow up)"
 
-    # Sort: ones with fired triggers first, then by alpha (or realized) descending
-    def sort_key(r: FollowupResult):
-        priority = -1 if r.crossings else 0
-        return (priority, -(r.alpha_pct if r.alpha_pct is not None else r.realized_return_pct))
-
-    results = sorted(results, key=sort_key)
-
-    lines = [
-        f"# Daily research follow-up — {date.today().isoformat()}",
-        "",
-        f"{len(results)} current research runs · sorted by trigger fires then alpha",
-        "",
-        "| Ticker | Days | Ref → Spot | Realized | Alpha vs SPY | Bucket | Rating | Fired |",
-        "|---|--:|---|--:|--:|---|---|---|",
-    ]
-
+    # Categorize
+    big_wins, tracking, lagging, stops, fresh = [], [], [], [], []
     for r in results:
-        alpha_str = f"{r.alpha_pct:+.2f}%" if r.alpha_pct is not None else "—"
-        fired_str = ""
-        if r.crossings:
-            tags = []
-            for c in r.crossings:
-                tag = c.direction.replace("_", " ")
-                tags.append(f"{tag}@${c.level:.2f} ({c.date_crossed})")
-            fired_str = "<br>".join(tags)
-        elif r.days_elapsed < 1:
-            fired_str = "fresh"
+        if r.stop_breached:
+            stops.append(r)
+        elif r.days_elapsed == 0:
+            fresh.append(r)
+        elif r.alpha_pct is not None and r.alpha_pct >= 5:
+            big_wins.append(r)
+        elif (r.alpha_pct or 0) >= 0:
+            tracking.append(r)
         else:
-            fired_str = "—"
-        lines.append(
-            f"| **{r.ticker}** | {r.days_elapsed} | "
-            f"${r.reference_price:.2f} → ${r.latest_close:.2f} | "
-            f"{r.realized_return_pct:+.2f}% | {alpha_str} | "
-            f"{r.scenario_bucket.replace('_', ' ').lower()} | {r.rating.lower()} | "
-            f"{fired_str} |"
-        )
+            lagging.append(r)
 
-    # Summary
-    fired = [r for r in results if r.crossings]
-    stop_breached = [r for r in results if r.stop_breached]
-    on_track_bull = [r for r in results if r.scenario_bucket in ("TRACKING_BULL", "BEYOND_BULL_TARGET")]
-    on_track_bear = [r for r in results if r.scenario_bucket in ("TRACKING_BEAR", "BEYOND_BEAR_TARGET", "INTO_TAIL")]
+    big_wins.sort(key=lambda r: -(r.alpha_pct or r.realized_return_pct))
+    tracking.sort(key=lambda r: -(r.alpha_pct or r.realized_return_pct))
+    fresh.sort(key=lambda r: -(r.alpha_pct or r.realized_return_pct))
+    lagging.sort(key=lambda r: (r.alpha_pct if r.alpha_pct is not None else r.realized_return_pct))
+    stops.sort(key=lambda r: (r.alpha_pct if r.alpha_pct is not None else r.realized_return_pct))
 
-    lines += [
-        "",
-        f"**Crossings:** {len(fired)} tickers had at least one scenario target cross since their research date.",
-        f"**Hard-stop breaches:** {len(stop_breached)}.",
-        f"**Tracking bull:** {len(on_track_bull)} · **tracking bear:** {len(on_track_bear)}.",
-    ]
-    return "\n".join(lines)
+    def _annotate(r: FollowupResult) -> str:
+        bits = []
+        if r.scenario_bucket == "BEYOND_BULL_TARGET":
+            bits.append("⭐ BEYOND BULL")
+            if r.rating in ("UNDERWEIGHT", "SELL"):
+                bits.append("RATING MISS")
+        elif r.scenario_bucket == "BEYOND_BEAR_TARGET":
+            bits.append("⬇ BEYOND BEAR")
+            if r.rating in ("OVERWEIGHT", "BUY"):
+                bits.append("RATING MISS")
+        elif r.scenario_bucket == "INTO_TAIL":
+            bits.append("⬇⬇ INTO TAIL")
+        return ("  " + " · ".join(bits)) if bits else ""
+
+    def section(emoji: str, title: str, items: list[FollowupResult]) -> list[str]:
+        if not items:
+            return []
+        out = [f"{emoji} {title}", "```"]
+        for r in items:
+            extra = _annotate(r)
+            if r.stop_breached:
+                stop_hit = next((c for c in r.crossings if c.direction == "stop_breached"), None)
+                if stop_hit:
+                    extra = f"  🛑 stop ${stop_hit.level:.2f} on {stop_hit.date_crossed[5:]}"
+            out.append(_fmt_line(r, extra))
+        out.append("```")
+        out.append("")
+        return out
+
+    crossings = sum(1 for r in results if r.crossings)
+    lines: list[str] = []
+    lines.append(f"📊 *Daily Research Follow-up · {date.today().isoformat()}*")
+    lines.append("")
+    lines.append(
+        f"{len(results)} tickers · {crossings} crossings · {len(stops)} stop breaches · "
+        f"{len(big_wins)} big wins · {len(lagging)} lagging"
+    )
+    lines.append("")
+
+    lines += section("🚀", "BIG WINS (α > +5%)", big_wins)
+    lines += section("🟢", "TRACKING WELL (α ≥ 0)", tracking)
+    lines += section("🔻", "LAGGING (α < 0)", lagging)
+    lines += section("🛑", "HARD STOP BREACHED", stops)
+    lines += section("🆕", "FRESH (research today)", fresh)
+
+    return "\n".join(lines).strip()
 
 
 def send_to_telegram(digest: str, chat_id: str = "-1003753140043") -> bool:
