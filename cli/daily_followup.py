@@ -81,10 +81,14 @@ _REF_PRICE = re.compile(
 )
 
 _RATING = re.compile(
-    # Tolerant: matches "**Rating implication: HOLD.**" / "**Rating: HOLD**"
-    # / "Rating implication: HOLD" / "Rating: SELL", with optional surrounding
-    # asterisks. Up to 4 asterisks ahead of the rating word.
-    r"Rating(?:\s+implication)?:?\s*\*{0,4}\s*"
+    # Tolerant: matches all of:
+    #   **Rating implication: HOLD.**
+    #   **Rating implication:** **Underweight.**     ← AAOI; alternating bold
+    #   **Rating: HOLD**
+    #   Rating implication: HOLD
+    # Allow any mix of whitespace + asterisks between the colon and the
+    # rating word so alternating-bold prose still matches.
+    r"Rating(?:\s+implication)?:?[*\s]*"
     r"(?P<rating>BUY|OVERWEIGHT|HOLD|UNDERWEIGHT|SELL)\b",
     re.IGNORECASE,
 )
@@ -409,6 +413,9 @@ def format_digest(results: list[FollowupResult]) -> str:
     alerts.sort(key=lambda r: (r.alpha_pct if r.alpha_pct is not None else r.realized_return_pct))
 
     def _annotate(r: FollowupResult) -> str:
+        """Annotations that aren't already shown by the trigger-fire bits
+        in section() (i.e., NOT stop-breached and NOT btc-trigger — those
+        get their own dedicated bits in section())."""
         bits = []
         if r.scenario_bucket == "BEYOND_BULL_TARGET":
             bits.append("⭐ BEYOND BULL")
@@ -420,8 +427,6 @@ def format_digest(results: list[FollowupResult]) -> str:
                 bits.append("RATING MISS")
         elif r.scenario_bucket == "INTO_TAIL":
             bits.append("⬇⬇ INTO TAIL")
-        if r.btc_trigger_fired:
-            bits.append(f"₿ BTC ${r.btc_breach_close:,.0f} {r.btc_breach_date[5:]}")
         return ("  " + " · ".join(bits)) if bits else ""
 
     def section(emoji: str, title: str, items: list[FollowupResult]) -> list[str]:
@@ -433,14 +438,17 @@ def format_digest(results: list[FollowupResult]) -> str:
             if r.stop_breached:
                 stop_hit = next((c for c in r.crossings if c.direction == "stop_breached"), None)
                 if stop_hit:
-                    bits.append(f"🛑 portfolio stop ${stop_hit.level:.2f} on {stop_hit.date_crossed[5:]}")
+                    bits.append(f"🛑 stop ${stop_hit.level:.2f} on {stop_hit.date_crossed[5:]}")
             if r.btc_trigger_fired:
                 bits.append(f"₿ BTC ${r.btc_breach_close:,.0f} ({r.btc_breach_date[5:]})")
-            # Also append the standard annotation (BEYOND BULL / etc) if present
+            # Standard scenario-bucket annotation (BEYOND BULL / RATING MISS / etc)
             ann = _annotate(r)
+            if ann:
+                bits.append(ann.strip())
+            # Show rating short-tag so operator can compare call vs outcome
+            if r.rating and r.rating != "UNKNOWN":
+                bits.append(f"rating: {r.rating.lower()}")
             extra = ("  " + " · ".join(bits)) if bits else ""
-            if ann and "BTC" not in ann:
-                extra = (extra + ann) if extra else ann
             out.append(_fmt_line(r, extra))
         out.append("```")
         out.append("")
