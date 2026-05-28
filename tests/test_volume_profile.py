@@ -37,3 +37,16 @@ def test_histogram_poc_and_value_area():
     val, vah = value_area(bins, pct=0.70)
     assert val <= poc <= vah
     assert vah < 18.0
+
+def test_hvn_lvn_extraction():
+    from tradingagents.agents.utils.volume_profile import Bin, high_volume_nodes, low_volume_nodes
+    bins = [
+        Bin(9, 10, 9.5, 100), Bin(10, 11, 10.5, 900), Bin(11, 12, 11.5, 100),
+        Bin(12, 13, 12.5, 50),  Bin(13, 14, 13.5, 80),  Bin(14, 15, 14.5, 800),
+        Bin(15, 16, 15.5, 90),
+    ]
+    hvn = high_volume_nodes(bins, max_nodes=3)
+    lvn = low_volume_nodes(bins, max_nodes=3)
+    assert 10.5 in [round(p, 1) for p in hvn]
+    assert 14.5 in [round(p, 1) for p in hvn]
+    assert any(12.0 <= p <= 13.0 for p in lvn)

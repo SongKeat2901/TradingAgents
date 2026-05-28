@@ -94,3 +94,26 @@ def value_area(bins: list[Bin], pct: float = 0.70) -> tuple[float | None, float 
             lo_idx -= 1
             captured += bins[lo_idx].volume
     return (bins[lo_idx].low, bins[hi_idx].high)
+
+
+def _local_extrema(bins: list[Bin], want_peaks: bool) -> list[tuple[float, float]]:
+    out: list[tuple[float, float]] = []
+    for i in range(1, len(bins) - 1):
+        v, lft, rgt = bins[i].volume, bins[i - 1].volume, bins[i + 1].volume
+        is_peak = v >= lft and v >= rgt
+        is_trough = v <= lft and v <= rgt
+        if (want_peaks and is_peak) or (not want_peaks and is_trough):
+            out.append((bins[i].mid, v))
+    return out
+
+
+def high_volume_nodes(bins: list[Bin], max_nodes: int = 5) -> list[float]:
+    peaks = _local_extrema(bins, want_peaks=True)
+    peaks.sort(key=lambda pv: -pv[1])
+    return [round(p, 2) for p, _v in peaks[:max_nodes]]
+
+
+def low_volume_nodes(bins: list[Bin], max_nodes: int = 5) -> list[float]:
+    troughs = _local_extrema(bins, want_peaks=False)
+    troughs.sort(key=lambda pv: pv[1])
+    return [round(p, 2) for p, _v in troughs[:max_nodes]]
