@@ -139,3 +139,28 @@ def compute_volume_profile(ohlcv_csv: str, n_bins: int = 50) -> dict:
         "structural_36mo": _profile_one_window(select_window(rows, 36), n_bins),
         "tactical_6mo": _profile_one_window(select_window(rows, 6), n_bins),
     }
+
+
+def _fmt(v: float | None) -> str:
+    return f"${v:.2f}" if isinstance(v, (int, float)) else "(n/a)"
+
+
+def format_volume_profile_block(vp: dict) -> str:
+    def _row(label: str, w: dict) -> str:
+        hvn = ", ".join(_fmt(x) for x in w.get("hvn", [])) or "(none)"
+        lvn = ", ".join(_fmt(x) for x in w.get("lvn", [])) or "(none)"
+        return (f"| {label} | {_fmt(w.get('poc'))} | {_fmt(w.get('val'))}"
+                f" | {_fmt(w.get('vah'))} | {hvn} | {lvn} |")
+
+    return (
+        "\n\n## Liquidity / Volume profile (computed from raw/prices.json)\n\n"
+        "| Window | POC | Value-Area Low | Value-Area High | High-Volume Nodes | Low-Volume Nodes |\n"
+        "|---|---|---|---|---|---|\n"
+        + _row("36-mo structural", vp.get("structural_36mo", {})) + "\n"
+        + _row("6-mo tactical", vp.get("tactical_6mo", {})) + "\n\n"
+        "*POC = most-transacted price (acceptance). Value Area = 70% of volume. "
+        "High-Volume Nodes = liquidity magnets (support/resistance). Low-Volume "
+        "Nodes = thin 'slip-through' zones. **Use these levels verbatim** — they "
+        "are computed from actual volume-by-price, not eyeballed. Do not invent "
+        "alternative 'accumulation zones' from memory.*\n"
+    )

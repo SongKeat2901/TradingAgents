@@ -64,3 +64,17 @@ def test_compute_volume_profile_dual_window():
         assert isinstance(vp[win]["hvn"], list)
         assert isinstance(vp[win]["lvn"], list)
     assert vp["n_bins"] == 20
+
+def test_format_volume_profile_block():
+    from tradingagents.agents.utils.volume_profile import format_volume_profile_block
+    vp = {
+        "n_bins": 50,
+        "structural_36mo": {"poc": 100.0, "vah": 110.0, "val": 90.0,
+                             "hvn": [108.0, 92.0], "lvn": [101.0], "n_bars": 700},
+        "tactical_6mo": {"poc": 105.0, "vah": 112.0, "val": 98.0,
+                          "hvn": [111.0], "lvn": [106.0], "n_bars": 120},
+    }
+    block = format_volume_profile_block(vp)
+    assert "## Liquidity / Volume profile" in block
+    assert "100.0" in block and "110.0" in block
+    assert "Use these levels verbatim" in block
