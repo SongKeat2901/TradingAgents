@@ -50,3 +50,17 @@ def test_hvn_lvn_extraction():
     assert 10.5 in [round(p, 1) for p in hvn]
     assert 14.5 in [round(p, 1) for p in hvn]
     assert any(12.0 <= p <= 13.0 for p in lvn)
+
+def test_compute_volume_profile_dual_window():
+    from tradingagents.agents.utils.volume_profile import compute_volume_profile
+    ohlcv = "Date,Open,High,Low,Close,Volume,Dividends,Stock Splits\n" + "\n".join(
+        f"2026-{(i//28)+1:02d}-{(i%28)+1:02d},10,12,10,11,{1000+i}" for i in range(60)
+    )
+    vp = compute_volume_profile(ohlcv, n_bins=20)
+    for win in ("structural_36mo", "tactical_6mo"):
+        assert win in vp
+        assert vp[win]["poc"] is not None
+        assert vp[win]["vah"] >= vp[win]["val"]
+        assert isinstance(vp[win]["hvn"], list)
+        assert isinstance(vp[win]["lvn"], list)
+    assert vp["n_bins"] == 20

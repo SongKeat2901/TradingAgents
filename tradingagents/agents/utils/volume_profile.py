@@ -117,3 +117,25 @@ def low_volume_nodes(bins: list[Bin], max_nodes: int = 5) -> list[float]:
     troughs = _local_extrema(bins, want_peaks=False)
     troughs.sort(key=lambda pv: pv[1])
     return [round(p, 2) for p, _v in troughs[:max_nodes]]
+
+
+def _profile_one_window(rows: list[Bar], n_bins: int) -> dict:
+    bins = build_histogram(rows, n_bins=n_bins)
+    val, vah = value_area(bins)
+    return {
+        "poc": point_of_control(bins),
+        "vah": vah,
+        "val": val,
+        "hvn": high_volume_nodes(bins),
+        "lvn": low_volume_nodes(bins),
+        "n_bars": len(rows),
+    }
+
+
+def compute_volume_profile(ohlcv_csv: str, n_bins: int = 50) -> dict:
+    rows = parse_ohlcv(ohlcv_csv)
+    return {
+        "n_bins": n_bins,
+        "structural_36mo": _profile_one_window(select_window(rows, 36), n_bins),
+        "tactical_6mo": _profile_one_window(select_window(rows, 6), n_bins),
+    }
