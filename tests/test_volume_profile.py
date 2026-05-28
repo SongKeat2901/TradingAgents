@@ -20,3 +20,20 @@ def test_select_window_takes_trailing_rows():
     rows = parse_ohlcv(_OHLCV)
     assert select_window(rows, months=36) == rows
     assert select_window(rows, months=0) == []
+
+def test_histogram_poc_and_value_area():
+    from tradingagents.agents.utils.volume_profile import (
+        parse_ohlcv, build_histogram, point_of_control, value_area,
+    )
+    ohlcv = (
+        "Date,Open,High,Low,Close,Volume,Dividends,Stock Splits\n"
+        "2026-05-20,10,12,10,11,9000,0.0,0.0\n"
+        "2026-05-21,18,20,18,19,1000,0.0,0.0\n"
+    )
+    rows = parse_ohlcv(ohlcv)
+    bins = build_histogram(rows, n_bins=20)
+    poc = point_of_control(bins)
+    assert 10.0 <= poc <= 12.0
+    val, vah = value_area(bins, pct=0.70)
+    assert val <= poc <= vah
+    assert vah < 18.0
