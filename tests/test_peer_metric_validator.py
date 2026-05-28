@@ -173,6 +173,120 @@ def test_v2_catches_aaoi_pm_fabrication_long_bridge_with_equals_separator(tmp_pa
     assert lite_nde, f"missed LITE ND/EBITDA fabrication; got {sorted(by_key)}"
 
 
+def test_v3_skips_nvda_tsm_nd_ebitda_metric_kind_mismatch(tmp_path):
+    """NVDA 2026-05-21 false positive: a fundamentals notes line says
+
+      "TSM ND/EBITDA figures are TWD-denominated as provided in pm_brief
+       peer table ($936.16B net debt / $2,856.03B TTM EBITDA = 0.33x;
+       use the ratio, not the raw dollar figures)."
+
+    The peer-metric regex bound 'TTM EBITDA' (the divisor's label) to
+    '0.33x' (the equation result) and flagged TTM EBITDA = 0.33x against
+    canonical $2.86 trillion. But 0.33x is a multiple (ND/EBITDA ratio
+    result), not a $ magnitude — TTM EBITDA can NEVER be a multiple.
+
+    Fix: when the captured value's kind ('ratio') doesn't match the
+    metric's expected kind ('billions'/'millions' for TTM EBITDA), skip.
+    """
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-21",
+        "_unavailable": [],
+        "TSM": {
+            "latest_quarter_capex_to_revenue": 31.01,
+            "latest_quarter_op_margin": 58.1,
+            "ttm_pe": 34.72,
+            "forward_pe": 20.73,
+            "net_debt": 936_160_000_000.0,
+            "ttm_ebitda": 2_856_031_092_736.0,
+            "nd_ebitda": 0.33,
+        },
+    }
+    peers = {"TSM": {"ticker": "TSM"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "TSM ND/EBITDA figures are TWD-denominated as provided in pm_brief "
+        "peer table ($936.16B net debt / $2,856.03B TTM EBITDA = 0.33x; "
+        "use the ratio, not the raw dollar figures, for cross-currency "
+        "comparisons)."
+    )
+    violations = validate_peer_metrics(
+        text, "analyst_fundamentals.md", raw / "peer_ratios.json", raw / "peers.json",
+    )
+    # The wrong_peer_metric FP that binds 0.33x to TTM EBITDA must NOT fire
+    ttm_ebitda_vios = [v for v in violations if v.type == "wrong_peer_metric"
+                       and "ebitda" in v.metric.lower() and "nd" not in v.metric.lower()]
+    assert not ttm_ebitda_vios, (
+        f"TTM EBITDA must not bind to 0.33x ratio value; got {ttm_ebitda_vios}"
+    )
+
+
+def test_v2_2_skips_amzn_inline_equation_false_positive(tmp_path):
+    """AMZN 2026-05-21 false positive: when the LLM shows the math inline as
+    `<METRIC> = $X / $Y = Z%`, the v2 regex previously captured the first
+    value after the metric phrase ($X, the numerator) instead of the final
+    Z% computed answer. That misread `MSFT capex/revenue = $30,900M /
+    $83,100M = 37.2%` as a claim of `$30,900M` for capex/revenue and flagged
+    it against canonical 37.25% — a clear false positive: the math is
+    correct (30900/83100 = 37.2%, ~37.25% canonical).
+
+    Source: AMZN 2026-05-21 decision.md line 10, validation_report.json
+    phase_7_3_peer_metric violation (2 of 2, also same shape for GOOGL).
+    """
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-21",
+        "_unavailable": [],
+        "MSFT": {
+            "latest_quarter_capex_to_revenue": 37.25,
+            "latest_quarter_op_margin": 46.33,
+            "ttm_pe": 24.81,
+            "forward_pe": 21.56,
+            "net_debt": 8_157_000_000.0,
+            "ttm_ebitda": 184_457_003_008.0,
+            "nd_ebitda": 0.04,
+        },
+        "GOOGL": {
+            "latest_quarter_capex_to_revenue": 32.46,
+            "latest_quarter_op_margin": 36.12,
+            "ttm_pe": 29.6,
+            "forward_pe": 26.83,
+            "net_debt": 39_438_000_000.0,
+            "ttm_ebitda": 161_315_995_648.0,
+            "nd_ebitda": 0.24,
+        },
+    }
+    peers = {"MSFT": {"ticker": "MSFT"}, "GOOGL": {"ticker": "GOOGL"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "- **Peer capex/revenue ratios (Q1 2026, inline arithmetic):**\n"
+        "  - **MSFT Q1 capex/revenue = $30,900M / $83,100M = 37.2%** "
+        "(raw/peers.json MSFT capex cell $30.9B ÷ revenue cell $83.1B)\n"
+        "  - **GOOGL Q1 capex/revenue = $35,700M / $109,900M = 32.5%** "
+        "(raw/peers.json GOOGL capex cell $35.7B ÷ revenue cell $109.9B)\n"
+    )
+
+    violations = validate_peer_metrics(
+        text, "decision.md", raw / "peer_ratios.json", raw / "peers.json",
+    )
+    # Inline-equation math is correct (37.2% ≈ 37.25, 32.5% ≈ 32.46);
+    # NO peer-metric violation should fire on either line. The validator
+    # must consume the `$X / $Y =` prefix and bind to the final percent.
+    cap_vios = [v for v in violations if v.type == "wrong_peer_metric"
+                and "capex" in v.metric.lower()]
+    assert not cap_vios, (
+        f"false positive on AMZN inline-equation form; got {cap_vios}"
+    )
+
+
 def test_v2_1_skips_metric_attributed_to_subject_ticker(tmp_path):
     """NVDA 2026-05-08 false positive: a fundamentals line like
 

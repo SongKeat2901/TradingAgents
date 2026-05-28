@@ -259,8 +259,39 @@ def create_portfolio_manager(llm):
         trader_plan = state["trader_investment_plan"]
 
         past_context = state.get("past_context", "")
+        # Phase 7.13 (2026-05-25): wrap past_context with a citation-hygiene
+        # directive. The recurring NVDA "TSM capex/revenue 34.55% per
+        # 2026-05-08 NVDA decision caveat lineage" and TSLA "GM net debt
+        # $107.96B cited verbatim in prior 2026-05-21 TSLA decision Inputs
+        # section" fabrications both originated from the LLM trusting
+        # numerical peer values inside past_context over the current
+        # raw/peer_ratios.json / raw/net_debt.json cells. Two reruns each
+        # repeated the same error — this is a context-anchoring failure,
+        # not LLM stochasticity. The directive below forbids the specific
+        # attribution pattern ("per prior decision lineage", "verbatim
+        # from prior YYYY-MM-DD decision Inputs section") and requires
+        # peer/net-debt/price citations to be RE-READ from current raw/.
         lessons_line = (
-            f"- Lessons from prior decisions and outcomes:\n{past_context}\n"
+            f"- Lessons from prior decisions and outcomes:\n{past_context}\n\n"
+            "**CITATION HYGIENE for the Lessons block above — STRICTLY ENFORCED:** "
+            "the prior-decision text contains numerical claims (peer ratios, "
+            "net-debt magnitudes, close prices, multiples) that may have been "
+            "fabricated, drawn from now-stale snapshots, or based on data "
+            "the validator subsequently flagged. **Do NOT carry forward any "
+            "such numerical citation from the Lessons block into this "
+            "decision.** When you need to cite a peer metric, net-debt figure, "
+            "close price, or any other deterministic value, re-verify it "
+            "against the CURRENT trade-date data: `raw/peer_ratios.json`, "
+            "`raw/net_debt.json`, `raw/peers.json`, `raw/prices.json`, "
+            "`raw/financials.json`, `raw/reference.json`. The attribution "
+            "patterns **'per [prior-date] decision caveat lineage'**, "
+            "**'cited verbatim in prior [prior-date] decision Inputs section'**, "
+            "**'carried forward from the prior decision peer table'**, and "
+            "similar are FORBIDDEN — even when the prior decision claimed to "
+            "cite raw/. Always re-read the current raw/ cell and cite the "
+            "cell value verbatim. The Lessons block is for QUALITATIVE "
+            "reflection (what worked, what didn't, structural lessons), NOT "
+            "for numerical lineage.\n"
             if past_context
             else ""
         )
@@ -290,6 +321,62 @@ def create_portfolio_manager(llm):
                         "PM: could not read %s (%s); omitting sec_block", sec_path, exc
                     )
 
+        # Phase 7.15 (2026-05-27): inject the deterministic "## Peer ratios"
+        # and "## Net debt" blocks directly into the PM prompt. The PM does
+        # NOT otherwise see pm_brief.md — `build_instrument_context()` is
+        # just a one-line ticker description — and it reads peer values via
+        # the RM/trader/risk-debate transcripts, which often paraphrase
+        # imprecisely ("MSFT trades at ~24x forward" when the canonical
+        # value is 21.59x). The recurring GOOGL "MSFT Forward P/E = 24.1×"
+        # hallucination (canonical 21.59) survived Phase 7.13 (PM directive)
+        # and Phase 7.14 (past_context scrub) precisely because the PM never
+        # had the authoritative table in front of it. This block puts the
+        # Python-computed values literally in the prompt.
+        peer_ratios_block = ""
+        if raw_dir:
+            pm_brief_path = Path(raw_dir) / "pm_brief.md"
+            if pm_brief_path.exists():
+                try:
+                    brief = pm_brief_path.read_text(encoding="utf-8")
+                    # Slice each ## section by header until the next top-level
+                    # heading. researcher.py writes them in order: peer ratios
+                    # then net debt.
+                    sections: list[str] = []
+                    for header in ("## Peer ratios", "## Net debt"):
+                        idx = brief.find(header)
+                        if idx < 0:
+                            continue
+                        # Find the next "## " header after this one, or EOF
+                        next_idx = brief.find("\n## ", idx + len(header))
+                        if next_idx < 0:
+                            next_idx = len(brief)
+                        sections.append(brief[idx:next_idx].rstrip())
+                    if sections:
+                        peer_ratios_block = (
+                            "\n\n**AUTHORITATIVE PEER RATIOS + NET DEBT — "
+                            "USE THESE VALUES VERBATIM:**\n\n"
+                            "These tables are computed in Python from "
+                            "`raw/peers.json` and `raw/financials.json` on "
+                            "the trade date. They are the canonical source "
+                            "for every peer ratio (TTM P/E, Forward P/E, op "
+                            "margin, capex/revenue, net debt, TTM EBITDA, "
+                            "ND/EBITDA) and the subject ticker's net debt. "
+                            "Analyst transcripts and the RM/trader plans "
+                            "may have paraphrased these values imprecisely "
+                            "(rounded, recalled from training, or carried "
+                            "from prior decisions); when the transcript "
+                            "value disagrees with the table cell below, "
+                            "**the table cell is correct — cite it verbatim "
+                            "to 2 decimal places.** Do not invent neat "
+                            "numbers like 24.1× when the cell says 21.59x.\n\n"
+                            + "\n\n".join(sections) + "\n"
+                        )
+                except OSError as exc:
+                    logger.warning(
+                        "PM: could not read %s (%s); omitting peer_ratios_block",
+                        pm_brief_path, exc,
+                    )
+
         # If the QC agent failed the previous draft, surface its feedback at
         # the top of the prompt so the PM addresses every point on this pass.
         # 2026-05-08 AAPL retry failure mode: the PM responded with a 471-c
@@ -316,7 +403,7 @@ def create_portfolio_manager(llm):
 
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
-{instrument_context}{reference_block}{technicals_block}{sec_block}{qc_block}
+{instrument_context}{reference_block}{technicals_block}{sec_block}{peer_ratios_block}{qc_block}
 
 {instrument_context}
 

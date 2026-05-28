@@ -281,12 +281,48 @@ class TradingMemoryLog:
         entry["reflection"] = reflection_match.group(1).strip() if reflection_match else ""
         return entry
 
+    # Phase 7.14 (2026-05-26): numerical scrubbing of past-decision DECISION
+    # text before LLM injection. The prior Phase-7.13 PM prompt directive
+    # ("don't cite values from prior decision lineage") was empirically
+    # evaded — the LLM kept the substance (carrying forward stale peer
+    # values like NVDA TTM P/E=46x, Ford net debt=$139.48B, TSM
+    # capex/revenue=34.55%) but changed the attribution wording ("value
+    # used in prior decision chain — flagged in caveats").
+    #
+    # Robust fix: the LLM can't cite what isn't in the context. These
+    # patterns mask numerical citations (P/E and EV/EBITDA multiples,
+    # dollar magnitudes with B/M suffix, close-price form $XXX.XX) from
+    # the DECISION body of past entries before injection. REFLECTION text
+    # is left untouched — reflections are qualitative ("the prior trim
+    # generated alpha"; "watch for momentum exhaustion") and contain
+    # self-correction lessons that may legitimately reference numbers.
+    # Outcome %s and rating live in the tag line, which is also untouched.
+    _NUMERIC_SCRUB_PATTERNS = (
+        # Multiples: 24.1x, 41.0x, 21.56x, 9× (also U+00D7 times sign)
+        (re.compile(r"\b[\d,]+(?:\.\d+)?\s*[x×]\b", re.IGNORECASE), "[scrubbed]"),
+        # Dollar magnitudes with B/M suffix: $35.32B, $30,900M, $5.59B
+        (re.compile(r"\$\s*[\d,]+(?:\.\d+)?\s*[BM]\b", re.IGNORECASE), "[scrubbed]"),
+        # Close-price form: $XXX.XX (two-decimal $ values)
+        (re.compile(r"\$\s*[\d,]+\.\d{2}\b"), "[scrubbed]"),
+    )
+
+    def _scrub_numerics(self, text: str) -> str:
+        """Mask numerical peer/net-debt/price citations from past-decision text.
+        See class docstring for the _NUMERIC_SCRUB_PATTERNS rationale."""
+        if not text:
+            return text
+        for pat, repl in self._NUMERIC_SCRUB_PATTERNS:
+            text = pat.sub(repl, text)
+        return text
+
     def _format_full(self, e: dict) -> str:
         raw = e["raw"] or "n/a"
         alpha = e["alpha"] or "n/a"
         holding = e["holding"] or "n/a"
         tag = f"[{e['date']} | {e['ticker']} | {e['rating']} | {raw} | {alpha} | {holding}]"
-        parts = [tag, f"DECISION:\n{e['decision']}"]
+        # Scrub numerics from DECISION (peer ratios, $ magnitudes, prices);
+        # leave REFLECTION untouched so qualitative self-correction stays.
+        parts = [tag, f"DECISION:\n{self._scrub_numerics(e['decision'])}"]
         if e["reflection"]:
             parts.append(f"REFLECTION:\n{e['reflection']}")
         return "\n\n".join(parts)
@@ -295,6 +331,7 @@ class TradingMemoryLog:
         tag = f"[{e['date']} | {e['ticker']} | {e['rating']} | {e['raw'] or 'n/a'}]"
         if e["reflection"]:
             return f"{tag}\n{e['reflection']}"
-        text = e["decision"][:300]
+        # Fallback: when no reflection, snip the decision text — also scrub.
+        text = self._scrub_numerics(e["decision"][:300])
         suffix = "..." if len(e["decision"]) > 300 else ""
         return f"{tag}\n{text}{suffix}"

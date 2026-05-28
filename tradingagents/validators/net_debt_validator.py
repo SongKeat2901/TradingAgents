@@ -104,7 +104,15 @@ _PATTERN_VALUE_FIRST = re.compile(
     re.IGNORECASE,
 )
 _PATTERN_LABEL_FIRST = re.compile(
+    # Phase 7.12 v3 (GOOGL 2026-05-26 fix): negative lookahead to exclude
+    # "net cash from operations" / "net cash from operating activities" /
+    # "net cash from ops" — those are OCF (operating cash flow), a totally
+    # different metric than the balance-sheet "net cash position" the
+    # validator is designed to check. False positive observed on GOOGL:
+    # "Net cash from operations $45,790M" got matched as a net-cash claim
+    # vs canonical $49.34B; the LLM meant OCF, not net-cash position.
     r"(?P<label>net\s+(?:cash|debt))"
+    r"(?!\s+from\s+(?:operations|operating|ops))"
     # Tighter bridge (20 chars) to defend against pairings like
     # `"net cash" and stops; the data shows that $16.70B of lease
     # obligations` — that's 33 chars and pairs the wrong dollar
@@ -117,6 +125,18 @@ _PATTERN_LABEL_FIRST = re.compile(
     # AFTER `/` is the ratio denominator, not a continuation of the
     # 'net cash' label).
     r"[^\n.;|/]{0,20}?"
+    # Phase 7.12 v2 (MSFT 2026-05-21 fix): optionally consume an inline
+    # subtraction prefix `$A − $B =` so the captured value is the
+    # derivation RESULT, not the minuend. Same root cause as the
+    # peer_metric inline-equation FP — the LLM writes
+    #   "Net debt = $40,262M − $32,105M = $8,157M"
+    # which is correct math, but without this prefix-eater the regex
+    # binds `Net debt` to $40,262M (the minuend) and flags a spurious
+    # definitional drift. Non-capturing; only fires when the
+    # `$A − $B =` shape is present, so single-value forms are
+    # unaffected. Handles both U+2212 (−) and ASCII `-` as the minus.
+    r"(?:[-−]?\$[\d,]+(?:\.\d+)?\s*[BM]?\s*[−-]\s*"
+    r"[-−]?\$[\d,]+(?:\.\d+)?\s*[BM]?\s*=\s*)?"
     r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?",
     re.IGNORECASE,
 )
@@ -135,6 +155,26 @@ def _to_dollars(value: str, unit: str | None) -> float | None:
         return num * 1_000_000
     # No unit suffix — treat as raw dollars (rare but possible)
     return num
+
+
+_DELTA_COMPARATORS_RE = re.compile(
+    # Comparator words that, when they immediately follow the $X value,
+    # mean the value is a DELTA between two methodologies / a positional
+    # phrase, not a magnitude claim about net debt itself. We check within
+    # a short window (~20 chars) after the value match so legitimate
+    # tails like "net debt of $35.32B per yfinance" stay verifiable.
+    #
+    # Phase 7.12 (META 2026-05-21 fix): the LLM wrote
+    #   "yields $5.59B net debt, approximately $30B lower."
+    # The LABEL_FIRST regex paired `net debt` with `$30B` across
+    # ", approximately " — but " lower" tail marks this as a delta.
+    r"^\s*(?:"
+    r"lower|higher|less|more|below|above|different|apart"
+    r"|shy(?:\s+of)?|short(?:\s+of)?|away(?:\s+from)?"
+    r"|over|under"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def extract_net_debt_claims(text: str) -> list[NetDebtClaim]:
@@ -162,6 +202,13 @@ def extract_net_debt_claims(text: str) -> list[NetDebtClaim]:
             if value_dollars is None:
                 continue
             value_dollars = abs(value_dollars)
+
+            # Phase 7.12 delta-phrase guard: if the value is followed by a
+            # comparator word (lower/higher/etc.), it's a delta between
+            # methodologies, not a magnitude claim. Skip.
+            tail = text[m.end():m.end() + 20]
+            if _DELTA_COMPARATORS_RE.match(tail):
+                continue
 
             # Phase 7.5 v1.2: capture the FULL surrounding paragraph (back to
             # last newline) so peer-attribution detection can find ticker

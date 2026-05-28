@@ -79,9 +79,37 @@ def _parse_prices_json(prices_json_path: Path) -> dict[str, float]:
     return by_date
 
 
+def _parse_reference_anchor(
+    reference_json_path: Path | None,
+) -> tuple[str | None, float | None]:
+    """Load (trade_date, reference_price) from raw/reference.json.
+
+    Returns (None, None) on any parse error or missing file — caller
+    falls back to the prices.json-only validation path.
+    """
+    if reference_json_path is None or not reference_json_path.exists():
+        return (None, None)
+    try:
+        d = json.loads(reference_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return (None, None)
+    if not isinstance(d, dict):
+        return (None, None)
+    trade_date = d.get("trade_date")
+    ref_price = d.get("reference_price")
+    if not isinstance(trade_date, str):
+        return (None, None)
+    try:
+        ref_price_f = float(ref_price) if ref_price is not None else None
+    except (TypeError, ValueError):
+        return (None, None)
+    return (trade_date, ref_price_f)
+
+
 def validate_date_close_claims(
     claims: list[DateCloseClaim],
     prices_json_path: Path,
+    reference_json_path: Path | None = None,
 ) -> list[Violation]:
     """Verify each `<date> close $X.XX` claim against raw/prices.json.
 
@@ -91,12 +119,18 @@ def validate_date_close_claims(
     Three logical paths per claim:
     - `date_iso` couldn't be resolved → skip (not a violation; ambiguous date)
     - `date_iso > latest_indexed_date` → MATERIAL `fabricated_future_close`
+      EXCEPT when `reference_json_path` is provided AND
+      `date_iso == trade_date` AND `abs(claim.price - reference_price) <=
+      tolerance` — in that case the claim matches the run's own reference
+      anchor and is trusted (Phase 7.12 TSLA 2026-05-21 fix: prices.json
+      occasionally lags reference.json for the trade-date close itself).
     - `date_iso` is in by_date and price within tolerance → no violation
     - `date_iso` is in by_date and price differs > tolerance → MATERIAL `wrong_close`
     - `date_iso` is BEFORE the earliest indexed date → skip (out of scope; the
       OHLCV window is bounded; older claims are common and not load-bearing)
     """
     by_date = _parse_prices_json(prices_json_path)
+    ref_trade_date, ref_price = _parse_reference_anchor(reference_json_path)
 
     if not by_date:
         # No price data → can't validate anything; return a single
@@ -125,6 +159,17 @@ def validate_date_close_claims(
             continue
 
         if claim.date_iso > latest_indexed:
+            # Phase 7.12 (TSLA 2026-05-21 fix): trust reference.json when the
+            # claim is for the trade_date itself and the price matches the
+            # reference anchor within tolerance. prices.json occasionally
+            # lags reference.json for that day (yfinance index update timing).
+            if (
+                ref_trade_date is not None
+                and ref_price is not None
+                and claim.date_iso == ref_trade_date
+                and abs(claim.price - ref_price) <= _CLOSE_MATCH_TOLERANCE_USD
+            ):
+                continue
             violations.append(Violation(
                 severity="MATERIAL",
                 type="fabricated_future_close",

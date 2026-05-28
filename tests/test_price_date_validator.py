@@ -67,6 +67,56 @@ def test_catches_coin_2026_05_08_fabrication(tmp_path):
     assert v.latest_indexed_date == "2026-05-07"
 
 
+def test_trusts_reference_json_for_trade_date_when_prices_not_indexed(tmp_path):
+    """TSLA 2026-05-21 false positive: the LLM correctly cited the trade-date
+    close that matched raw/reference.json (reference_price=$417.26 for
+    trade_date 2026-05-21), but the validator independently consulted
+    raw/prices.json — which had not yet indexed 05-21 at validation time —
+    and flagged the claim as `fabricated_future_close`.
+
+    Fix: when a reference.json is provided and the claim's date == trade_date
+    AND the claimed price matches reference_price within tolerance, treat
+    the reference as ground truth and emit no violation. This avoids
+    the FP without weakening fabrication detection for any OTHER date.
+    """
+    from tradingagents.validators import (
+        extract_date_close_claims,
+        validate_date_close_claims,
+    )
+    prices = _write_prices(tmp_path)  # latest_indexed_date = 2026-05-07
+
+    # Reference.json says trade_date 2026-05-21 has reference_price 417.26
+    ref = tmp_path / "raw" / "reference.json"
+    ref.write_text(json.dumps({
+        "ticker": "TSLA",
+        "trade_date": "2026-05-21",
+        "reference_price": 417.26,
+        "reference_price_source": "yfinance close on or before 2026-05-21",
+    }), encoding="utf-8")
+
+    # LLM says exactly what reference.json says
+    text = "price action through 2026-05-21 close at $417.26."
+    claims = extract_date_close_claims(text, anchor_year=2026)
+    violations = validate_date_close_claims(claims, prices, reference_json_path=ref)
+    assert violations == [], (
+        f"trade-date claim matching reference.json should not flag; got {violations}"
+    )
+
+    # Same call without reference_json_path → backward-compat FP fires
+    fp_violations = validate_date_close_claims(claims, prices)
+    assert any(v.type == "fabricated_future_close" for v in fp_violations), (
+        "without reference.json the old behavior must still fire — backward-compat"
+    )
+
+    # And a DIFFERENT claimed price for the same trade_date must still flag
+    text_wrong = "price action through 2026-05-21 close at $500.00."
+    bad_claims = extract_date_close_claims(text_wrong, anchor_year=2026)
+    bad_violations = validate_date_close_claims(bad_claims, prices, reference_json_path=ref)
+    assert any(v.type == "fabricated_future_close" for v in bad_violations), (
+        "wrong price on trade_date must still flag even with reference.json present"
+    )
+
+
 def test_catches_wrong_close_within_indexed_window(tmp_path):
     """Date IS in prices.json but the cited dollar amount differs >$0.50
     from the actual close — cell-match drift, MATERIAL violation."""

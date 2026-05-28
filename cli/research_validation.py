@@ -55,6 +55,9 @@ def _collect_violations(
     peer_ratios_json = rd / "raw" / "peer_ratios.json"
     peers_json = rd / "raw" / "peers.json"
     net_debt_json = rd / "raw" / "net_debt.json"
+    # Phase 7.12 TSLA fix: pass reference.json so the price-date validator
+    # trusts the run's own reference anchor for the trade-date itself.
+    reference_json = rd / "raw" / "reference.json"
 
     files_present = [f for f in _FILES_TO_SCAN if (rd / f).exists()]
 
@@ -88,13 +91,26 @@ def _collect_violations(
     net_debt_claims: list[NetDebtClaim] = []
     peer_violations = []
 
+    # Phase 7.12 v3 (2026-05-27): exclude raw/technicals*.md from the
+    # price-date extractor scope. The TA agent legitimately describes OHLC
+    # structure in those files — "Earnings gap open $374.07 (open $374.07,
+    # close $384.80)" / "May 18 close was $0.49 from 200-DMA" — and the
+    # extractor's `<date>...close $X` regex binds labeled non-close values
+    # (open / distance-from-MA) to "close" via word-proximity. False
+    # positives observed on GOOGL + TSLA 2026-05-21. Decision, executive,
+    # debate, and analyst files remain in scope — fabricated close prices
+    # in THOSE files are the real concern. Other validators (peer_metric,
+    # net_debt, quote_attribution) still scan technicals files normally.
+    _PRICE_DATE_SKIP = {"raw/technicals.md", "raw/technicals_v2.md"}
+
     for fname in files_present:
         text = (rd / fname).read_text(encoding="utf-8")
-        for c in extract_date_close_claims(text, anchor_year=anchor_year):
-            price_date_claims.append(DateCloseClaim(
-                date_raw=c.date_raw, date_iso=c.date_iso, price=c.price,
-                match_text=c.match_text, line_no=c.line_no, file=fname,
-            ))
+        if fname not in _PRICE_DATE_SKIP:
+            for c in extract_date_close_claims(text, anchor_year=anchor_year):
+                price_date_claims.append(DateCloseClaim(
+                    date_raw=c.date_raw, date_iso=c.date_iso, price=c.price,
+                    match_text=c.match_text, line_no=c.line_no, file=fname,
+                ))
         for q in extract_attributed_quotes(text):
             quote_claims.append(AttributedQuote(
                 quote_text=q.quote_text, agent_name=q.agent_name,
@@ -120,7 +136,9 @@ def _collect_violations(
         "price_date_claims": price_date_claims,
         "quote_claims": quote_claims,
         "net_debt_claims": net_debt_claims,
-        "price_date_violations": validate_date_close_claims(price_date_claims, prices_json),
+        "price_date_violations": validate_date_close_claims(
+            price_date_claims, prices_json, reference_json_path=reference_json,
+        ),
         "quote_violations": validate_attributed_quotes(quote_claims, rd),
         "peer_violations": peer_violations,
         "net_debt_violations": validate_net_debt_claims(

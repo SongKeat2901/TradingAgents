@@ -60,6 +60,116 @@ def test_extracts_label_first_pattern():
     assert claims[0].value_dollars == 21_300_000_000.0
 
 
+def test_skips_googl_2026_05_26_net_cash_from_operations_false_positive():
+    """GOOGL 2026-05-26 false positive: a fundamentals reconciliation line
+    says
+
+      "Q1 FY26: Purchases of property and equipment $35,674M ÷ Net cash
+       from operations $45,790M = 0.7790 = 77.90%."
+
+    The LABEL_FIRST pattern matched 'Net cash from operations $45,790M'
+    as a net-cash POSITION claim and flagged it against canonical $49.34B
+    (which is GOOGL's balance-sheet Net Cash position). But the LLM
+    clearly means **OCF (operating cash flow)** — a totally different
+    metric in the cashflow statement, not the balance sheet.
+
+    Fix: negative lookahead `(?!\\s+from\\s+(?:operations|operating|ops))`
+    after the 'net (cash|debt)' label group, so 'net cash from
+    operations' is not matched as a net-cash claim.
+    """
+    from tradingagents.validators import extract_net_debt_claims
+    text = (
+        "Q1 FY26: Purchases of property and equipment $35,674M ÷ "
+        "Net cash from operations $45,790M = 0.7790 = 77.90%. "
+        "Source: 10-Q Consolidated Statements of Cash Flows. "
+        "Separately, the balance sheet shows GOOGL net cash position $49.3B."
+    )
+    claims = extract_net_debt_claims(text)
+    values = sorted({c.value_dollars for c in claims})
+    # $45,790M (OCF) must NOT be extracted
+    assert 45_790_000_000.0 not in values, (
+        f"'Net cash from operations $45,790M' (OCF) must not be matched; got {values}"
+    )
+    # The legitimate balance-sheet $49.3B net cash should still extract
+    assert 49_300_000_000.0 in values, (
+        f"legitimate 'net cash position $49.3B' must still extract; got {values}"
+    )
+
+
+def test_skips_msft_2026_05_21_inline_subtraction_false_positive():
+    """MSFT 2026-05-21 rerun false positive: the LLM showed the math
+    inline as
+
+        "Net debt (cash-only) = $40,262M − $32,105M = $8,157M (≈$8.2B)"
+
+    The LABEL_FIRST regex paired `Net debt` with the FIRST $X after the
+    `=` separator — `$40,262M` (the minuend) — and flagged it against
+    canonical $8.157B as definitional drift. But the math is correct:
+    $40,262M (long-term debt) − $32,105M (cash) = $8,157M (net debt),
+    which matches canonical.
+
+    Fix: extend LABEL_FIRST to optionally consume an inline-subtraction
+    prefix `$A − $B =` so the captured value is the computed result,
+    not the minuend. Mirror of the Phase 7.12 peer_metric inline-
+    equation fix.
+    """
+    from tradingagents.validators import extract_net_debt_claims
+    text = (
+        "**Net debt (cash-only) = $40,262M − $32,105M = $8,157M (≈$8.2B)** "
+        "— this report uses the cash-only definition for headline figures."
+    )
+    claims = extract_net_debt_claims(text)
+    values = sorted({c.value_dollars for c in claims})
+    # The $8,157M result is the actual claimed net debt — should extract.
+    assert 8_157_000_000.0 in values, (
+        f"should capture the inline-subtraction result $8,157M; got {values}"
+    )
+    # $40,262M (minuend) and $32,105M (subtrahend) must NOT be extracted
+    # as net-debt magnitudes — they're components of the derivation.
+    assert 40_262_000_000.0 not in values, (
+        f"$40,262M minuend must not be extracted; got {values}"
+    )
+
+
+def test_skips_meta_2026_05_21_delta_phrase_false_positive():
+    """META 2026-05-21 rerun false positive: a formula-discrepancy
+    disclosure section says
+
+        "...yields $5.59B net debt, approximately $30B lower."
+
+    The LABEL_FIRST pattern paired `net debt` with the $30B that follows
+    it across the comma+approximately bridge — but that $30B is a DELTA
+    ("$30B lower") between two methodologies, not a claim that META's
+    net debt is $30B. The headline figure cited in the same disclosure
+    is $35.32B (the canonical yfinance Net Debt row).
+
+    Fix: when the $X that LABEL_FIRST captures is immediately followed
+    by a comparator word (lower/higher/less/more/below/above/different
+    /apart/shy/short/away/over/under), skip the claim — it's a delta,
+    not a magnitude.
+    """
+    from tradingagents.validators import extract_net_debt_claims
+    text = (
+        "An alternative calculation using all available liquidity — "
+        "Total Debt ($86.77B) − (Cash + STI) ($81.18B) — yields "
+        "$5.59B net debt, approximately $30B lower. This report uses "
+        "$35.32B as the headline figure per pm_brief.md instruction."
+    )
+    claims = extract_net_debt_claims(text)
+    values = sorted({c.value_dollars for c in claims})
+    # The $5.59B claim is paired with the literal "net debt" label and is
+    # a real magnitude — should still extract (and be checked against
+    # canonical derivations downstream).
+    assert 5_590_000_000.0 in values, (
+        f"should still capture $5.59B alternative-calc claim; got {values}"
+    )
+    # The $30B is a DELTA ("approximately $30B lower") — must NOT be
+    # extracted as a net-debt magnitude claim.
+    assert 30_000_000_000.0 not in values, (
+        f"$30B delta phrase must not be extracted as a net-debt claim; got {values}"
+    )
+
+
 def test_validates_yfinance_net_debt_passes(tmp_path):
     """Canonical yfinance Net Debt $8.16B must pass against MSFT cells."""
     from tradingagents.validators import (

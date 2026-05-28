@@ -61,6 +61,22 @@ _VERIFIABLE_METRICS: dict[str, str] = {
     "leverage": "nd_ebitda",
 }
 
+# Phase 7.12 v3: per-metric expected value-shape (defends against the
+# regex binding a metric phrase to a value of the wrong unit — see the
+# NVDA TSM "$936.16B net debt / $2,856.03B TTM EBITDA = 0.33x" case
+# where TTM EBITDA got bound to 0.33x even though TTM EBITDA is a
+# $ magnitude). Kinds come from _parse_value: "ratio" (Xx multiple),
+# "pct" (X%), "billions"/"millions" (dollar magnitude).
+_METRIC_EXPECTED_KINDS: dict[str, set[str]] = {
+    "ttm_pe": {"ratio"},
+    "forward_pe": {"ratio"},
+    "nd_ebitda": {"ratio"},
+    "latest_quarter_op_margin": {"pct"},
+    "latest_quarter_capex_to_revenue": {"pct"},
+    "net_debt": {"billions", "millions"},
+    "ttm_ebitda": {"billions", "millions"},
+}
+
 # Metrics that are NOT in peer_ratios.json — citing them as if they were
 # is a fabricated source attribution.
 _NON_VERIFIABLE_METRICS = {
@@ -251,9 +267,19 @@ def extract_peer_metric_claims(
 
     # Metric-value: known metric phrase, optional separator (`=`/`:`/`~`/`≈`),
     # then a value. Handles `−` (en-dash minus, U+2212) in addition to `-`.
+    #
+    # Phase 7.12 (AMZN/GOOGL 2026-05-21 fix): optionally consume an inline
+    # equation prefix `$X / $Y =` so the captured `value` is the computed
+    # answer rather than the numerator. Without this prefix-eater, lines
+    # like `MSFT capex/revenue = $30,900M / $83,100M = 37.2%` bound the
+    # claimed value to `$30,900M` (a dollar figure) and fired a spurious
+    # wrong_peer_metric vs canonical 37.25% — even though the math itself
+    # is correct. The prefix is non-capturing and only fires when the
+    # `$X / $Y =` shape is present, so single-value forms are unaffected.
     metric_value_re = re.compile(
         rf"\b(?P<metric>{metric_alt})\b"
         rf"\s*[=:≈~]?\s*"
+        rf"(?:[-−]?\$?[\d.,]+\s*[BM]?\s*/\s*[-−]?\$?[\d.,]+\s*[BM]?\s*=\s*)?"
         rf"(?P<value>(?:approximately\s+)?[~≈]?[-−]?\$?[\d.,]+\s*[%x×BM]?"
         rf"|low\s+single-digit)",
         re.IGNORECASE,
@@ -347,6 +373,15 @@ def validate_peer_metrics(
             claimed_val, kind = _parse_value(value_raw)
             if claimed_val is None or kind == "raw":
                 continue  # value didn't parse; skip
+            # Phase 7.12 v3 (NVDA 2026-05-21 fix): the regex sometimes
+            # binds a metric phrase to a value of the wrong unit shape —
+            # e.g., "TSM ND/EBITDA = ($936.16B net debt / $2,856.03B TTM
+            # EBITDA = 0.33x)" matched TTM EBITDA → 0.33x, but TTM EBITDA
+            # is a $ magnitude, not a multiple. Skip when the captured
+            # value's kind doesn't match the metric's expected unit shape.
+            expected_kinds = _METRIC_EXPECTED_KINDS.get(verifiable_field, set())
+            if expected_kinds and kind not in expected_kinds:
+                continue
             if not _values_match(claimed_val, float(actual), kind):
                 violations.append(PeerMetricViolation(
                     severity="MATERIAL",
