@@ -216,24 +216,26 @@ def fetch_research_pack(state: dict) -> None:
     (raw / "prices.json").write_text(json.dumps(prices, indent=2, default=str), encoding="utf-8")
     (raw / "reference.json").write_text(json.dumps(reference, indent=2, default=str), encoding="utf-8")
 
-    # Phase-6 stochasticity mitigation: pure-Python deterministic classifier.
-    # See tradingagents/agents/utils/classifier.py + the design spec at
-    # docs/superpowers/specs/2026-05-04-deterministic-classifier-design.md
-    from tradingagents.agents.utils.classifier import compute_classification
-    classification = compute_classification(reference, prices.get("ohlcv", ""))
-    (raw / "classification.json").write_text(
-        json.dumps(classification, indent=2, default=str), encoding="utf-8"
-    )
-
     # Phase 8.x: deterministic volume profile (liquidity levels). Computed
     # here, written to raw/, and appended to pm_brief.md so TA agents and
     # the forward-distribution model consume real volume-by-price levels.
+    # Must run BEFORE classification so volume_profile can be passed in.
     from tradingagents.agents.utils.volume_profile import (
         compute_volume_profile, format_volume_profile_block,
     )
     volume_profile = compute_volume_profile(prices.get("ohlcv", ""))
     (raw / "volume_profile.json").write_text(
         json.dumps(volume_profile, indent=2, default=str), encoding="utf-8"
+    )
+
+    # Phase-6 stochasticity mitigation: pure-Python deterministic classifier.
+    # See tradingagents/agents/utils/classifier.py + the design spec at
+    # docs/superpowers/specs/2026-05-04-deterministic-classifier-design.md
+    from tradingagents.agents.utils.classifier import compute_classification
+    classification = compute_classification(reference, prices.get("ohlcv", ""),
+                                            volume_profile=volume_profile)
+    (raw / "classification.json").write_text(
+        json.dumps(classification, indent=2, default=str), encoding="utf-8"
     )
 
     # Phase-6.2 calendar.json is written by PM Pre-flight (which runs before

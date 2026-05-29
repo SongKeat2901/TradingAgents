@@ -36,6 +36,9 @@ _INDETERMINATE = {
     "downside_pct": None,
     "reward_risk_ratio": None,
     "rationale": "Reference data missing or null; cannot classify deterministically.",
+    "broken_level": None,
+    "broken_level_type": None,
+    "volume_confirmed": False,
 }
 
 
@@ -98,6 +101,29 @@ def _move_in_atr_multiples(latest_close: float, prev_close: float, atr: float) -
     return abs(latest_close - prev_close) / atr
 
 
+def _confirm_break(spot: float, direction: str, vp: dict | None
+                   ) -> tuple[float | None, str | None]:
+    """Return (broken_level, level_type) for the nearest structural level the
+    spot has cleared. direction='up' for breakout (cleared a level BELOW),
+    'down' for breakdown (cleared a level ABOVE)."""
+    if not vp:
+        return (None, None)
+    w = vp.get("structural_36mo", {}) or {}
+    candidates: list[tuple[float, str]] = []
+    if w.get("vah") is not None:
+        candidates.append((float(w["vah"]), "VAH"))
+    if w.get("val") is not None:
+        candidates.append((float(w["val"]), "VAL"))
+    for hvn in (w.get("hvn") or []):
+        candidates.append((float(hvn), "HVN"))
+    if direction == "up":
+        cleared = [(lvl, t) for lvl, t in candidates if lvl <= spot]
+        return max(cleared, key=lambda x: x[0]) if cleared else (None, None)
+    # direction == "down"
+    cleared = [(lvl, t) for lvl, t in candidates if lvl >= spot]
+    return min(cleared, key=lambda x: x[0]) if cleared else (None, None)
+
+
 def _compute_asymmetry(
     setup_class: str, spot: float, spot_50dma: float, spot_200dma: float,
     ytd_high: float, ytd_low: float, rows: list,
@@ -136,7 +162,8 @@ def _compute_asymmetry(
     }
 
 
-def compute_classification(reference: dict, ohlcv_csv: str, history_window: int = 90) -> dict[str, Any]:
+def compute_classification(reference: dict, ohlcv_csv: str, history_window: int = 90,
+                           volume_profile: dict | None = None) -> dict[str, Any]:
     """Apply the 6-class rule engine in priority order; return classification dict.
 
     Required reference keys: reference_price, spot_50dma, spot_200dma,
@@ -176,6 +203,9 @@ def compute_classification(reference: dict, ohlcv_csv: str, history_window: int 
     atr_multiples = _move_in_atr_multiples(last_close, prev_close, atr)
     big_move = atr_multiples > 1.5
 
+    broken_level: float | None = None
+    broken_level_type: str | None = None
+
     # Rule priority (first match wins):
     # CAPITULATION > BREAKDOWN > BREAKOUT > CONSOLIDATION > UPTREND > DOWNTREND
     #
@@ -192,12 +222,14 @@ def compute_classification(reference: dict, ohlcv_csv: str, history_window: int 
         setup = "BREAKDOWN"
         rationale = f"Spot below 50-DMA, bear MA alignment, {abs(gap_200):.1f}% below 200-DMA, latest volume {last_volume / avg_50d_volume:.1f}× 50-day avg."
         vol_signal = "above_average"
+        broken_level, broken_level_type = _confirm_break(spot, "down", volume_profile)
     elif spot > ma200 and bull_aligned and (ma50 - ma200) / ma200 < 0.02:
         recent_5d_avg = sum(r[5] for r in rows[-5:]) / max(len(rows[-5:]), 1)
         if recent_5d_avg > median_90d_volume:
             setup = "BREAKOUT"
             rationale = f"Recent 50/200 golden cross ({ma50:.2f} just above {ma200:.2f}); 5-day volume average above 90-day median."
             vol_signal = "breakout_volume"
+            broken_level, broken_level_type = _confirm_break(spot, "up", volume_profile)
         else:
             setup = "UPTREND"
             rationale = f"Spot {abs(gap_200):.1f}% above 200-DMA with bull MA alignment (50-DMA above 200-DMA)."
@@ -235,4 +267,7 @@ def compute_classification(reference: dict, ohlcv_csv: str, history_window: int 
         "downside_pct": asym["downside_pct"],
         "reward_risk_ratio": asym["reward_risk_ratio"],
         "rationale": rationale,
+        "broken_level": broken_level,
+        "broken_level_type": broken_level_type,
+        "volume_confirmed": broken_level is not None,
     }

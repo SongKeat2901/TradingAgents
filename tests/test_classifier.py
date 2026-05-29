@@ -248,3 +248,36 @@ def test_asymmetry_math_basic():
     assert abs(out["upside_pct"] - 15.0) < 0.01
     assert abs(out["downside_pct"] - (-5.0)) < 0.01
     assert abs(out["reward_risk_ratio"] - 3.0) < 0.01
+
+
+def test_breakout_records_cleared_hvn_when_volume_profile_supplied():
+    from tradingagents.agents.utils.classifier import compute_classification
+    reference = {
+        "reference_price": 105.0, "spot_50dma": 104.0, "spot_200dma": 103.0,
+        "ytd_high": 110.0, "ytd_low": 80.0, "atr_14": 2.0,
+    }
+    ohlcv = "Date,Open,High,Low,Close,Volume,Dividends,Stock Splits\n" + "\n".join(
+        f"2026-01-{(i%28)+1:02d},100,106,99,105,{5000 if i>250 else 1000}" for i in range(260)
+    )
+    vp = {"structural_36mo": {"vah": 102.0, "hvn": [101.5, 98.0], "val": 97.0}}
+    out = compute_classification(reference, ohlcv, volume_profile=vp)
+    assert "volume_confirmed" in out
+    if out["setup_class"] == "BREAKOUT":
+        assert out["broken_level"] is not None
+        assert out["broken_level_type"] in ("HVN", "VAH")
+
+
+def test_classification_keys_present_even_when_no_volume_profile():
+    from tradingagents.agents.utils.classifier import compute_classification
+    reference = {
+        "reference_price": 100.0, "spot_50dma": 100.0, "spot_200dma": 100.0,
+        "ytd_high": 110.0, "ytd_low": 90.0, "atr_14": 1.0,
+    }
+    ohlcv = "Date,Open,High,Low,Close,Volume,Dividends,Stock Splits\n" + "\n".join(
+        f"2026-01-{(i%28)+1:02d},100,101,99,100,1000" for i in range(120)
+    )
+    out = compute_classification(reference, ohlcv)
+    # New fields should be present (possibly None) on every classification
+    assert "broken_level" in out
+    assert "broken_level_type" in out
+    assert "volume_confirmed" in out
