@@ -118,12 +118,27 @@ def _seed_for(ticker: str, trade_date: str) -> int:
     return abs(hash(f"{ticker}:{trade_date}")) % (2 ** 31)
 
 
-def compute_forward_probabilities(ticker: str, trade_date: str, spot: float,
+def compute_forward_probabilities(ticker: str, trade_date: str, spot: float | None,
                                   closes: list[float], volume_profile: dict,
                                   horizon: int = 252, n_paths: int = 10000,
                                   block: int = 10) -> dict:
     """Full pipeline: targets from volume profile → block-bootstrap paths →
-    first-barrier-touch scenario probabilities. Deterministic on ticker+date."""
+    first-barrier-touch scenario probabilities. Deterministic on ticker+date.
+    Returns a sentinel dict with unavailable_reason when spot is None."""
+    if spot is None or spot <= 0:
+        return {
+            "ticker": ticker, "trade_date": trade_date, "spot": spot,
+            "method": "block-bootstrap MC, first-barrier-touch",
+            "n_paths": n_paths, "block": block, "horizon": horizon,
+            "unavailable_reason": "spot price unavailable (close_on_date returned None)",
+            "scenarios": {
+                "bull": {"target": None, "probability": 0.0, "touch_prob": 0.0},
+                "base": {"target": None, "probability": 1.0},
+                "bear": {"target": None, "probability": 0.0, "touch_prob": 0.0},
+            },
+            "terminal_quantiles": {"p05": None, "p25": None, "p50": None,
+                                   "p75": None, "p95": None},
+        }
     bull, base, bear = _pick_targets(spot, volume_profile)
     rets = daily_log_returns(closes)
     paths = simulate_paths(spot, rets, horizon=horizon, n_paths=n_paths,
@@ -151,17 +166,27 @@ def compute_forward_probabilities(ticker: str, trade_date: str, spot: float,
 
 
 def format_forward_block(out: dict) -> str:
+    if out.get("unavailable_reason"):
+        return (
+            "\n\n## 12-month scenario probabilities (block-bootstrap MC on 36-mo history)\n\n"
+            f"**Forward probabilities unavailable** — {out['unavailable_reason']}. "
+            "**Do not cite scenario probabilities in this report.** If scenario "
+            "analysis is essential, flag it as `(forward probability data unavailable)` "
+            "and do not invent figures.\n"
+        )
     s = out["scenarios"]
     def pct(x): return f"{x * 100:.0f}%"
+    def tgt(x): return f"${x:.2f}" if x is not None else "(n/a)"
+    def qtl(x): return f"${x:.2f}" if x is not None else "(n/a)"
     return (
         "\n\n## 12-month scenario probabilities (block-bootstrap MC on 36-mo history)\n\n"
         "| Scenario | Target | Probability (first-barrier touch) |\n|---|---|---|\n"
-        f"| Bull | ${s['bull']['target']:.2f} | {pct(s['bull']['probability'])} |\n"
-        f"| Base | ${s['base']['target']:.2f} | {pct(s['base']['probability'])} |\n"
-        f"| Bear | ${s['bear']['target']:.2f} | {pct(s['bear']['probability'])} |\n\n"
-        f"Terminal price quantiles: p05 ${out['terminal_quantiles']['p05']:.2f} · "
-        f"p50 ${out['terminal_quantiles']['p50']:.2f} · "
-        f"p95 ${out['terminal_quantiles']['p95']:.2f}.\n\n"
+        f"| Bull | {tgt(s['bull']['target'])} | {pct(s['bull']['probability'])} |\n"
+        f"| Base | {tgt(s['base']['target'])} | {pct(s['base']['probability'])} |\n"
+        f"| Bear | {tgt(s['bear']['target'])} | {pct(s['bear']['probability'])} |\n\n"
+        f"Terminal price quantiles: p05 {qtl(out['terminal_quantiles']['p05'])} · "
+        f"p50 {qtl(out['terminal_quantiles']['p50'])} · "
+        f"p95 {qtl(out['terminal_quantiles']['p95'])}.\n\n"
         "*Targets are volume-profile liquidity levels; probabilities are the "
         "fraction of simulated 12-month paths whose first barrier touch is that "
         "level (Base = neither touched). **Use these targets and probabilities "
