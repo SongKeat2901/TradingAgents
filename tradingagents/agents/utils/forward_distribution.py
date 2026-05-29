@@ -1,9 +1,14 @@
 """Block-bootstrap Monte Carlo 12-month forward distribution.
 
 Resamples contiguous blocks of the trailing 36 months of daily log-returns
-to build forward price paths, then classifies each path by the first
-liquidity level it reaches (first-barrier-touch). Resulting Bull/Base/
+to build forward price paths, then classifies each path by its TERMINAL price
+relative to the liquidity-level barriers (terminal-zone). Resulting Bull/Base/
 Bear probabilities hard-anchor the Portfolio Manager's scenarios.
+
+Terminal-zone semantics: Bull = path ends >= bull target, Bear = path ends
+<= bear target, Base = path ends between barriers. Mutually exclusive →
+sums to 100%. First-barrier-touch and ever-touched are stored as cross-check
+fields (first_touch_prob, touch_prob) in scenarios.
 
 Deterministic on (ticker, trade_date) seed. stdlib only.
 """
@@ -83,6 +88,31 @@ def touch_probabilities(paths: list[list[float]], bull: float,
     return {"bull": tb, "bear": tr}
 
 
+def terminal_zone_probabilities(paths: list[list[float]], bull: float,
+                                bear: float) -> dict[str, float]:
+    """Classify each path by its TERMINAL price relative to the barriers:
+    bull = terminal >= bull, bear = terminal <= bear, base = in between.
+    Mutually exclusive → sums to 1.0. This is the headline scenario anchor;
+    `first_barrier_probabilities` and `touch_probabilities` are stored as
+    cross-checks (path-touched-the-level vs first-barrier-passage)."""
+    if not paths:
+        return {"bull": 0.0, "base": 1.0, "bear": 0.0}
+    n_bull = n_bear = n_base = 0
+    for path in paths:
+        if not path:
+            n_base += 1
+            continue
+        terminal = path[-1]
+        if terminal >= bull:
+            n_bull += 1
+        elif terminal <= bear:
+            n_bear += 1
+        else:
+            n_base += 1
+    total = len(paths)
+    return {"bull": n_bull / total, "base": n_base / total, "bear": n_bear / total}
+
+
 # Minimum distance (as a fraction of spot) for a Bull/Bear target to count
 # as a "meaningful" scenario rather than a trivial next-tick test. 5% is a
 # reasonable v1 threshold: it filters out HVNs sitting within day-trader
@@ -151,18 +181,21 @@ def compute_forward_probabilities(ticker: str, trade_date: str, spot: float | No
                                   horizon: int = 252, n_paths: int = 10000,
                                   block: int = 10) -> dict:
     """Full pipeline: targets from volume profile → block-bootstrap paths →
-    first-barrier-touch scenario probabilities. Deterministic on ticker+date.
-    Returns a sentinel dict with unavailable_reason when spot is None."""
+    terminal-zone scenario probabilities (headline). Deterministic on
+    ticker+date. Returns a sentinel dict with unavailable_reason when spot
+    is None."""
     if spot is None or spot <= 0:
         return {
             "ticker": ticker, "trade_date": trade_date, "spot": spot,
-            "method": "block-bootstrap MC, first-barrier-touch",
+            "method": "block-bootstrap MC, terminal-zone scenarios",
             "n_paths": n_paths, "block": block, "horizon": horizon,
             "unavailable_reason": "spot price unavailable (close_on_date returned None)",
             "scenarios": {
-                "bull": {"target": None, "probability": 0.0, "touch_prob": 0.0},
-                "base": {"target": None, "probability": 1.0},
-                "bear": {"target": None, "probability": 0.0, "touch_prob": 0.0},
+                "bull": {"target": None, "probability": 0.0, "first_touch_prob": 0.0,
+                         "touch_prob": 0.0},
+                "base": {"target": None, "probability": 1.0, "first_touch_prob": 0.0},
+                "bear": {"target": None, "probability": 0.0, "first_touch_prob": 0.0,
+                         "touch_prob": 0.0},
             },
             "terminal_quantiles": {"p05": None, "p25": None, "p50": None,
                                    "p75": None, "p95": None},
@@ -171,6 +204,7 @@ def compute_forward_probabilities(ticker: str, trade_date: str, spot: float | No
     rets = daily_log_returns(closes)
     paths = simulate_paths(spot, rets, horizon=horizon, n_paths=n_paths,
                            block=block, seed=_seed_for(ticker, trade_date))
+    tz = terminal_zone_probabilities(paths, bull=bull, bear=bear)
     fb = first_barrier_probabilities(paths, bull=bull, bear=bear)
     touch = touch_probabilities(paths, bull=bull, bear=bear)
     terminals = sorted(p[-1] for p in paths)
@@ -178,14 +212,17 @@ def compute_forward_probabilities(ticker: str, trade_date: str, spot: float | No
         return round(terminals[min(int(frac * len(terminals)), len(terminals) - 1)], 2)
     return {
         "ticker": ticker, "trade_date": trade_date, "spot": spot,
-        "method": "block-bootstrap MC, first-barrier-touch",
+        "method": "block-bootstrap MC, terminal-zone scenarios",
         "n_paths": n_paths, "block": block, "horizon": horizon,
         "seed": _seed_for(ticker, trade_date),
         "scenarios": {
-            "bull": {"target": bull, "probability": round(fb["bull"], 4),
+            "bull": {"target": bull, "probability": round(tz["bull"], 4),
+                     "first_touch_prob": round(fb["bull"], 4),
                      "touch_prob": round(touch["bull"], 4)},
-            "base": {"target": base, "probability": round(fb["base"], 4)},
-            "bear": {"target": bear, "probability": round(fb["bear"], 4),
+            "base": {"target": base, "probability": round(tz["base"], 4),
+                     "first_touch_prob": round(fb["base"], 4)},
+            "bear": {"target": bear, "probability": round(tz["bear"], 4),
+                     "first_touch_prob": round(fb["bear"], 4),
                      "touch_prob": round(touch["bear"], 4)},
         },
         "terminal_quantiles": {"p05": q(0.05), "p25": q(0.25), "p50": q(0.50),
@@ -208,7 +245,7 @@ def format_forward_block(out: dict) -> str:
     def qtl(x): return f"${x:.2f}" if x is not None else "(n/a)"
     return (
         "\n\n## 12-month scenario probabilities (block-bootstrap MC on 36-mo history)\n\n"
-        "| Scenario | Target | Probability (first-barrier touch) |\n|---|---|---|\n"
+        "| Scenario | Target | Probability (terminal zone) |\n|---|---|---|\n"
         f"| Bull | {tgt(s['bull']['target'])} | {pct(s['bull']['probability'])} |\n"
         f"| Base | {tgt(s['base']['target'])} | {pct(s['base']['probability'])} |\n"
         f"| Bear | {tgt(s['bear']['target'])} | {pct(s['bear']['probability'])} |\n\n"
@@ -216,8 +253,14 @@ def format_forward_block(out: dict) -> str:
         f"p50 {qtl(out['terminal_quantiles']['p50'])} · "
         f"p95 {qtl(out['terminal_quantiles']['p95'])}.\n\n"
         "*Targets are volume-profile liquidity levels; probabilities are the "
-        "fraction of simulated 12-month paths whose first barrier touch is that "
-        "level (Base = neither touched). **Use these targets and probabilities "
+        "fraction of simulated 12-month paths that END (at month 12) above the "
+        "bull target, below the bear target, or in between (Base). "
+        "**Use these targets and probabilities "
         "verbatim** in the Bull/Base/Bear scenario table — do not substitute "
-        "judgement-based numbers. They sum to 100% by construction.*\n"
+        "judgement-based numbers. They sum to 100% by construction.*\n\n"
+        "Cross-check fields in raw/forward_probabilities.json: `first_touch_prob` "
+        "(path's first-barrier-touch classification — sums to 100%) and `touch_prob` "
+        "(independent probability the path ever reached the level at all). "
+        "Bull/Base/Bear headline above use terminal-zone (mutually-exclusive partition "
+        "of where paths END at month 12).\n"
     )

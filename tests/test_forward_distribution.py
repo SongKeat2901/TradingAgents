@@ -59,6 +59,10 @@ def test_compute_forward_probabilities_picks_levels_and_sums_100():
     block = format_forward_block(out)
     assert "## 12-month scenario probabilities" in block
     assert "Use these targets and probabilities verbatim" in block
+    # Terminal-zone semantics: with flat-ish synthetic closes, many paths end
+    # near spot → Base should have substantial mass (not ~0% as it was under
+    # first-barrier-touch). Assert > 20% to be robust to 500-path variance.
+    assert s["base"]["probability"] > 0.20
 
 
 def test_pick_targets_falls_back_to_spot_when_tactical_poc_outside_interval():
@@ -76,3 +80,20 @@ def test_pick_targets_falls_back_to_spot_when_tactical_poc_outside_interval():
     # tactical POC 317 < bear 336 → Base must fall back to spot 383
     assert bear < base < bull
     assert base == pytest.approx(383.0, abs=0.5)
+
+
+def test_terminal_zone_probabilities_classifies_by_end_price():
+    from tradingagents.agents.utils.forward_distribution import terminal_zone_probabilities
+    # Two paths end above 110, one in the middle, two below 90 → 40/20/40
+    paths = [
+        [100, 105, 112],
+        [100, 108, 115],
+        [100, 102, 100],
+        [100, 95, 85],
+        [100, 90, 80],
+    ]
+    out = terminal_zone_probabilities(paths, bull=110.0, bear=90.0)
+    assert out["bull"] == pytest.approx(0.4)
+    assert out["base"] == pytest.approx(0.2)
+    assert out["bear"] == pytest.approx(0.4)
+    assert abs(sum(out.values()) - 1.0) < 1e-9
