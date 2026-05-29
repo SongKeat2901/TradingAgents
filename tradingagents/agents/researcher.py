@@ -228,6 +228,23 @@ def fetch_research_pack(state: dict) -> None:
         json.dumps(volume_profile, indent=2, default=str), encoding="utf-8"
     )
 
+    # Phase 7.15+ forward distribution: block-bootstrap MC 12-month scenario
+    # probabilities anchored to volume-profile liquidity levels. Runs after
+    # volume_profile.json is written and before classification so the targets
+    # reflect the same levels the classifier uses.
+    from tradingagents.agents.utils.forward_distribution import (
+        compute_forward_probabilities, format_forward_block,
+    )
+    from tradingagents.agents.utils.volume_profile import parse_ohlcv as _parse_ohlcv_for_fwd
+    _closes = [r[4] for r in _parse_ohlcv_for_fwd(prices.get("ohlcv", ""))]
+    forward_probabilities = compute_forward_probabilities(
+        ticker, date, spot=close_on_date, closes=_closes,
+        volume_profile=volume_profile,
+    )
+    (raw / "forward_probabilities.json").write_text(
+        json.dumps(forward_probabilities, indent=2, default=str), encoding="utf-8"
+    )
+
     # Phase-6 stochasticity mitigation: pure-Python deterministic classifier.
     # See tradingagents/agents/utils/classifier.py + the design spec at
     # docs/superpowers/specs/2026-05-04-deterministic-classifier-design.md
@@ -382,3 +399,6 @@ def fetch_research_pack(state: dict) -> None:
 
     with (raw / "pm_brief.md").open("a", encoding="utf-8") as fh:
         fh.write(format_volume_profile_block(volume_profile))
+
+    with (raw / "pm_brief.md").open("a", encoding="utf-8") as fh:
+        fh.write(format_forward_block(forward_probabilities))

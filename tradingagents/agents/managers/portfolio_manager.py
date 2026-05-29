@@ -339,10 +339,13 @@ def create_portfolio_manager(llm):
                 try:
                     brief = pm_brief_path.read_text(encoding="utf-8")
                     # Slice each ## section by header until the next top-level
-                    # heading. researcher.py writes them in order: peer ratios
-                    # then net debt.
+                    # heading. researcher.py writes them in order: peer ratios,
+                    # net debt, latest session, liquidity/volume profile,
+                    # then 12-month scenario probabilities.
                     sections: list[str] = []
-                    for header in ("## Peer ratios", "## Net debt"):
+                    for header in ("## Peer ratios", "## Net debt",
+                                   "## 12-month scenario probabilities",
+                                   "## Liquidity / Volume profile"):
                         idx = brief.find(header)
                         if idx < 0:
                             continue
@@ -353,14 +356,19 @@ def create_portfolio_manager(llm):
                         sections.append(brief[idx:next_idx].rstrip())
                     if sections:
                         peer_ratios_block = (
-                            "\n\n**AUTHORITATIVE PEER RATIOS + NET DEBT — "
-                            "USE THESE VALUES VERBATIM:**\n\n"
+                            "\n\n**AUTHORITATIVE PEER RATIOS + NET DEBT + "
+                            "LIQUIDITY LEVELS + 12-MONTH SCENARIO PROBABILITIES "
+                            "— USE THESE VALUES VERBATIM:**\n\n"
                             "These tables are computed in Python from "
-                            "`raw/peers.json` and `raw/financials.json` on "
-                            "the trade date. They are the canonical source "
-                            "for every peer ratio (TTM P/E, Forward P/E, op "
-                            "margin, capex/revenue, net debt, TTM EBITDA, "
-                            "ND/EBITDA) and the subject ticker's net debt. "
+                            "`raw/peers.json`, `raw/financials.json`, "
+                            "`raw/volume_profile.json`, and "
+                            "`raw/forward_probabilities.json` on the trade date. "
+                            "They are the canonical source for every peer ratio "
+                            "(TTM P/E, Forward P/E, op margin, capex/revenue, "
+                            "net debt, TTM EBITDA, ND/EBITDA), the subject "
+                            "ticker's net debt, volume-profile liquidity levels, "
+                            "and the 12-month scenario targets with their "
+                            "first-barrier-touch probabilities. "
                             "Analyst transcripts and the RM/trader plans "
                             "may have paraphrased these values imprecisely "
                             "(rounded, recalled from training, or carried "
@@ -369,6 +377,12 @@ def create_portfolio_manager(llm):
                             "**the table cell is correct — cite it verbatim "
                             "to 2 decimal places.** Do not invent neat "
                             "numbers like 24.1× when the cell says 21.59x.\n\n"
+                            "The Bull/Base/Bear scenario targets and probabilities "
+                            "in the \"## 12-month scenario probabilities\" block "
+                            "are computed and authoritative — use them verbatim "
+                            "in your scenario table; do not substitute "
+                            "judgement-based numbers. The probabilities sum to "
+                            "100% by first-barrier-touch construction.\n\n"
                             + "\n\n".join(sections) + "\n"
                         )
                 except OSError as exc:
