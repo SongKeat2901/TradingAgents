@@ -83,34 +83,62 @@ def touch_probabilities(paths: list[list[float]], bull: float,
     return {"bull": tb, "bear": tr}
 
 
-def _pick_targets(spot: float, vp: dict) -> tuple[float, float, float]:
-    """REFINED (post-smoke-test on GOOGL):
-    Bull = nearest HVN above spot, drawn from BOTH structural+tactical HVN
-           lists merged; fallback lowest VAH above spot; ultimately spot*1.15.
-    Base = tactical 6-mo POC (current acceptance, near spot); fallback spot.
-           (The structural POC can sit 50%+ below spot for re-rated stocks,
-            making it nonsensical as a base scenario.)
-    Bear = nearest HVN below spot, merged HVN lists; fallback highest VAL
-           below spot; ultimately spot*0.85."""
+# Minimum distance (as a fraction of spot) for a Bull/Bear target to count
+# as a "meaningful" scenario rather than a trivial next-tick test. 5% is a
+# reasonable v1 threshold: it filters out HVNs sitting within day-trader
+# range but keeps multi-week reachable levels. Below this threshold, the
+# selector falls through to the next-eligible level (or VAH/VAL/spot*1.15).
+_MIN_TARGET_DISTANCE_PCT = 0.05
+
+
+def _pick_targets(spot: float | None, vp: dict) -> tuple[float, float, float]:
+    """REFINED (post-GOOGL smoke):
+    Bull = nearest HVN at least 5% ABOVE spot, drawn from BOTH structural+
+           tactical HVN lists merged; fallback lowest VAH at least 5% above;
+           ultimately spot*1.15.
+    Bear = nearest HVN at least 5% BELOW spot, merged HVN lists; fallback
+           highest VAL at least 5% below; ultimately spot*0.85.
+    Base = tactical 6-mo POC, but ONLY if it sits strictly between Bear and
+           Bull (so the Base scenario is reachable); else spot itself (the
+           Base = "neither barrier touched" interpretation).
+
+    Two-stage refinement history:
+      - v1 set Base = structural POC → could sit 50%+ below spot for
+        re-rated stocks (GOOGL: structural POC $164 vs spot $383).
+      - v2 (this) requires Bull/Bear to be meaningful distance from spot and
+        forces Base into the (Bear, Bull) interval. GOOGL smoke showed
+        Bull just $2.43 above spot and Base below Bear → fixed."""
+    if spot is None or spot <= 0:
+        return (0.0, 0.0, 0.0)
+
     s = vp.get("structural_36mo", {}) if vp else {}
     t = vp.get("tactical_6mo", {}) if vp else {}
     all_hvn: list[float] = list(s.get("hvn") or []) + list(t.get("hvn") or [])
-    above = sorted(x for x in all_hvn if x > spot)
-    below = sorted((x for x in all_hvn if x < spot), reverse=True)
+    min_up = spot * (1 + _MIN_TARGET_DISTANCE_PCT)
+    min_dn = spot * (1 - _MIN_TARGET_DISTANCE_PCT)
 
+    above = sorted(x for x in all_hvn if x >= min_up)
     if above:
         bull = above[0]
     else:
-        vah_above = [v for v in (s.get("vah"), t.get("vah")) if v is not None and v > spot]
+        vah_above = [v for v in (s.get("vah"), t.get("vah"))
+                     if v is not None and v >= min_up]
         bull = min(vah_above) if vah_above else spot * 1.15
 
+    below = sorted((x for x in all_hvn if x <= min_dn), reverse=True)
     if below:
         bear = below[0]
     else:
-        val_below = [v for v in (s.get("val"), t.get("val")) if v is not None and v < spot]
+        val_below = [v for v in (s.get("val"), t.get("val"))
+                     if v is not None and v <= min_dn]
         bear = max(val_below) if val_below else spot * 0.85
 
-    base = t.get("poc") if t.get("poc") is not None else spot
+    tac_poc = t.get("poc")
+    if tac_poc is not None and bear < tac_poc < bull:
+        base = float(tac_poc)
+    else:
+        base = float(spot)
+
     return (round(bull, 2), round(base, 2), round(bear, 2))
 
 

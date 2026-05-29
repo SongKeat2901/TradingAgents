@@ -34,23 +34,45 @@ def test_compute_forward_probabilities_picks_levels_and_sums_100():
         compute_forward_probabilities, format_forward_block,
     )
     closes = [100.0 + (i % 7) for i in range(800)]
+    # spot=100. Tactical HVNs at 110 (10% up) and 94 (6% down) qualify.
+    # Structural POC 50 is far below — must NOT be selected as Base.
+    # Tactical POC 102 sits between Bear and Bull → selected as Base.
     vp = {
-        "structural_36mo": {"poc": 50.0, "hvn": [120.0, 80.0], "vah": 110.0, "val": 70.0},
-        "tactical_6mo":    {"poc": 103.0, "hvn": [108.0, 99.0], "vah": 106.0, "val": 101.0},
+        "structural_36mo": {"poc": 50.0, "hvn": [130.0, 70.0], "vah": 115.0, "val": 60.0},
+        "tactical_6mo":    {"poc": 102.0, "hvn": [110.0, 94.0], "vah": 105.0, "val": 99.0},
     }
-    out = compute_forward_probabilities("XYZ", "2026-05-28", spot=103.0,
+    out = compute_forward_probabilities("XYZ", "2026-05-28", spot=100.0,
                                         closes=closes, volume_profile=vp,
                                         n_paths=500)
     s = out["scenarios"]
     # First-barrier partition sums to 1.0
     assert abs(s["bull"]["probability"] + s["base"]["probability"]
                + s["bear"]["probability"] - 1.0) < 1e-9
-    # Targets must straddle spot
-    assert s["bull"]["target"] > 103.0 > s["bear"]["target"]
-    # REFINED: Base must be near spot, NOT the structural POC (50.0)
-    assert s["base"]["target"] == pytest.approx(103.0, abs=2.0)
-    # Bull target should be the nearest HVN above spot (108 from tactical, not 120 from structural)
-    assert s["bull"]["target"] == pytest.approx(108.0, abs=0.5)
+    # Bull target = nearest HVN ≥5% above spot → 110
+    assert s["bull"]["target"] == pytest.approx(110.0, abs=0.5)
+    # Bear target = nearest HVN ≤5% below spot → 94
+    assert s["bear"]["target"] == pytest.approx(94.0, abs=0.5)
+    # Base target = tactical POC (102), since 94 < 102 < 110
+    assert s["base"]["target"] == pytest.approx(102.0, abs=0.5)
+    # Strict ordering — Base must lie between Bear and Bull
+    assert s["bear"]["target"] < s["base"]["target"] < s["bull"]["target"]
     block = format_forward_block(out)
     assert "## 12-month scenario probabilities" in block
     assert "Use these targets and probabilities verbatim" in block
+
+
+def test_pick_targets_falls_back_to_spot_when_tactical_poc_outside_interval():
+    """GOOGL-style case: tactical POC sits below Bear (e.g. tactical POC $317
+    when spot is $383 and Bear is $336). Base must fall back to spot, never
+    sit outside the (Bear, Bull) interval."""
+    from tradingagents.agents.utils.forward_distribution import _pick_targets
+    vp = {
+        "structural_36mo": {"poc": 164.0, "hvn": [200.0, 130.0], "vah": 197.0, "val": 114.0},
+        "tactical_6mo":    {"poc": 317.0, "hvn": [336.0, 440.0], "vah": 350.0, "val": 300.0},
+    }
+    bull, base, bear = _pick_targets(spot=383.0, vp=vp)
+    # bear is a HVN ≥5% below spot 383 → 336
+    # bull is a HVN ≥5% above spot 383 → 440
+    # tactical POC 317 < bear 336 → Base must fall back to spot 383
+    assert bear < base < bull
+    assert base == pytest.approx(383.0, abs=0.5)
