@@ -130,6 +130,20 @@ def _collect_violations(
             )
         )
 
+    # Phase 8.x: scenario-probability anchor check (one-shot on decision.md;
+    # the deterministic forward-distribution writes raw/forward_probabilities.json
+    # and the PM is told to use it verbatim).
+    from tradingagents.validators.scenario_probability_validator import (
+        validate_scenario_probabilities,
+    )
+    decision_path = rd / "decision.md"
+    if decision_path.exists():
+        scenario_violations = validate_scenario_probabilities(
+            decision_path.read_text(encoding="utf-8"), rd,
+        )
+    else:
+        scenario_violations = []
+
     return {
         "run_dir": rd,
         "files_scanned": files_present,
@@ -144,6 +158,7 @@ def _collect_violations(
         "net_debt_violations": validate_net_debt_claims(
             net_debt_claims, net_debt_json, main_ticker=main_ticker,
         ),
+        "scenario_violations": scenario_violations,
     }
 
 
@@ -172,6 +187,7 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
         + sum(1 for v in raw["quote_violations"] if _is_blocking(v))
         + sum(1 for v in raw["peer_violations"] if _is_blocking(v))
         + sum(1 for v in raw["net_debt_violations"] if _is_blocking(v))
+        + sum(1 for v in raw["scenario_violations"] if _is_blocking(v))
     )
 
     return {
@@ -192,11 +208,26 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
             "claims_extracted": len(raw["net_debt_claims"]),
             "violations": [_ser(v) for v in raw["net_debt_violations"]],
         },
+        "phase_8_scenario_probability": {
+            "count": len(raw["scenario_violations"]),
+            "violations": [
+                {
+                    "severity": v.severity,
+                    "type": v.type,
+                    "scenario": v.scenario,
+                    "claimed": v.claimed,
+                    "anchor": v.anchor,
+                    "match_text": v.match_text,
+                }
+                for v in raw["scenario_violations"]
+            ],
+        },
         "total_violations": (
             len(raw["price_date_violations"])
             + len(raw["quote_violations"])
             + len(raw["peer_violations"])
             + len(raw["net_debt_violations"])
+            + len(raw["scenario_violations"])
         ),
         "blocking_violations": blocking_total,
     }
