@@ -84,8 +84,7 @@ retracements, round numbers ($100, $500), volume-profile peaks.
 
 ## Volume profile zones
 
-- Heaviest accumulation: $<low>-$<high> (<X>% of volume)
-- Volume gap: $<low>-$<high> (<Y>% of volume — slip-through zone)
+Use the computed POC, Value Area (VAH/VAL), High-Volume Nodes and Low-Volume Nodes from raw/volume_profile.json VERBATIM. State the 36-mo structural levels and the 6-mo tactical levels. Do NOT estimate "accumulation bands" by eye — cite the computed cells.
 
 ## Current technical state
 
@@ -134,8 +133,7 @@ If no revision is warranted, this section reads exactly:
 
 ## Volume profile zones
 
-- Heaviest accumulation: $<low>-$<high>
-- Volume gap: $<low>-$<high>
+Use the computed POC, Value Area (VAH/VAL), High-Volume Nodes and Low-Volume Nodes from raw/volume_profile.json VERBATIM. State the 36-mo structural levels and the 6-mo tactical levels. Do NOT estimate "accumulation bands" by eye — cite the computed cells.
 
 ## Current technical state
 
@@ -170,7 +168,7 @@ def create_ta_agent_v2_node(llm):
 
         v1_context = format_for_prompt(
             raw_dir,
-            files=["technicals.md", "reference.json", "prices.json", "sec_filing.md"],
+            files=["technicals.md", "reference.json", "prices.json", "volume_profile.json", "sec_filing.md"],
         )
         analyst_block = (
             f"\n## Market Analyst Report\n{state.get('market_report', '(missing)')}\n\n"
@@ -215,7 +213,7 @@ def create_ta_agent_node(llm):
 
         context = format_for_prompt(
             raw_dir,
-            files=["pm_brief.md", "reference.json", "prices.json"],
+            files=["pm_brief.md", "reference.json", "prices.json", "volume_profile.json"],
         )
 
         classification_block = _load_classification_block(raw_dir)
