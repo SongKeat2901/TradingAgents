@@ -225,6 +225,17 @@ def fetch_research_pack(state: dict) -> None:
         json.dumps(classification, indent=2, default=str), encoding="utf-8"
     )
 
+    # Phase 8.x: deterministic volume profile (liquidity levels). Computed
+    # here, written to raw/, and appended to pm_brief.md so TA agents and
+    # the forward-distribution model consume real volume-by-price levels.
+    from tradingagents.agents.utils.volume_profile import (
+        compute_volume_profile, format_volume_profile_block,
+    )
+    volume_profile = compute_volume_profile(prices.get("ohlcv", ""))
+    (raw / "volume_profile.json").write_text(
+        json.dumps(volume_profile, indent=2, default=str), encoding="utf-8"
+    )
+
     # Phase-6.2 calendar.json is written by PM Pre-flight (which runs before
     # this node and has the peer list). Read-only here.
 
@@ -366,3 +377,6 @@ def fetch_research_pack(state: dict) -> None:
         )
     with open(pm_brief_path, "a", encoding="utf-8") as f:
         f.write(latest_session_block)
+
+    with (raw / "pm_brief.md").open("a", encoding="utf-8") as fh:
+        fh.write(format_volume_profile_block(volume_profile))
