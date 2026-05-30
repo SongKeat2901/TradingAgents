@@ -148,7 +148,10 @@ _PATTERN_DATE_ONLY = re.compile(
 # punctuation), so `closed at $206.50, holding above $200 support` is
 # not affected (a comma intervenes).
 _PREPOSITIONAL_DELTA = re.compile(
-    r"^\s+(?:below|above|under|over|wider|narrower|tighter)\s+"
+    # Allow optional markdown emphasis (*, **, _, __) around the comparator
+    # so `close $2.29 *below* the 200-DMA` (ORCL 2026-05-29) is correctly
+    # identified as a delta-distance, not a price claim.
+    r"^\s+[*_]{0,2}(?:below|above|under|over|wider|narrower|tighter)[*_]{0,2}\s+"
     r"(?:the|its|prior|previous|preceding)\b",
     re.IGNORECASE,
 )

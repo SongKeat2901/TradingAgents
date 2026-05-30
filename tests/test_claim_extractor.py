@@ -223,6 +223,39 @@ def test_v3_skips_prepositional_close_below_the_open():
         )
 
 
+def test_phase_8_2_skips_markdown_emphasized_prepositional_delta():
+    """ORCL 2026-05-29 false positive: debate_bull_bear.md:41 had
+
+      "specifically, and a May 28 rejection candle that closed $2.29
+       *below* the 200-DMA"
+
+    The markdown-italic `*below*` broke the original Phase 7.1 v3 regex
+    which required a bare `below`/`above`/etc. word boundary. The regex
+    now allows up to 2 markdown emphasis chars (`*`, `**`, `_`, `__`)
+    around the comparator. The $2.29 is a delta-distance below the
+    200-DMA, not a close price."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "and a May 28 rejection candle that closed $2.29 *below* the 200-DMA."
+    claims = extract_date_close_claims(text, anchor_year=2026)
+    for c in claims:
+        assert c.price != 2.29, (
+            f"markdown-emphasized `*below*` delta must not extract as "
+            f"close: date_iso={c.date_iso}, price={c.price}, "
+            f"match_text={c.match_text!r}"
+        )
+
+
+def test_phase_8_2_skips_bold_emphasized_prepositional_delta():
+    """Symmetric: `**above**` (markdown bold) must also be recognized."""
+    from tradingagents.validators import extract_date_close_claims
+
+    text = "May 8 print closed $1.50 **above** the prior session high."
+    claims = extract_date_close_claims(text, anchor_year=2026)
+    for c in claims:
+        assert c.price != 1.50
+
+
 def test_v3_skips_prepositional_close_above_the_prior():
     """Symmetric case: `close $X above the prior session` is also a delta."""
     from tradingagents.validators import extract_date_close_claims
