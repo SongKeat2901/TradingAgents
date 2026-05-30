@@ -225,6 +225,51 @@ def test_v3_skips_nvda_tsm_nd_ebitda_metric_kind_mismatch(tmp_path):
     )
 
 
+def test_phase_8_1_skips_on_inline_subtraction_peer_metric(tmp_path):
+    """ON 2026-05-07 false positive: the LLM showed inline net-debt math
+
+        "- Net Debt = $11,177M − $3,202M = **$7,975M**"
+
+    The Phase 7.12 peer_metric prefix-eater handled DIVISION (`$X / $Y =`)
+    but not SUBTRACTION (`$X − $Y =`). The regex captured `$11,177M` (the
+    minuend) as NXPI's net_debt and flagged it as wrong_peer_metric vs
+    canonical $8.342B. Phase 8.1 generalises the operator to `[/−-]` so
+    both division and subtraction work."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    # Canonical NXPI net_debt = $8,342M (the bare yfinance Net Debt cell).
+    # The LLM's computed $7,975M is within 5% — should pass tolerance.
+    peer_ratios = {
+        "trade_date": "2026-05-07",
+        "_unavailable": [],
+        "NXPI": {
+            "latest_quarter_capex_to_revenue": 5.0,
+            "latest_quarter_op_margin": 30.0,
+            "ttm_pe": 23.0,
+            "forward_pe": 18.0,
+            "net_debt": 8_342_000_000.0,
+            "ttm_ebitda": 4_000_000_000.0,
+            "nd_ebitda": 2.08,
+        },
+    }
+    peers = {"NXPI": {"ticker": "NXPI"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = "- **NXPI**: Net Debt = $11,177M − $3,202M = **$7,975M**"
+    vios = validate_peer_metrics(
+        text, "decision.md", raw / "peer_ratios.json", raw / "peers.json",
+    )
+    # The minuend $11,177M must not bind to NXPI net debt; the result
+    # $7,975M is within 5% of canonical $8,342M and should pass.
+    nxpi_minuend_vios = [v for v in vios if v.ticker == "NXPI"
+                         and "11,177" in str(v.claimed_value)]
+    assert not nxpi_minuend_vios, (
+        f"NXPI minuend $11,177M must not flag as net debt; got {nxpi_minuend_vios}"
+    )
+
+
 def test_v2_2_skips_amzn_inline_equation_false_positive(tmp_path):
     """AMZN 2026-05-21 false positive: when the LLM shows the math inline as
     `<METRIC> = $X / $Y = Z%`, the v2 regex previously captured the first

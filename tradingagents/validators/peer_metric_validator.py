@@ -285,19 +285,23 @@ def extract_peer_metric_claims(
     # Metric-value: known metric phrase, optional separator (`=`/`:`/`~`/`≈`),
     # then a value. Handles `−` (en-dash minus, U+2212) in addition to `-`.
     #
-    # Phase 7.12 (AMZN/GOOGL 2026-05-21 fix): optionally consume an inline
-    # equation prefix `$X / $Y =` so the captured `value` is the computed
-    # answer rather than the numerator. Without this prefix-eater, lines
-    # like `MSFT capex/revenue = $30,900M / $83,100M = 37.2%` bound the
-    # claimed value to `$30,900M` (a dollar figure) and fired a spurious
-    # wrong_peer_metric vs canonical 37.25% — even though the math itself
-    # is correct. The prefix is non-capturing and only fires when the
-    # `$X / $Y =` shape is present, so single-value forms are unaffected.
+    # Phase 7.12 (AMZN/GOOGL 2026-05-21 fix), expanded for ON 2026-05-07:
+    # optionally consume an inline equation prefix `$X (op) $Y =` so the
+    # captured `value` is the computed answer rather than the operand. The
+    # operator can be `/` (division — AMZN capex/revenue case) OR `-`/`−`
+    # (subtraction — ON "Net Debt = $11,177M − $3,202M = $7,975M"). Without
+    # this prefix-eater, the regex binds the metric label to the first
+    # operand ($X) instead of the computed answer ($Z). Non-capturing;
+    # only fires when the equation shape is present, so single-value
+    # forms are unaffected.
     metric_value_re = re.compile(
         rf"\b(?P<metric>{metric_alt})\b"
         rf"\s*[=:≈~]?\s*"
-        rf"(?:[-−]?\$?[\d.,]+\s*[BM]?\s*/\s*[-−]?\$?[\d.,]+\s*[BM]?\s*=\s*)?"
-        rf"(?P<value>(?:approximately\s+)?[~≈]?[-−]?\$?[\d.,]+\s*[%x×BM]?"
+        rf"(?:[-−]?\$?[\d.,]+\s*[BM]?\s*[/−\-]\s*[-−]?\$?[\d.,]+\s*[BM]?\s*=\s*)?"
+        # Phase 8.1: allow optional `**` markdown bold around the value, so
+        # the inline-subtraction prefix-eater above can correctly hand off to
+        # `**$7,975M**` (the bolded result in ON's "= $A − $B = **$C**").
+        rf"(?P<value>(?:approximately\s+)?[~≈]?(?:\*\*)?[-−]?\$?[\d.,]+\s*[%x×BM]?(?:\*\*)?"
         rf"|low\s+single-digit)",
         re.IGNORECASE,
     )

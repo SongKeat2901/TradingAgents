@@ -124,7 +124,13 @@ _PATTERN_LABEL_FIRST = re.compile(
     # `$133.2B net cash` because `/` was inside the bridge — the value
     # AFTER `/` is the ratio denominator, not a continuation of the
     # 'net cash' label).
-    r"[^\n.;|/]{0,20}?"
+    #
+    # Phase 8.1 (AVGO 2026-05-07 fix): bridge captured (was non-capturing)
+    # so we can check it for delta-indicator words (increase/decrease/
+    # change/swing) post-match. "net debt *increase* of $2.92B" matches
+    # the regex; the bridge capture lets us recognize $2.92B as a delta
+    # amount, not a position magnitude.
+    r"(?P<bridge>[^\n.;|/]{0,20}?)"
     # Phase 7.12 v2 (MSFT 2026-05-21 fix): optionally consume an inline
     # subtraction prefix `$A − $B =` so the captured value is the
     # derivation RESULT, not the minuend. Same root cause as the
@@ -158,21 +164,34 @@ def _to_dollars(value: str, unit: str | None) -> float | None:
 
 
 _DELTA_COMPARATORS_RE = re.compile(
-    # Comparator words that, when they immediately follow the $X value,
-    # mean the value is a DELTA between two methodologies / a positional
-    # phrase, not a magnitude claim about net debt itself. We check within
-    # a short window (~20 chars) after the value match so legitimate
-    # tails like "net debt of $35.32B per yfinance" stay verifiable.
+    # Comparator words/patterns that, when they immediately follow the $X
+    # value, mean the value is a DELTA, period-over-period change, or a
+    # range endpoint — NOT a magnitude claim about net debt itself.
     #
-    # Phase 7.12 (META 2026-05-21 fix): the LLM wrote
-    #   "yields $5.59B net debt, approximately $30B lower."
-    # The LABEL_FIRST regex paired `net debt` with `$30B` across
-    # ", approximately " — but " lower" tail marks this as a delta.
+    # Phase 7.12 (META 2026-05-21 fix): "yields $5.59B net debt,
+    #   approximately $30B lower." — `lower` after the value.
+    # Phase 8.1 (AVGO 2026-05-07): extend with period-over-period
+    #   markers (`sequentially`, `YoY`, `QoQ`, `year-over-year`).
+    # Phase 8.1 (ORCL 2026-05-07): a `[\-–]\s*\d` tail means the value
+    #   is the LOW end of a range like `$5–6B` — skip.
     r"^\s*(?:"
     r"lower|higher|less|more|below|above|different|apart"
     r"|shy(?:\s+of)?|short(?:\s+of)?|away(?:\s+from)?"
     r"|over|under"
-    r")\b",
+    r"|sequentially|year[-\s]?over[-\s]?year|quarter[-\s]?over[-\s]?quarter"
+    r"|YoY|QoQ"
+    r")\b"
+    r"|^[\-––]\s*\d",   # range endpoint: `$5–6B`, `$5-6B`
+    re.IGNORECASE,
+)
+
+# Phase 8.1 (AVGO 2026-05-07 fix): when the BRIDGE between the label and
+# the value contains a delta-indicator word (increase, decrease, change,
+# swing, etc.), the value is the amount-of-change, not a position. The
+# LABEL_FIRST regex matches "net debt *increase* of $2.92B" → bridge
+# captures " *increase* of "; this regex flags it for skip.
+_DELTA_BRIDGE_RE = re.compile(
+    r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen)",
     re.IGNORECASE,
 )
 
@@ -203,11 +222,20 @@ def extract_net_debt_claims(text: str) -> list[NetDebtClaim]:
                 continue
             value_dollars = abs(value_dollars)
 
-            # Phase 7.12 delta-phrase guard: if the value is followed by a
-            # comparator word (lower/higher/etc.), it's a delta between
-            # methodologies, not a magnitude claim. Skip.
+            # Phase 7.12 delta-phrase guard (tail check): if the value is
+            # followed by a comparator word (lower/higher/sequentially/YoY)
+            # or a range endpoint marker (`-6B`), it's not a magnitude.
             tail = text[m.end():m.end() + 20]
             if _DELTA_COMPARATORS_RE.match(tail):
+                continue
+
+            # Phase 8.1 delta-bridge guard: if the captured bridge contains
+            # `increase`/`decrease`/`change`/`swing`/etc., the value is a
+            # delta amount (e.g. "net debt *increase* of $2.92B"), not the
+            # net-debt position itself. Both LABEL_FIRST and VALUE_FIRST
+            # capture the bridge; missing group → empty string (no match).
+            bridge = m.groupdict().get("bridge", "") or ""
+            if _DELTA_BRIDGE_RE.search(bridge):
                 continue
 
             # Phase 7.5 v1.2: capture the FULL surrounding paragraph (back to

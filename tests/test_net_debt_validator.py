@@ -131,6 +131,62 @@ def test_skips_msft_2026_05_21_inline_subtraction_false_positive():
     )
 
 
+def test_phase_8_1_skips_avgo_increase_delta_bridge():
+    """AVGO 2026-05-07 false positive: the LLM wrote
+
+        "AVGO's Q1 FY26 net debt *increased* $2.92B sequentially..."
+        "...Q1 FY26 sequential net debt *increase* of $2.92B is material."
+
+    The LABEL_FIRST regex paired `net debt` with `$2.92B`, but $2.92B is
+    the AMOUNT OF INCREASE, not the net-debt position. The bridge
+    between label and value contains 'increased' / 'increase' — the
+    Phase 8.1 delta-bridge guard skips when the bridge has any of
+    increas|decreas|chang|swing|delta|rose|risen|fell|fallen.
+    The 'sequentially' tail also triggers the tail-side guard."""
+    from tradingagents.validators import extract_net_debt_claims
+    text1 = "AVGO's Q1 FY26 net debt *increased* $2.92B sequentially to $51.88B."
+    text2 = "Q1 FY26 sequential net debt *increase* of $2.92B is material."
+    for text in (text1, text2):
+        claims = extract_net_debt_claims(text)
+        # $2.92B is a delta amount, not a position; must NOT extract
+        assert 2_920_000_000.0 not in {c.value_dollars for c in claims}, (
+            f"$2.92B delta in {text!r} must not be extracted; got {[c.value_dollars for c in claims]}"
+        )
+    # Sanity: $51.88B (the resulting position in text1) IS a real magnitude
+    # claim and should be extractable, but here it's paired with "to" (not
+    # "net debt"), so the regex won't match — that's expected. Just make
+    # sure we did not extract $2.92B.
+
+
+def test_phase_8_1_skips_orcl_dollar_range_low_endpoint():
+    """ORCL 2026-05-07 false positive: "Net debt ≈ $5–6B". The value
+    regex matches `$5` (no unit suffix — `$5` is a valid match) and the
+    tail `–6B` would have been ignored. Phase 8.1 adds a tail-guard
+    `[\\-–]\\s*\\d` to recognise that the value is the LOW endpoint
+    of a range; skip."""
+    from tradingagents.validators import extract_net_debt_claims
+    text = "For peer comparability: **Net debt ≈ $5–6B** in the cited convention."
+    claims = extract_net_debt_claims(text)
+    # The bare $5 (range low endpoint) must NOT be extracted
+    assert 5.0 not in {c.value_dollars for c in claims}, (
+        f"$5 range endpoint must not be extracted; got {[c.value_dollars for c in claims]}"
+    )
+
+
+def test_phase_8_1_keeps_legitimate_increase_word_when_not_in_bridge():
+    """Defense: only skip when the delta word is in the BRIDGE between
+    label and value. A sentence like "net debt of $40,262M; the increase
+    over Q4 was driven by..." should still extract $40,262M because
+    'increase' is in the TAIL, not the bridge (between 'net debt' and
+    '$40,262M', the bridge is `of `)."""
+    from tradingagents.validators import extract_net_debt_claims
+    text = "MSFT net debt of $40,262M; the increase over Q4 was driven by buybacks."
+    claims = extract_net_debt_claims(text)
+    assert 40_262_000_000.0 in {c.value_dollars for c in claims}, (
+        f"legitimate $40,262M claim with 'increase' in the TAIL must extract; got {[c.value_dollars for c in claims]}"
+    )
+
+
 def test_skips_meta_2026_05_21_delta_phrase_false_positive():
     """META 2026-05-21 rerun false positive: a formula-discrepancy
     disclosure section says
