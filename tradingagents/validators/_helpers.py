@@ -21,10 +21,14 @@ def line_no(text: str, char_offset: int) -> int:
 
 # Peer-ticker pattern: matches an uppercase 2-5-letter token followed
 # by a delimiter. Delimiters: `'s` (possessive), whitespace, `:` (table-
-# row form, RMBS 2026-05-08 fix). Used by validators that need to detect
-# whether a claim's surrounding prose attributes a metric to a peer
-# ticker rather than the main ticker.
-PEER_TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:'s|\s|:)")
+# row form, RMBS 2026-05-08 fix), or markdown emphasis chars `*`/`_`
+# (Phase 8.2 MSTR 2026-05-29 fix — `**RIOT**` bullet was treated as a
+# subject claim because the trailing `**` wasn't recognized as a
+# ticker delimiter; the validator then flagged RIOT's $636M as drift
+# from MSTR's canonical net debt). Used by validators that need to
+# detect whether a claim's surrounding prose attributes a metric to a
+# peer ticker rather than the main ticker.
+PEER_TICKER_PATTERN = re.compile(r"\b[A-Z]{2,5}(?:'s|\s|:|[*_])")
 
 
 # Common uppercase 2-5-letter tokens that aren't tickers — accumulate

@@ -455,6 +455,49 @@ def test_filters_common_uppercase_non_tickers():
     )
 
 
+def test_phase_8_2_peer_attribution_recognizes_markdown_bold_ticker():
+    """MSTR 2026-05-29 false positive: peer-bullet `- **RIOT** — ... Net
+    Debt $636M ...` was validated against MSTR canonicals because the
+    PEER_TICKER_PATTERN regex required `'s`, whitespace, or `:` after the
+    ticker. The trailing `**` (markdown bold close) meant RIOT was never
+    matched, so the claim fell through to MSTR-subject validation and
+    flagged drift vs MSTR's $2.2B Cash+STI. Phase 8.2 adds `*` and `_`
+    to the delimiter alternation."""
+    from tradingagents.validators.net_debt_validator import (
+        _claim_attributed_to_other_ticker,
+    )
+    # The actual MSTR 2026-05-29 RIOT bullet shape
+    msg = (
+        "- **RIOT** — bitcoin miner. Authoritative raw/peers.json cells: "
+        "Q1 capex/revenue **78.7%**, Q1 op margin **−72.6%**, "
+        "Net Debt **$636M**, TTM EBITDA **−$327M**"
+    )
+    assert _claim_attributed_to_other_ticker(msg, main_ticker="MSTR"), (
+        "**RIOT** with markdown-bold delimiter must be recognized as a "
+        "peer-attributed claim"
+    )
+    # Same shape with single-asterisk italic emphasis
+    assert _claim_attributed_to_other_ticker(
+        "*AAPL* Net Debt $50B is the comparator.", main_ticker="MSFT"
+    )
+    # Note: underscore-italic `_AAPL_` is not supported because `_` is a
+    # word character in regex (no \b boundary between `_` and `A`); the
+    # report style consistently uses asterisks (**TICKER**), so this
+    # edge case is documented but not handled.
+
+
+def test_phase_8_2_peer_attribution_still_returns_false_for_main_ticker_in_bold():
+    """Defense: if the subject ticker itself appears in markdown bold
+    (e.g., `**MSTR** Net Debt $5.99B`), it must NOT be flagged as
+    peer-attributed. Only mentions of OTHER tickers should trip."""
+    from tradingagents.validators.net_debt_validator import (
+        _claim_attributed_to_other_ticker,
+    )
+    assert not _claim_attributed_to_other_ticker(
+        "**MSTR** Net Debt $5.99B per yfinance row", main_ticker="MSTR"
+    )
+
+
 def test_does_not_pair_label_to_dollar_across_semicolon(tmp_path):
     """v1.1 false-positive fix: `"net cash" and stops; the data shows
     $16.70B of lease obligations` should NOT pair "net cash" with $16.70B
