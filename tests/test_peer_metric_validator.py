@@ -415,6 +415,67 @@ def test_skips_unavailable_peers(tmp_path):
     assert v == []
 
 
+def test_phase_8_1_skips_compound_word_ticker_false_positive_soun(tmp_path):
+    """SOUN 2026-05-29 false positive: the LLM described CRNC's metrics in
+    a paragraph that also contained the phrase 'voice-AI pure-play'. The
+    ticker `AI` (C3.ai) is in the peer set; the prior `\\b...\\b` regex
+    matched `AI` inside the compound word `voice-AI` (hyphen counts as a
+    word boundary), and the metric-binding lookback bound CRNC's
+    `op margin -3.6%` to ticker AI → compared against AI's actual value
+    (-263.6%) → spurious wrong_peer_metric MATERIAL. Same shape recurred
+    for BBAI and PLTR.
+
+    Fix: ticker regex now uses negative lookbehind/lookahead rejecting
+    preceding or following letter/hyphen, so 'voice-AI', 'AI-government',
+    'non-AI' no longer match. Real ticker references still match.
+    """
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-29",
+        "_unavailable": [],
+        "CRNC": {
+            "latest_quarter_capex_to_revenue": 0.8,
+            "latest_quarter_op_margin": -3.6,
+            "ttm_pe": None,
+            "forward_pe": 16.79,
+            "net_debt": 64_000_000.0,
+            "ttm_ebitda": 40_000_000.0,
+            "nd_ebitda": 1.60,
+        },
+        "AI": {
+            "latest_quarter_capex_to_revenue": 0.82,
+            "latest_quarter_op_margin": -263.63,
+            "ttm_pe": None,
+            "forward_pe": None,
+            "net_debt": -617_000_000.0,
+            "ttm_ebitda": -453_099_008.0,
+            "nd_ebitda": None,
+        },
+    }
+    peers = {"CRNC": {"ticker": "CRNC"}, "AI": {"ticker": "AI"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "- **CRNC (Cerence)** — voice-AI pure-play; closest functional comp; "
+        "Q1 capex/revenue 0.8%, Q1 op margin -3.6%, Forward P/E 16.79x, "
+        "TTM EBITDA $40M, ND/EBITDA 1.60x."
+    )
+    vios = validate_peer_metrics(
+        text, "decision.md", raw / "peer_ratios.json", raw / "peers.json",
+    )
+    # The CRNC values are correct (match peer_ratios.json). The bug bound them
+    # to AI via 'voice-AI'. After the fix, no violation should fire.
+    crnc_vios = [v for v in vios if v.ticker == "CRNC"]
+    ai_vios = [v for v in vios if v.ticker == "AI"]
+    assert not crnc_vios, f"CRNC values are correct; got: {crnc_vios}"
+    assert not ai_vios, (
+        f"AI must NOT be bound to CRNC's metrics via 'voice-AI'; got: {ai_vios}"
+    )
+
+
 def test_render_violations_text_pass():
     from tradingagents.validators.peer_metric_validator import render_peer_violations_text
     out = render_peer_violations_text([])

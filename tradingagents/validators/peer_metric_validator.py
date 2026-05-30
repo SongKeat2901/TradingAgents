@@ -257,7 +257,14 @@ def extract_peer_metric_claims(
     if main_upper:
         lookup_tickers = lookup_tickers | {main_upper}
     tickers_alt = "|".join(re.escape(t) for t in sorted(lookup_tickers, key=len, reverse=True))
-    ticker_re = re.compile(rf"\b(?P<t>{tickers_alt})\b")
+    # Phase 8.1 (SOUN 2026-05-29 fix): plain `\b` matches across hyphens, so
+    # "voice-AI" or "non-AI" looked like ticker mentions of `AI` (C3.ai), and
+    # every peer-metric in the same paragraph got mis-attributed to AI. The
+    # negative lookbehind/lookahead rejects matches preceded or followed by
+    # a letter OR hyphen — kills compound-word false positives ("voice-AI",
+    # "AI-government", "non-AI") while preserving real ticker references
+    # ("AI (C3.ai)", "**AI**", "AI:", " AI ").
+    ticker_re = re.compile(rf"(?<![A-Za-z\-])(?P<t>{tickers_alt})(?![A-Za-z\-])")
 
     # Build metric alternation from known phrases (verifiable + non-
     # verifiable). Sort by length descending so longer matches win
