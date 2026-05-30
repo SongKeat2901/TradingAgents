@@ -131,6 +131,55 @@ def test_skips_msft_2026_05_21_inline_subtraction_false_positive():
     )
 
 
+def test_phase_8_2_skips_mstr_positional_comparator_in_bridge():
+    """MSTR 2026-05-29 false positive: "$0.06B higher than yfinance Net Debt".
+    The VALUE_FIRST regex paired $0.06B with "Net Debt" via the bridge
+    " higher than yfinance ". The Phase 8.1 delta-bridge regex didn't
+    include "higher"/"lower"/"above"/"below"/"more"/"less" — only the
+    bidirectional change words. Phase 8.2 extends to positional
+    comparators."""
+    from tradingagents.validators import extract_net_debt_claims
+    text = "Computed: $8.26B − $2.21B = $6.05B (this is $0.06B higher than yfinance Net Debt)."
+    claims = extract_net_debt_claims(text)
+    values = sorted({c.value_dollars for c in claims})
+    # $0.06B (60M) is a delta amount, not a net-debt position
+    assert 60_000_000.0 not in values, (
+        f"$0.06B delta higher-than must not extract; got {values}"
+    )
+
+
+def test_phase_8_2_skips_mstr_additive_plus_in_bridge():
+    """MSTR 2026-05-29 false positive: "net debt + $10.0B preferred
+    liquidation preference". The LABEL_FIRST regex paired "net debt" with
+    "$10.0B" via the bridge " + " — but $10.0B is preferred-stock liability,
+    not net debt itself. Phase 8.2 adds `\\s\\+\\s` to the delta-bridge
+    regex so additive expressions are skipped."""
+    from tradingagents.validators import extract_net_debt_claims
+    text = "MSTR: $5.99B net debt + $10.0B preferred liquidation preference = $15.99B total senior obligations."
+    claims = extract_net_debt_claims(text)
+    values = sorted({c.value_dollars for c in claims})
+    # $5.99B (the actual net-debt claim) should extract
+    assert 5_990_000_000.0 in values, (
+        f"$5.99B legitimate net-debt claim should extract; got {values}"
+    )
+    # $10.0B (preferred liability across `+` bridge) must NOT extract
+    assert 10_000_000_000.0 not in values, (
+        f"$10.0B preferred across + bridge must not extract; got {values}"
+    )
+
+
+def test_phase_8_2_keeps_legitimate_net_debt_of_X():
+    """Defense: ensure the expanded comparator set doesn't kill legitimate
+    'net debt of $X' claims that happen to use neutral words in the bridge."""
+    from tradingagents.validators import extract_net_debt_claims
+    text = "GOOGL's authoritative net debt of $39.44B per yfinance Net Debt row."
+    claims = extract_net_debt_claims(text)
+    values = sorted({c.value_dollars for c in claims})
+    assert 39_440_000_000.0 in values, (
+        f"legitimate 'net debt of $39.44B' must extract; got {values}"
+    )
+
+
 def test_phase_8_1_skips_avgo_increase_delta_bridge():
     """AVGO 2026-05-07 false positive: the LLM wrote
 

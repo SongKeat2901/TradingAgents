@@ -191,11 +191,21 @@ _DELTA_COMPARATORS_RE = re.compile(
 
 # Phase 8.1 (AVGO 2026-05-07 fix): when the BRIDGE between the label and
 # the value contains a delta-indicator word (increase, decrease, change,
-# swing, etc.), the value is the amount-of-change, not a position. The
-# LABEL_FIRST regex matches "net debt *increase* of $2.92B" → bridge
-# captures " *increase* of "; this regex flags it for skip.
+# swing, etc.), the value is the amount-of-change, not a position.
+#
+# Phase 8.2 (MSTR 2026-05-29 fix): MSTR re-run had three FPs that needed
+# wider bridge guards:
+#   - "$0.06B higher than yfinance Net Debt"  → "higher" in bridge
+#   - "net debt + $10.0B preferred ..."        → "+" in bridge (additive
+#     component, not the net-debt magnitude itself)
+# Extend to catch positional comparators (higher/lower/above/below/more/
+# less/over/under/plus) and a bare `+` separator. Conservative on common
+# English words (e.g., "and", "with") — keep them OUT to avoid skipping
+# legitimate claims like "net debt and EBITDA are both stable at $X".
 _DELTA_BRIDGE_RE = re.compile(
-    r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen)",
+    r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen"
+    r"|higher|lower|above|below|more|less|over|under|plus)\b"
+    r"|\s\+\s",  # bare + with whitespace either side
     re.IGNORECASE,
 )
 
