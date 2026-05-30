@@ -143,7 +143,11 @@ _PATTERN_LABEL_FIRST = re.compile(
     # unaffected. Handles both U+2212 (−) and ASCII `-` as the minus.
     r"(?:[-−]?\$[\d,]+(?:\.\d+)?\s*[BM]?\s*[−-]\s*"
     r"[-−]?\$[\d,]+(?:\.\d+)?\s*[BM]?\s*=\s*)?"
-    r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?",
+    # Phase 8.1: allow optional `**` markdown bold around the value, so
+    # the inline-subtraction prefix-eater above can correctly hand off
+    # to `**$7,975M**` (the bolded result in ON's net-debt math). Same
+    # fix as the peer_metric regex.
+    r"(?<![A-Za-z])(?:\*\*)?\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?(?:\*\*)?",
     re.IGNORECASE,
 )
 
