@@ -203,9 +203,12 @@ _DELTA_COMPARATORS_RE = re.compile(
 # English words (e.g., "and", "with") — keep them OUT to avoid skipping
 # legitimate claims like "net debt and EBITDA are both stable at $X".
 _DELTA_BRIDGE_RE = re.compile(
-    r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen"
-    r"|higher|lower|above|below|more|less|over|under|plus)\b"
-    r"|\s\+\s",  # bare + with whitespace either side
+    # Stems (no closing \b — match "increase/increased/increasing" etc.)
+    r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen)"
+    # Full words (require closing \b)
+    r"|\b(?:higher|lower|above|below|more|less|over|under|plus)\b"
+    # Bare additive operator (with whitespace either side)
+    r"|\s\+\s",
     re.IGNORECASE,
 )
 
