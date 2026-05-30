@@ -200,9 +200,19 @@ def _values_match(claimed: float, actual_raw: float, kind: str, tolerance: float
     # Ratios and percentages: peer_ratios.json stores them in the same unit
     # as the claimed value (e.g., 38.5 for 38.5%, 12.33 for 12.33x).
     if kind in ("ratio", "pct"):
+        # Phase 8.1 (SOUN 2026-05-29 fix): pure 5%-relative tolerance is
+        # impossible to meet for tiny percentages — the LLM rounds capex/rev
+        # 0.75% → "0.8%" (a 1-decimal-place rendering), the relative error
+        # is 6.7%, the validator flagged it as MATERIAL drift. Add an
+        # absolute floor of 0.1 to handle 1-decimal-place rounding on small
+        # values; the 5% relative check still catches real drift on larger
+        # values (e.g., 30% claimed vs 50% actual fails relative).
+        abs_diff = abs(claimed - actual_raw)
+        if abs_diff <= 0.1:
+            return True
         if actual_raw == 0:
             return abs(claimed) < 0.5
-        return abs(claimed - actual_raw) / abs(actual_raw) <= tolerance
+        return abs_diff / abs(actual_raw) <= tolerance
     return False
 
 
@@ -257,14 +267,14 @@ def extract_peer_metric_claims(
     if main_upper:
         lookup_tickers = lookup_tickers | {main_upper}
     tickers_alt = "|".join(re.escape(t) for t in sorted(lookup_tickers, key=len, reverse=True))
-    # Phase 8.1 (SOUN 2026-05-29 fix): plain `\b` matches across hyphens, so
-    # "voice-AI" or "non-AI" looked like ticker mentions of `AI` (C3.ai), and
-    # every peer-metric in the same paragraph got mis-attributed to AI. The
-    # negative lookbehind/lookahead rejects matches preceded or followed by
-    # a letter OR hyphen — kills compound-word false positives ("voice-AI",
-    # "AI-government", "non-AI") while preserving real ticker references
-    # ("AI (C3.ai)", "**AI**", "AI:", " AI ").
-    ticker_re = re.compile(rf"(?<![A-Za-z\-])(?P<t>{tickers_alt})(?![A-Za-z\-])")
+    # Phase 8.1 (SOUN 2026-05-29 fix): plain `\b` matches across hyphens AND
+    # slashes, so compound English phrases like "voice-AI", "AI-government",
+    # "AI/government" all looked like ticker mentions of `AI` (C3.ai). Every
+    # peer-metric in the same paragraph got mis-attributed to AI. Reject
+    # ticker matches preceded or followed by a letter, hyphen, OR slash —
+    # kills compound-word false positives while preserving real ticker
+    # references ("AI (C3.ai)", "**AI**", "AI:", " AI ").
+    ticker_re = re.compile(rf"(?<![A-Za-z\-/])(?P<t>{tickers_alt})(?![A-Za-z\-/])")
 
     # Build metric alternation from known phrases (verifiable + non-
     # verifiable). Sort by length descending so longer matches win

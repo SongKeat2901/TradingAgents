@@ -476,6 +476,74 @@ def test_phase_8_1_skips_compound_word_ticker_false_positive_soun(tmp_path):
     )
 
 
+def test_phase_8_1_bbai_ai_slash_government_misbinding(tmp_path):
+    """Second SOUN false positive caught after the hyphen-only fix: the BBAI
+    description contains "small-cap AI/government" — the `/` separator still
+    let `AI` match. Every BBAI metric (capex/rev 0.9%, op margin -66.9%,
+    TTM EBITDA -$63M) bound to ticker AI instead of BBAI. Fix: extend the
+    ticker boundary rejection to include `/`."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-29",
+        "_unavailable": [],
+        "BBAI": {
+            "latest_quarter_capex_to_revenue": 0.93,
+            "latest_quarter_op_margin": -66.9,
+            "ttm_pe": None, "forward_pe": None,
+            "net_debt": 20_000_000.0,
+            "ttm_ebitda": -63_223_000.0,
+            "nd_ebitda": None,
+        },
+        "AI": {
+            "latest_quarter_capex_to_revenue": 0.82,
+            "latest_quarter_op_margin": -263.63,
+            "ttm_pe": None, "forward_pe": None,
+            "net_debt": -617_000_000.0,
+            "ttm_ebitda": -453_099_008.0,
+            "nd_ebitda": None,
+        },
+    }
+    peers = {"BBAI": {"ticker": "BBAI"}, "AI": {"ticker": "AI"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "- **BBAI (BigBear.ai)** — small-cap AI/government; retail-driven "
+        "sentiment comp; Q1 capex/revenue 0.9%, Q1 op margin -66.9%, "
+        "TTM EBITDA -$63M."
+    )
+    vios = validate_peer_metrics(
+        text, "decision.md", raw / "peer_ratios.json", raw / "peers.json",
+    )
+    ai_vios = [v for v in vios if v.ticker == "AI"]
+    assert not ai_vios, (
+        "AI must not be bound to BBAI's metrics via 'AI/government'; "
+        f"got: {ai_vios}"
+    )
+
+
+def test_phase_8_1_tolerance_floor_handles_one_decimal_rounding():
+    """SOUN had CRNC capex/rev 0.75 → LLM rendered '0.8%' (1-decimal
+    rounding). The pure 5%-relative tolerance flagged it as MATERIAL drift
+    because |0.05| / 0.75 = 6.7%. Fix: 0.1 absolute floor on the diff for
+    ratio/pct values handles 1-decimal rendering of tiny percentages."""
+    from tradingagents.validators.peer_metric_validator import _values_match
+    # 1-decimal rounding edge cases that should now pass
+    assert _values_match(0.8, 0.75, "pct") is True   # CRNC capex
+    assert _values_match(0.9, 0.93, "pct") is True   # BBAI capex
+    assert _values_match(0.5, 0.45, "pct") is True   # PLTR capex
+    # Real drift on larger values still fails (the relative test bites)
+    assert _values_match(30.0, 50.0, "pct") is False
+    assert _values_match(12.0, 10.0, "ratio") is False
+    # Within-relative on mid-size values still passes
+    assert _values_match(50.0, 51.0, "pct") is True  # 2% relative
+    # Cross-check: a real fabrication 2 percentage points off on a small base
+    # should still flag once we exceed the 0.1 absolute floor
+    assert _values_match(2.5, 0.5, "pct") is False   # 2pp diff = 400%
+
+
 def test_render_violations_text_pass():
     from tradingagents.validators.peer_metric_validator import render_peer_violations_text
     out = render_peer_violations_text([])
