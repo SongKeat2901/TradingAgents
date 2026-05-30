@@ -589,6 +589,149 @@ def test_phase_8_1_tolerance_floor_handles_one_decimal_rounding():
     assert _values_match(2.5, 0.5, "pct") is False   # 2pp diff = 400%
 
 
+def test_phase_8_2_skips_subject_metric_in_peer_comparison_listing_tsm(tmp_path):
+    """TSM 2026-05-29 false positive #1: line 11 of decision_executive.md
+    had
+
+      "The bull case rests on TSM compounding... Q1 FY26 op margin of
+       58.1% is materially above every peer in the comparison set
+       (next-best ASML at 36.0%; AMAT 31.9%), and the balance sheet
+       carries roughly $74B USD of net cash (ND/EBITDA −0.83x)..."
+
+    The "ND/EBITDA −0.83x" is TSM's subject ratio. The v2 lookback found
+    the nearest peer (AMAT) and bound -0.83x to AMAT, flagging drift vs
+    AMAT's nd_ebitda=0.02. Phase 8.2: when 2+ peers AND subject appear
+    in the lookback AND nearest peer is >30 chars from the metric, the
+    context is a peer-comparison list — treat as subject claim, skip."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-29",
+        "_unavailable": [],
+        "ASML": {"latest_quarter_op_margin": 36.02, "nd_ebitda": -0.45,
+                 "forward_pe": 33.82},
+        "AMAT": {"latest_quarter_op_margin": 31.9, "nd_ebitda": 0.02,
+                 "forward_pe": 27.83},
+    }
+    peers = {"ASML": {"ticker": "ASML"}, "AMAT": {"ticker": "AMAT"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "The bull case rests on TSM compounding a leading-edge monopoly. "
+        "Q1 FY26 op margin of 58.1% is materially above every peer in the "
+        "comparison set (next-best ASML at 36.0%; AMAT 31.9%), and the "
+        "balance sheet carries roughly $74B USD of net cash "
+        "(ND/EBITDA −0.83x)."
+    )
+
+    violations = validate_peer_metrics(
+        text, "decision_executive.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="TSM",
+    )
+    nd_violations = [v for v in violations if "nd/ebitda" in v.metric.lower()
+                     or v.claimed_value == "−0.83x"]
+    assert nd_violations == [], (
+        f"TSM's own ND/EBITDA −0.83x flagged as AMAT drift: "
+        f"{[(v.ticker, v.metric, v.claimed_value) for v in violations]}"
+    )
+
+
+def test_phase_8_2_skips_subject_metric_after_peer_list_sentence_break_tsm(tmp_path):
+    """TSM 2026-05-29 false positive #2: line 66 of decision_executive.md
+    had
+
+      "TSM's Q1 op margin of 58.1% is materially above every peer in the
+       set — best peer ASML 36.0%, then AMAT 31.9%, UMC 18.4%, INTC 6.9%
+       — confirming that the leading-edge premium is a margin reality,
+       not a multiple narrative. Forward P/E 21.44x prices TSM below
+       ASML (33.82x), AMAT (27.83x), UMC (27.59x)..."
+
+    The "Forward P/E 21.44x" is TSM's subject forward P/E. The v2
+    lookback found INTC as the nearest peer (last in the comparator
+    list) and bound 21.44x to INTC (fwd_pe=74.48 per peer_ratios.json),
+    flagging drift. Phase 8.2 detects the peer-comparison-listing
+    context (4 peers + subject + sentence break to the metric)."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-29",
+        "_unavailable": [],
+        "ASML": {"latest_quarter_op_margin": 36.02, "forward_pe": 33.82},
+        "AMAT": {"latest_quarter_op_margin": 31.9, "forward_pe": 27.83},
+        "UMC": {"latest_quarter_op_margin": 18.38, "forward_pe": 27.59},
+        "INTC": {"latest_quarter_op_margin": 6.88, "forward_pe": 74.48},
+    }
+    peers = {t: {"ticker": t} for t in ("ASML", "AMAT", "UMC", "INTC")}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "TSM's Q1 op margin of 58.1% is materially above every peer in "
+        "the set — best peer ASML 36.0%, then AMAT 31.9%, UMC 18.4%, "
+        "INTC 6.9% — confirming that the leading-edge premium is a "
+        "margin reality, not a multiple narrative. Forward P/E 21.44x "
+        "prices TSM below ASML (33.82x), AMAT (27.83x), UMC (27.59x)."
+    )
+
+    violations = validate_peer_metrics(
+        text, "decision_executive.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="TSM",
+    )
+    # Filter to the trailing "Forward P/E 21.44x" claim (other "Forward P/E"
+    # values like 33.82x are legitimate peer claims for ASML/AMAT/UMC).
+    bad = [v for v in violations if v.claimed_value == "21.44x"]
+    assert bad == [], (
+        f"TSM's own Forward P/E 21.44x flagged as INTC drift: "
+        f"{[(v.ticker, v.metric, v.claimed_value) for v in violations]}"
+    )
+
+
+def test_phase_8_2_preserves_fn_single_peer_descriptive_attribution(tmp_path):
+    """Defense: the FN — closest comp ... per peers.json Fwd P/E = 36.6x
+    case (PM brief style with long bridge but single peer in scope) must
+    still bind 36.6x to FN. Only one peer in the lookback → the
+    2-peer-listing heuristic doesn't fire → nearest-ticker rule applies."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-05-08",
+        "_unavailable": [],
+        "FN": {"latest_quarter_op_margin": 11.4, "forward_pe": 30.0,
+               "nd_ebitda": -2.1},
+    }
+    peers = {"FN": {"ticker": "FN"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "**FN (Fabrinet)** — closest comp on optical-transceiver mix and "
+        "hyperscaler exposure; per `raw/peers.json` Fwd P/E = 36.6x, TTM "
+        "operating margin ≈ 11.4%, ND/EBITDA ≈ −2.1x. AAOI's setup is "
+        "lighter capex."
+    )
+
+    violations = validate_peer_metrics(
+        text, "pm_brief.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="AAOI",
+    )
+    # FN's fwd_pe is 30.0 in our fixture; claimed 36.6x is a real drift
+    # vs FN's 30.0 → MUST flag (single-peer descriptive paragraph stays
+    # bound to FN; not swallowed by the 2-peer listing rule).
+    fn_pe = [v for v in violations
+             if v.ticker == "FN" and v.claimed_value == "36.6x"]
+    assert len(fn_pe) == 1, (
+        f"FN single-peer descriptive Fwd P/E claim must still validate: "
+        f"violations={[(v.ticker, v.metric, v.claimed_value) for v in violations]}"
+    )
+
+
 def test_render_violations_text_pass():
     from tradingagents.validators.peer_metric_validator import render_peer_violations_text
     out = render_peer_violations_text([])

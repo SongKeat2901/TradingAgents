@@ -331,6 +331,41 @@ def extract_peer_metric_claims(
         if main_upper and nearest == main_upper:
             continue
 
+        # Phase 8.2 (ASX/TSM 2026-05-29 fix): peer-comparison-listing
+        # context. Three false-positive shapes surfaced:
+        #
+        #   ASX: "Above AMKR (13.3%) and below TSM (31.0%) ... positioning
+        #         ASX ... | Forward P/E ... | TTM P/E 59.0x"   → bound to TSM
+        #   TSM: "TSM... peer set (next-best ASML 36.0%; AMAT 31.9%), and
+        #         the balance sheet ... (ND/EBITDA −0.83x)"    → bound to AMAT
+        #   TSM: "TSM's Q1 op margin... ASML 36.0%, AMAT 31.9%, UMC 18.4%,
+        #         INTC 6.9% — confirming ... Forward P/E 21.44x" → bound to INTC
+        #
+        # All three: subject mentioned in lookback, 2+ peer tickers in
+        # lookback, metric is well after the nearest peer (not v1
+        # immediate-adjacent form). The metric semantically belongs to
+        # the subject — the peers are comparators inside a list. Defer
+        # validation to the Phase 6.4 deterministic block.
+        #
+        # Preserve the working "FN — closest comp ... per peers.json
+        # Fwd P/E = 36.6x" case by requiring 2+ distinct peers in
+        # lookback (FN-only paragraphs stay bound to FN).
+        if main_upper:
+            distinct_peers = {
+                t.group("t").upper() for t in ticker_matches
+            } - {main_upper}
+            subject_in_lookback = any(
+                t.group("t").upper() == main_upper for t in ticker_matches
+            )
+            nearest_offset = ticker_matches[-1].end()
+            nearest_distance = len(lookback_text) - nearest_offset
+            if (
+                subject_in_lookback
+                and len(distinct_peers) >= 2
+                and nearest_distance > 30  # not v1 immediate-adjacent form
+            ):
+                continue
+
         line_no = _line_no(text, mv.start())
         line_start = text.rfind("\n", 0, mv.start()) + 1
         line_end = text.find("\n", mv.end())
