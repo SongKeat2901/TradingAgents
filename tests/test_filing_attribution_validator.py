@@ -71,3 +71,34 @@ def test_runner_gates_on_fabricated_note_citation(tmp_path):
     fa = results.get("phase_9_filing_attribution", {})
     assert fa.get("violations"), "filing-attribution violation not reported"
     assert results["blocking_violations"] >= 1
+
+
+_STUB2 = "⚠️ **XBRL ENCODING WARNING**: prose footnotes are NOT readable.\n"
+
+
+def test_strip_fabricated_note_citations_keeps_numbers():
+    from tradingagents.validators.filing_attribution_validator import (
+        strip_fabricated_note_citations, validate_filing_attribution,
+    )
+    text = (
+        "Buyback $163.8B. Source: raw/sec_filing.md Note 7 (\"remaining $63.8B\").\n"
+        "Gross intangibles $37,767M vs $24,950M per Note 5 — flag.\n"
+        "Services GM 76.7% (Note 2).\n"
+    )
+    out, n = strip_fabricated_note_citations(text, _STUB2)
+    assert n >= 3
+    # numbers preserved
+    assert "$163.8B" in out and "$37,767M" in out and "76.7%" in out
+    # no fabricated Note citations remain
+    assert "Note 5" not in out and "Note 7" not in out and "Note 2" not in out
+    # and the validator now passes on the stripped text
+    assert validate_filing_attribution(out, "decision.md", _STUB2) == []
+
+
+def test_strip_is_noop_for_readable_filing():
+    from tradingagents.validators.filing_attribution_validator import (
+        strip_fabricated_note_citations,
+    )
+    text = "Per Note 2 revenue rose."
+    out, n = strip_fabricated_note_citations(text, _READABLE)
+    assert out == text and n == 0

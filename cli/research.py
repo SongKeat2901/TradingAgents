@@ -416,6 +416,25 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001 - correction is best-effort
         print(f"peer-metric corrector error (non-fatal): {exc}", file=sys.stderr)
 
+    # Phase 9 P3: when raw/sec_filing.md is an XBRL stub (no readable footnote
+    # prose), strip fabricated "Note N" attributions from the decision files
+    # before the PDF + validators read them. The cited numbers are XBRL-readable
+    # and stay; only the unreadable-Note-prose citation is rewritten to a generic
+    # 10-Q reference (the 2026-05-29 AAPL fabricated-Note-citation mode).
+    try:
+        from tradingagents.validators.filing_attribution_validator import (
+            strip_note_citations_in_run,
+        )
+        stripped = strip_note_citations_in_run(args.output_dir)
+        if stripped["total_stripped"]:
+            print(
+                f"filing-attribution: stripped {stripped['total_stripped']} "
+                f"fabricated Note citation(s) in {stripped['files_changed']}",
+                file=sys.stderr,
+            )
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        print(f"note-citation stripper error (non-fatal): {exc}", file=sys.stderr)
+
     # Build the PDF unconditionally — even when validators flag the run.
     # The operator needs the PDF on disk to review what the LLM produced
     # (matching the markdown artifacts already written by write_research_

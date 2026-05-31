@@ -66,6 +66,66 @@ def validate_filing_attribution(
     return violations
 
 
+# Ordered transforms that remove a fabricated "Note N" prose attribution while
+# keeping the (XBRL-readable) number and any legitimate filing reference. Applied
+# ONLY when the filing is an XBRL stub.
+_NOTE_STRIP_TRANSFORMS: list[tuple[str, str]] = [
+    # "raw/sec_filing.md Note 7" → "raw/sec_filing.md" (PDF scrub later → "the 10-Q text")
+    (r"\braw/sec_filing\.md\s+Note\s+\d+[A-Za-z]?\b", "raw/sec_filing.md"),
+    # "per Subsequent Event Note 15" / "per Note 5" → "per the 10-Q"
+    (r"\bper\s+(?:[A-Z][a-zA-Z ]*?\s+)?Note\s+\d+[A-Za-z]?\b", "per the 10-Q"),
+    # "Note 5 discloses/shows/states/reports/details" → "the 10-Q discloses ..."
+    (r"\bNote\s+\d+[A-Za-z]?\s+(disclos\w+|show\w+|state\w+|report\w+|detail\w+)\b",
+     r"the 10-Q \1"),
+    # bare parenthetical "(Note 5)" / "( Note 5 )" → drop entirely
+    (r"\s*\(\s*Note\s+\d+[A-Za-z]?\s*\)", ""),
+    # catch-all: any remaining "Note 5" → "the 10-Q"
+    (r"\bNote\s+\d+[A-Za-z]?\b", "the 10-Q"),
+]
+
+
+def strip_fabricated_note_citations(
+    text: str, sec_filing_text: str | None
+) -> tuple[str, int]:
+    """Remove fabricated `Note N` prose attributions when the filing is an
+    XBRL stub. The cited NUMBERS are XBRL-readable and stay; only the
+    unreadable-Note-prose citation is rewritten to a generic 10-Q reference.
+
+    Returns (new_text, n_replacements). No-op when the filing is not a stub."""
+    if not text or not filing_is_xbrl_stub(sec_filing_text):
+        return text, 0
+    import re as _re
+    n = 0
+    out = text
+    for pattern, repl in _NOTE_STRIP_TRANSFORMS:
+        out, k = _re.subn(pattern, repl, out)
+        n += k
+    return out, n
+
+
+def strip_note_citations_in_run(run_dir) -> dict:
+    """Apply strip_fabricated_note_citations to decision.md /
+    decision_executive.md in a run dir (in place) when raw/sec_filing.md is an
+    XBRL stub. Returns a summary dict. Safe no-op for readable filings."""
+    from pathlib import Path
+    run = Path(run_dir)
+    sec = run / "raw" / "sec_filing.md"
+    sec_text = sec.read_text(encoding="utf-8") if sec.exists() else None
+    total = 0
+    files_changed = []
+    if filing_is_xbrl_stub(sec_text):
+        for fname in ("decision.md", "decision_executive.md"):
+            fp = run / fname
+            if not fp.exists():
+                continue
+            new, n = strip_fabricated_note_citations(fp.read_text(encoding="utf-8"), sec_text)
+            if n:
+                fp.write_text(new, encoding="utf-8")
+                files_changed.append(fname)
+                total += n
+    return {"total_stripped": total, "files_changed": files_changed}
+
+
 def render_filing_attribution_violations_text(
     violations: list[FilingAttributionViolation],
 ) -> str:
