@@ -391,6 +391,25 @@ def main(argv: list[str] | None = None) -> int:
     }
     print(json.dumps(payload), flush=True)
 
+    # Phase 9 P2: snap peer-metric values in decision.md / decision_executive.md
+    # to the authoritative peer_ratios.json cells BEFORE the PDF and validators
+    # read them. This is the output-side twin of the deterministic peer-ratios
+    # input block — the LLM is not trusted to copy peer numbers verbatim (the
+    # 2026-05-31 audit found systematic ~1-4% peer-P/E inflations).
+    try:
+        from tradingagents.validators.peer_metric_corrector import (
+            correct_peer_metrics_in_run,
+        )
+        corr = correct_peer_metrics_in_run(args.output_dir)
+        if corr["total_corrections"]:
+            print(
+                f"peer-metric corrector: snapped {corr['total_corrections']} "
+                f"value(s) to peer_ratios.json in {corr['files_changed']}",
+                file=sys.stderr,
+            )
+    except Exception as exc:  # noqa: BLE001 - correction is best-effort
+        print(f"peer-metric corrector error (non-fatal): {exc}", file=sys.stderr)
+
     # Build the PDF unconditionally — even when validators flag the run.
     # The operator needs the PDF on disk to review what the LLM produced
     # (matching the markdown artifacts already written by write_research_

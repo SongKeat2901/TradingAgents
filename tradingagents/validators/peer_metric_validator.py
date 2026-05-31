@@ -220,14 +220,17 @@ def _normalise_metric(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower())
 
 
-def extract_peer_metric_claims(
+def iter_peer_metric_spans(
     text: str,
     peer_tickers: set[str],
     main_ticker: str | None = None,
-) -> list[tuple[str, str, str, int, str]]:
-    """Find `<METRIC> <value>` patterns and bind to nearest peer ticker.
+) -> list[tuple[str, str, str, int, str, int, int]]:
+    """Same binding logic as `extract_peer_metric_claims`, but also returns the
+    character span (value_start, value_end) of the matched value group so a
+    caller can do in-place correction.
 
-    Returns list of (ticker, metric_raw, value_raw, line_no, match_text).
+    Returns list of (ticker, metric_raw, value_raw, line_no, match_text,
+    value_start, value_end).
 
     v2 (RC for AAOI 2026-05-08): the prior v1 regex required ticker
     immediately adjacent to the metric (`[\\s,—–-]+` bridge), which
@@ -253,7 +256,7 @@ def extract_peer_metric_claims(
     if not text or not peer_tickers:
         return []
 
-    results: list[tuple[str, str, str, int, str]] = []
+    results: list[tuple[str, str, str, int, str, int, int]] = []
     # Phase 7.3 v2.1 (NVDA 2026-05-08 fix): include the main_ticker in the
     # lookup set so when the subject is the closest ticker before a
     # metric-value, we recognize it as a subject-attributed claim and
@@ -372,9 +375,30 @@ def extract_peer_metric_claims(
         if line_end == -1:
             line_end = len(text)
         match_text = text[line_start:line_end].strip()
-        results.append((nearest, mv.group("metric"), mv.group("value"), line_no, match_text))
+        results.append((
+            nearest, mv.group("metric"), mv.group("value"), line_no, match_text,
+            mv.start("value"), mv.end("value"),
+        ))
 
     return results
+
+
+def extract_peer_metric_claims(
+    text: str,
+    peer_tickers: set[str],
+    main_ticker: str | None = None,
+) -> list[tuple[str, str, str, int, str]]:
+    """Find `<METRIC> <value>` patterns and bind to nearest peer ticker.
+
+    Thin wrapper over `iter_peer_metric_spans` that drops the value char-span
+    (kept for backwards compatibility — most callers don't need offsets).
+    Returns list of (ticker, metric_raw, value_raw, line_no, match_text).
+    """
+    return [
+        (ticker, metric_raw, value_raw, line_no, match_text)
+        for (ticker, metric_raw, value_raw, line_no, match_text, _vs, _ve)
+        in iter_peer_metric_spans(text, peer_tickers, main_ticker=main_ticker)
+    ]
 
 
 def validate_peer_metrics(
