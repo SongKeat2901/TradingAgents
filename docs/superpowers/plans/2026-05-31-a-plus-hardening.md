@@ -37,10 +37,15 @@ need work = AAPL(F), ORCL(F), RKLB(B), TSM(B), AAOI(A), ASX(A), FUTU(A), INTC(A)
       - cover wording: drop architecture/"simulated" leak, customer phrasing.
       - apply leak-scrub (strip-directives + agentic-vocab + generic raw/<f> catch-all)
         to ALL rendered sections incl. appendices. Raw .md on disk stays verbatim (audit).
-- [ ] P2 Peer-number structural fix (no falsified data):
-      - make peer comparison Python-authoritative (render/auto-correct against
-        peer_ratios.json) + narrow the Phase 8.2 over-skip so the validator catches
-        listing-context deviations. Gate A+ on zero peer violations.
+- [x] P2 Peer-number structural fix (no falsified data) — output-side corrector:
+      snaps peer-metric values to peer_ratios.json before PDF + validators.
+      Handles markdown TABLE columns (where the real P/E fabrications live) and
+      prose "<TICKER> <METRIC> <value>". VERIFIED on 2026-05-21-MSFT: fixes all 4
+      documented Fwd P/E fabrications. Wired in research.py; writes
+      raw/peer_corrections.json. Commits 80c7cb3, ad017f2.
+- [ ] P2b Make the VALIDATOR table+listing aware for DETECTION (gate A+). The bare
+      slash-listing "GOOGL 27.51x / 32.46% capex / ..." (unlabeled ttm-vs-fwd P/E)
+      is not auto-corrected; it must be flagged so nothing fabricated ships silently.
 - [ ] P3 Filing-attribution guard: when sec_filing.md is an XBRL stub (no readable
       statements), forbid/flag "Note N" + statement-line citations to it.
 - [ ] P4 Missing-data guard: fail loudly / mark N/A honestly when financials.json or
