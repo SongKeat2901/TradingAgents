@@ -279,6 +279,12 @@ def _telegram_args(args: argparse.Namespace) -> tuple[str, str] | None:
     path is unaffected — tests that legitimately want to verify the
     delivery code path (`--telegram-notify` + env var) still fire.
     """
+    # Operator opt-out: controlled audit re-runs must not auto-deliver to the
+    # customer chat. TRADINGRESEARCH_NO_TELEGRAM=1 suppresses ALL delivery
+    # (explicit flag + auto-discovery alike).
+    if os.environ.get("TRADINGRESEARCH_NO_TELEGRAM"):
+        return None
+
     chat_id = args.telegram_notify
     bot_token = os.environ.get("TRADINGRESEARCH_BOT_TOKEN")
     if chat_id and bot_token:

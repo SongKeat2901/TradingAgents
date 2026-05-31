@@ -542,3 +542,15 @@ def test_graph_skips_rate_limiter_when_pacing_zero(tmp_path, monkeypatch):
         assert "rate_limiter" not in kw, (
             f"pacing_seconds=0 must not inject rate_limiter, got {kw!r}"
         )
+
+
+def test_no_telegram_env_suppresses_all_delivery(tmp_path, monkeypatch):
+    """TRADINGRESEARCH_NO_TELEGRAM=1 must suppress delivery even when the
+    explicit flag + bot token are present (operator audit re-runs)."""
+    import argparse
+    import cli.research as research
+
+    monkeypatch.setenv("TRADINGRESEARCH_NO_TELEGRAM", "1")
+    monkeypatch.setenv("TRADINGRESEARCH_BOT_TOKEN", "BOT")
+    ns = argparse.Namespace(telegram_notify="-100123")
+    assert research._telegram_args(ns) is None
