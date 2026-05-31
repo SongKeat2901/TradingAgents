@@ -50,10 +50,23 @@ need work = AAPL(F), ORCL(F), RKLB(B), TSM(B), AAOI(A), ASX(A), FUTU(A), INTC(A)
       statements), forbid/flag "Note N" + statement-line citations to it.
 - [ ] P4 Missing-data guard: fail loudly / mark N/A honestly when financials.json or
       sec_filing.md absent (no silent gaps presented as data).
-- [ ] P5 Re-run loop on macmini, ONE fresh ticker at a time: run → manual audit
-      (Tier 1-14) → retune → re-run until A+.
-- [ ] P6 Remove failed runs; write REGISTER.md (A+ only, full trace-back) under
-      ~/Documents/TK Research.
+- [x] Deployed P1+P2 to mini (HEAD d04365b). Added TRADINGRESEARCH_NO_TELEGRAM
+      opt-out so audit re-runs don't auto-deliver to the customer chat.
+- [x] 6 already-A+ fresh runs regenerated through the hardened stack (PDF leak-scrub
+      + corrector), verified leak-free (0 markers in extracted PDF text) and
+      corrector-clean, copied to ~/Documents/TK Research/final/, and recorded in
+      REGISTER.md: GOOGL, ONDS (05-26), AMKR, MSTR, SOUN, STM (05-29).
+      (Caught + fixed a corrector $-field bug that had cosmetically mutated MSTR/SOUN;
+       restored sign glyphs. Commit 3f638af.)
+- [~] P5 Re-run loop on macmini, ONE fresh ticker at a time — IN PROGRESS.
+      First re-run kicked: TIGR 2026-05-29 → preaudit/. Then audit Tier 1-14 → A+?.
+      Remaining fresh non-A+ to process: AAPL(F, needs P3 filing-guard),
+      ORCL(F, fabricated CRM peer not in set), RKLB(B), TSM(B), AAOI(A), ASX(A),
+      FUTU(A), INTC(A), TIGR(A, running now).
+- [ ] P3 filing-attribution guard (AAPL) + forbidden-peer handling (ORCL) before
+      re-running those two.
+- [ ] P6 Remove failed (non-A+) runs after each is superseded by an A+ re-run or
+      deemed unfixable; REGISTER.md updated as A+ reports land (6 entries so far).
 
 ## Notes
 - Edits only on this MacBook; macmini pulls. SKILL.md lives on the mini (not in repo).
