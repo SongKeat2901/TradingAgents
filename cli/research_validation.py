@@ -86,10 +86,23 @@ def _collect_violations(
     from tradingagents.validators.net_debt_validator import NetDebtClaim
     from tradingagents.validators.quote_attribution_validator import AttributedQuote
 
+    # Phase 9 P3: filing-attribution. Read the filing once; if it's an XBRL
+    # stub (no readable footnote prose), any "Note N" citation in a report
+    # file is fabricated attribution.
+    from tradingagents.validators.filing_attribution_validator import (
+        validate_filing_attribution,
+    )
+    sec_filing_path = rd / "raw" / "sec_filing.md"
+    sec_filing_text = (
+        sec_filing_path.read_text(encoding="utf-8")
+        if sec_filing_path.exists() else None
+    )
+
     price_date_claims: list[DateCloseClaim] = []
     quote_claims: list[AttributedQuote] = []
     net_debt_claims: list[NetDebtClaim] = []
     peer_violations = []
+    filing_attribution_violations = []
 
     # Phase 7.12 v3 (2026-05-27): exclude raw/technicals*.md from the
     # price-date extractor scope. The TA agent legitimately describes OHLC
@@ -129,6 +142,9 @@ def _collect_violations(
                 main_ticker=main_ticker,
             )
         )
+        filing_attribution_violations.extend(
+            validate_filing_attribution(text, fname, sec_filing_text)
+        )
 
     # Phase 8.x: scenario-probability anchor check (one-shot on decision.md;
     # the deterministic forward-distribution writes raw/forward_probabilities.json
@@ -159,6 +175,7 @@ def _collect_violations(
             net_debt_claims, net_debt_json, main_ticker=main_ticker,
         ),
         "scenario_violations": scenario_violations,
+        "filing_attribution_violations": filing_attribution_violations,
     }
 
 
@@ -188,6 +205,7 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
         + sum(1 for v in raw["peer_violations"] if _is_blocking(v))
         + sum(1 for v in raw["net_debt_violations"] if _is_blocking(v))
         + sum(1 for v in raw["scenario_violations"] if _is_blocking(v))
+        + sum(1 for v in raw["filing_attribution_violations"] if _is_blocking(v))
     )
 
     return {
@@ -222,12 +240,16 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
                 for v in raw["scenario_violations"]
             ],
         },
+        "phase_9_filing_attribution": {
+            "violations": [_ser(v) for v in raw["filing_attribution_violations"]],
+        },
         "total_violations": (
             len(raw["price_date_violations"])
             + len(raw["quote_violations"])
             + len(raw["peer_violations"])
             + len(raw["net_debt_violations"])
             + len(raw["scenario_violations"])
+            + len(raw["filing_attribution_violations"])
         ),
         "blocking_violations": blocking_total,
     }
