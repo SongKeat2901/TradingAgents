@@ -14,8 +14,9 @@ PDFs to Telegram chat `-1003753140043`.
 .venv/bin/python -m pytest tests/test_pm_preflight.py::test_X -v
 
 # Local e2e (don't — too slow; use macmini)
+# --output-dir is optional; when omitted the run lands in its working-copy
+# (preaudit) location: ~/Documents/TK Research/preaudit/<date>-<ticker>.
 ~/local/bin/tradingresearch --ticker MSFT --date 2026-05-05 \
-  --output-dir ~/.openclaw/data/research/2026-05-05-MSFT \
   --telegram-notify=-1003753140043
 ```
 
@@ -30,9 +31,13 @@ ssh macmini-trueknot 'cd ~/tradingagents && git pull origin main --quiet && .ven
 ssh macmini-trueknot '~/.nvm/versions/node/v24.14.1/bin/claude -p hi'
 
 # 3. Archive prior run + kick fresh
-ssh macmini-trueknot 'mv ~/.openclaw/data/research/<DATE>-<TICKER> ...run-<SHA> 2>/dev/null'
+# Default output is the working copy: ~/Documents/TK Research/preaudit/<DATE>-<TICKER>.
+# Omit --output-dir to use it; pass an explicit dir only to override.
+# A run is "finalized" by manually promoting it (preaudit → final), never by
+# the pipeline:  mv "~/Documents/TK Research/preaudit/<DATE>-<TICKER>" "~/Documents/TK Research/final/"
+ssh macmini-trueknot 'mv "~/Documents/TK Research/preaudit/<DATE>-<TICKER>" "...run-<SHA>" 2>/dev/null'
 ssh macmini-trueknot '~/local/bin/tradingresearch --ticker <T> --date <D> \
-  --output-dir <PATH> --telegram-notify=-1003753140043'
+  --telegram-notify=-1003753140043'
 # Daemon detaches; takes ~22-35 min.
 
 # 4. Watch for completion
@@ -114,6 +119,9 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
 - Memory: `~/.claude/projects/-Users-songkeat-Documents-Python-Trading-Agent/memory/`
 - Specs: `docs/superpowers/specs/`
 - Plans: `docs/superpowers/plans/`
-- Past runs on macmini: `~/.openclaw/data/research/<date>-<ticker>.run-<sha>/`
+- Research output on macmini: working copies in `~/Documents/TK Research/preaudit/<date>-<ticker>/`
+  (the default when `--output-dir` is omitted); promoted A+ reports moved by hand to
+  `~/Documents/TK Research/final/<date>-<ticker>/`. The pipeline only ever writes preaudit.
+  Older runs (pre-default) live under `~/.openclaw/data/research/<date>-<ticker>.run-<sha>/`.
 - Telegram delivery: `cli/research_telegram.py` (auto-discovers bot token from
   `~/.openclaw/openclaw.json` on the OpenClaw host)

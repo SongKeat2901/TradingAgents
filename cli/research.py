@@ -77,7 +77,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--ticker", required=True, help="US-listed ticker symbol, e.g. NVDA.")
     p.add_argument("--date", required=True, help="Trade date YYYY-MM-DD (historical).")
-    p.add_argument("--output-dir", required=True, help="Directory to write report files into.")
+    p.add_argument(
+        "--output-dir", default=None,
+        help=(
+            "Directory to write report files into. Optional — when omitted, "
+            "the run is written to its working-copy (preaudit) location under "
+            "TK Research: ~/Documents/TK Research/preaudit/<date>-<ticker>. "
+            "The 'final' folder is populated only by manually promoting a run "
+            "(moving preaudit/<run> → final/<run>); the pipeline never writes "
+            "to final. Pass an explicit dir to override entirely."
+        ),
+    )
 
     p.add_argument(
         "--deep", default="claude-opus-4-7",
@@ -191,6 +201,22 @@ def build_parser() -> argparse.ArgumentParser:
 _FOREGROUND_ENV = "TRADINGRESEARCH_FOREGROUND"
 
 
+def _tk_research_base() -> Path:
+    """Base directory for TK Research runs, resolved on the host that runs
+    the binary. On macmini-trueknot this is
+    /Users/trueknot/Documents/TK Research. Working copies go under
+    `preaudit/`; promoted A+ reports live under `final/`."""
+    return Path.home() / "Documents" / "TK Research"
+
+
+def _default_output_dir(ticker: str, date: str) -> str:
+    """Default run dir when --output-dir is omitted: the working-copy
+    (preaudit) location under TK Research. The pipeline only ever writes the
+    preaudit copy — `final/<date>-<ticker>` is created by manual promotion
+    (operator or OpenClaw agent moving the run), never by the pipeline."""
+    return str(_tk_research_base() / "preaudit" / f"{date}-{ticker}")
+
+
 def _build_config(args: argparse.Namespace) -> dict:
     config = DEFAULT_CONFIG.copy()
     config["llm_provider"] = "claude_code"
@@ -287,6 +313,13 @@ def _safe_notify_failure(
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # No --output-dir → default to the TK Research working-copy (preaudit)
+    # location. Computed here (not as an argparse default) because it depends
+    # on --ticker/--date, and must be set before the daemonize log-path and
+    # auto-resolve-date logic below both read args.output_dir.
+    if not args.output_dir:
+        args.output_dir = _default_output_dir(args.ticker, args.date)
 
     # Self-daemonize by default. We can't trust callers (especially the
     # OpenClaw trader agent's synth-bash) to wrap us in nohup/&/Popen

@@ -47,7 +47,55 @@ def test_missing_required_arg_exits():
 
     parser = build_parser()
     with pytest.raises(SystemExit):
-        parser.parse_args(["--ticker", "NVDA"])  # missing --date and --output-dir
+        parser.parse_args(["--ticker", "NVDA"])  # missing --date (still required)
+
+
+def test_output_dir_optional_parses_to_none():
+    """--output-dir is no longer required. When omitted, the parser leaves
+    output_dir=None and main() fills in the TK Research working-copy default."""
+    from cli.research import build_parser
+
+    parser = build_parser()
+    ns = parser.parse_args(["--ticker", "NVDA", "--date", "2024-05-10"])
+    assert ns.output_dir is None
+
+
+def test_default_output_dir_is_tk_research_preaudit(monkeypatch, tmp_path):
+    """No --output-dir → working copy lands in <base>/preaudit/<date>-<ticker>.
+    On macmini-trueknot <base> resolves to /Users/trueknot/Documents/TK Research.
+    'final/' is populated only by manual promotion; the pipeline never writes it."""
+    import cli.research as research
+
+    monkeypatch.setattr(research, "_tk_research_base", lambda: tmp_path / "TK Research")
+    got = research._default_output_dir("NVDA", "2024-05-10")
+    assert got == str(tmp_path / "TK Research" / "preaudit" / "2024-05-10-NVDA")
+
+
+def test_main_writes_to_tk_research_preaudit_when_no_output_dir(tmp_path, monkeypatch, capsys):
+    """End-to-end: omitting --output-dir routes the full run into the
+    preaudit working-copy folder under TK Research."""
+    import cli.research as research
+
+    class FakeGraph:
+        def __init__(self, debug, config): pass
+        def propagate(self, t, d): return _stub_state(t, d), "BUY"
+
+    monkeypatch.setattr(research, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(research, "_tk_research_base", lambda: tmp_path / "TK Research")
+    # Don't auto-adjust (avoids a live yfinance call inside the test).
+    rc = research.main([
+        "--ticker", "NVDA", "--date", "2024-05-10", "--no-auto-adjust-date",
+    ])
+    assert rc == 0
+
+    expected = tmp_path / "TK Research" / "preaudit" / "2024-05-10-NVDA"
+    assert (expected / "decision.md").exists()
+    assert (expected / "state.json").exists()
+    # The pipeline must NOT create final/ on its own.
+    assert not (tmp_path / "TK Research" / "final").exists()
+
+    payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert payload["output_dir"] == str(expected)
 
 
 def test_main_runs_graph_writes_files_prints_json(tmp_path, monkeypatch, capsys):
