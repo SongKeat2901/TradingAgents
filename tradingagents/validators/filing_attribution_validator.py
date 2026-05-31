@@ -113,8 +113,18 @@ def strip_note_citations_in_run(run_dir) -> dict:
     sec_text = sec.read_text(encoding="utf-8") if sec.exists() else None
     total = 0
     files_changed = []
+    # Cover every report file the validator scans AND the PDF renders — a
+    # surviving "Note N" in an appendix (analyst/debate) file leaks to the
+    # customer PDF and trips the validator just the same.
+    _files = (
+        "decision.md", "decision_executive.md",
+        "debate_bull_bear.md", "debate_risk.md",
+        "analyst_market.md", "analyst_news.md",
+        "analyst_social.md", "analyst_fundamentals.md",
+        "raw/technicals.md", "raw/technicals_v2.md",
+    )
     if filing_is_xbrl_stub(sec_text):
-        for fname in ("decision.md", "decision_executive.md"):
+        for fname in _files:
             fp = run / fname
             if not fp.exists():
                 continue
