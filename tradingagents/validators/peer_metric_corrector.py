@@ -81,6 +81,146 @@ def _claimed_render(field: str, claimed: float, kind: str, glyph: str) -> str | 
     return _format_authoritative(field, claimed, kind, glyph)
 
 
+# Header phrase (normalised) → peer_ratios field, for markdown-table columns.
+# Reuses the validator's prose phrase map plus a few table-only header spellings.
+_HEADER_FIELD_ALIASES: dict[str, str] = {
+    **_VERIFIABLE_METRICS,
+    "fwd pe": "forward_pe",
+    "p/e fwd": "forward_pe",
+    "ttm pe": "ttm_pe",
+    "p/e ttm": "ttm_pe",
+    "capex/revenue": "latest_quarter_capex_to_revenue",
+    "capex / rev": "latest_quarter_capex_to_revenue",
+}
+
+
+def _split_table_row(line: str) -> list[str]:
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [c.strip() for c in s.split("|")]
+
+
+def _is_separator_row(line: str) -> bool:
+    s = line.strip()
+    return bool(s) and "-" in s and re.fullmatch(r"\|?[\s:|-]+\|?", s) is not None
+
+
+def _correct_table_cell(
+    cell: str, field: str, actual: float
+) -> tuple[str, str] | None:
+    """Return (new_cell, new_numeric_literal) if the cell's result value drifts
+    from `actual`, else None. Only ratio (Xx) and pct (X%) columns are handled;
+    a cell whose unit doesn't match the column's expected shape is left alone."""
+    if field in _RATIO_FIELDS and "x" not in cell.lower() and "×" not in cell:
+        return None
+    if field in _PCT_FIELDS and "%" not in cell:
+        return None
+    if field not in _RATIO_FIELDS and field not in _PCT_FIELDS:
+        return None  # $ columns not auto-corrected in tables (rare, messy)
+
+    # The "result" value is whatever follows the last "=" (cells may show an
+    # inline computation "A / B = 36.12%"); otherwise the whole cell.
+    if "=" in cell:
+        head, _, tail = cell.rpartition("=")
+    else:
+        head, tail = None, cell
+    m = re.search(r"-?\d[\d,]*(?:\.\d+)?", tail)
+    if not m:
+        return None
+    old_lit = m.group()
+    try:
+        claimed = float(old_lit.replace(",", ""))
+    except ValueError:
+        return None
+    if round(claimed, 2) == round(float(actual), 2):
+        return None  # already verbatim
+    new_lit = f"{float(actual):.2f}"
+    new_tail = tail[: m.start()] + new_lit + tail[m.end():]
+    new_cell = (head + "=" + new_tail) if head is not None else new_tail
+    return new_cell, new_lit
+
+
+def _correct_markdown_tables(
+    text: str, peer_ratios: dict, peer_tickers: set[str]
+) -> tuple[str, list[PeerMetricCorrection]]:
+    """Snap peer-metric columns in markdown tables to peer_ratios.json cells.
+
+    Detects header+separator+data-row blocks, maps headers to peer_ratios
+    fields, finds the ticker column, and corrects each peer row's metric cells.
+    """
+    lines = text.split("\n")
+    corrections: list[PeerMetricCorrection] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        if not line.strip().startswith("|") or i + 1 >= n or not _is_separator_row(lines[i + 1]):
+            i += 1
+            continue
+        headers = _split_table_row(line)
+        col_field: dict[int, str] = {}
+        ticker_col = None
+        for idx, h in enumerate(headers):
+            hn = _normalise_metric(h)
+            if hn in ("peer", "ticker", "company", "name", "peers"):
+                ticker_col = idx
+            f = _HEADER_FIELD_ALIASES.get(hn)
+            if f:
+                col_field[idx] = f
+        if not col_field:
+            i += 1
+            continue
+        # Walk data rows until the table ends.
+        j = i + 2
+        while j < n and lines[j].strip().startswith("|"):
+            cells = _split_table_row(lines[j])
+            # Resolve the ticker for this row: declared ticker col, else any
+            # cell that is a known peer.
+            row_ticker = None
+            if ticker_col is not None and ticker_col < len(cells):
+                cand = re.sub(r"[^A-Za-z]", "", cells[ticker_col]).upper()
+                if cand in peer_tickers:
+                    row_ticker = cand
+            if row_ticker is None:
+                for c in cells:
+                    cand = re.sub(r"[^A-Za-z]", "", c).upper()
+                    if cand in peer_tickers:
+                        row_ticker = cand
+                        break
+            ratios_cell = peer_ratios.get(row_ticker) if row_ticker else None
+            if not isinstance(ratios_cell, dict) or ratios_cell.get("unavailable"):
+                j += 1
+                continue
+            changed = False
+            for idx, field in col_field.items():
+                if idx >= len(cells):
+                    continue
+                actual = ratios_cell.get(field)
+                if actual is None:
+                    continue
+                res = _correct_table_cell(cells[idx], field, actual)
+                if res is None:
+                    continue
+                new_cell, new_lit = res
+                corrections.append(PeerMetricCorrection(
+                    file="", line_no=j + 1, ticker=row_ticker, metric=headers[idx],
+                    old_value=cells[idx], new_value=new_cell,
+                ))
+                cells[idx] = new_cell
+                changed = True
+            if changed:
+                indent = line[: len(line) - len(line.lstrip())]
+                # Preserve the data row's own indent, not the header's.
+                row_indent = lines[j][: len(lines[j]) - len(lines[j].lstrip())]
+                lines[j] = row_indent + "| " + " | ".join(cells) + " |"
+            j += 1
+        i = j
+    return "\n".join(lines), corrections
+
+
 def correct_peer_metrics_text(
     text: str,
     peer_ratios: dict,
@@ -89,13 +229,16 @@ def correct_peer_metrics_text(
 ) -> tuple[str, list[PeerMetricCorrection]]:
     """Snap verifiable peer-metric values in `text` to peer_ratios.json cells.
 
-    Returns (corrected_text, corrections). Only corrects when: the metric maps
-    to a peer_ratios.json column, the bound ticker is a peer (not the subject)
-    with a populated cell, the cited value parses to the column's expected unit
-    shape, and the rendered value actually differs from the authoritative one.
+    Two passes: markdown-table columns first (where the dense P/E fabrications
+    live), then prose "<TICKER> <METRIC> <value>" claims. Only corrects when the
+    bound ticker is a peer (not the subject) with a populated cell, the value
+    parses to the column's expected unit shape, and the rendered value actually
+    differs from the authoritative one.
     """
     if not text or not peer_tickers or not peer_ratios:
         return text, []
+
+    text, table_corrections = _correct_markdown_tables(text, peer_ratios, peer_tickers)
 
     edits: list[tuple[int, int, str, PeerMetricCorrection]] = []
     for (ticker, metric_raw, value_raw, line_no, _match, vstart, vend) in (
@@ -140,17 +283,17 @@ def correct_peer_metrics_text(
         ))
 
     if not edits:
-        return text, []
+        return text, table_corrections
 
     # Apply in descending start offset so earlier spans stay valid.
     edits.sort(key=lambda e: e[0], reverse=True)
     out = text
-    corrections: list[PeerMetricCorrection] = []
+    prose_corrections: list[PeerMetricCorrection] = []
     for vstart, vend, new_full, corr in edits:
         out = out[:vstart] + new_full + out[vend:]
-        corrections.append(corr)
-    corrections.reverse()  # restore document order
-    return out, corrections
+        prose_corrections.append(corr)
+    prose_corrections.reverse()  # restore document order
+    return out, table_corrections + prose_corrections
 
 
 def correct_peer_metrics_in_run(run_dir: str | Path) -> dict:

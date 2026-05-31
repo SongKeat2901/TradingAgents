@@ -29,16 +29,25 @@ _RATIOS = {
         "nd_ebitda": None,
     },
     "AMZN": {
-        "forward_pe": 31.65,
+        "forward_pe": 27.04,
         "ttm_pe": 27.44,
-        "latest_quarter_op_margin": -37.83,  # contrived sign-flip target
+        "latest_quarter_op_margin": 13.14,
         "latest_quarter_capex_to_revenue": 24.35,
         "net_debt": 54000000000,
         "ttm_ebitda": 130000000000,
         "nd_ebitda": 0.42,
     },
+    "RIOT": {  # negative-margin peer, for the sign-flip case
+        "forward_pe": None,
+        "ttm_pe": None,
+        "latest_quarter_op_margin": -37.83,
+        "latest_quarter_capex_to_revenue": None,
+        "net_debt": None,
+        "ttm_ebitda": None,
+        "nd_ebitda": None,
+    },
 }
-_PEERS = {"GOOGL", "AMZN"}
+_PEERS = {"GOOGL", "AMZN", "RIOT"}
 
 
 def _correct(text, main="MSFT"):
@@ -73,7 +82,7 @@ def test_markdown_bold_around_value_is_preserved():
 
 
 def test_op_margin_sign_flip_corrected():
-    text = "AMZN op margin 5.0% looks healthy."
+    text = "RIOT op margin 5.0% looks healthy."
     out, corrections = _correct(text)
     assert "-37.8%" in out
     assert "5.0%" not in out
@@ -99,6 +108,35 @@ def test_unavailable_peer_field_is_not_corrected():
     out, corrections = _correct(text)
     assert out == text
     assert corrections == []
+
+
+def test_markdown_table_forward_pe_column_corrected():
+    text = (
+        "| Peer | Capex/Rev | Op Margin | Fwd P/E |\n"
+        "|---|---:|---:|---:|\n"
+        "| GOOGL | 32.46% | 36.12% | **30.57x** |\n"
+        "| AMZN | 24.35% | 13.14% | 27.47x |\n"
+    )
+    out, corrections = _correct(text)
+    assert "**29.59x**" in out, out          # GOOGL forward_pe 30.57 -> 29.59
+    assert "27.04x" in out                    # AMZN 27.47 -> 27.04
+    assert "30.57x" not in out and "27.47x" not in out
+    # Correct op-margin / capex columns left untouched.
+    assert "36.12%" in out and "32.46%" in out and "13.14%" in out
+    assert len(corrections) == 2
+
+
+def test_markdown_table_with_inline_computation_only_fixes_result():
+    # Op-margin cell shows "A / B = X%"; if the result is wrong, only the
+    # result is corrected (operands preserved).
+    text = (
+        "| Peer | Op Margin |\n"
+        "|---|---|\n"
+        "| AMZN | 23,852 / 181,519 = 99.99% |\n"
+    )
+    out, corrections = _correct(text)
+    assert "23,852 / 181,519 = 13.14%" in out  # AMZN op margin in _RATIOS
+    assert len(corrections) == 1
 
 
 def test_correct_peer_metrics_in_run_rewrites_files_and_logs(tmp_path):
