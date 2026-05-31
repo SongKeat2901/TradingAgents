@@ -1,5 +1,11 @@
 # Goal: tune the whole stack so the researcher produces A+ reports natively
 
+## ✅ COMPLETE (2026-05-31) — all 15 fresh tickers A+, registered, failed runs removed.
+Stack: P1 PDF leak-scrub + cover wording, P2 peer-metric corrector (table+prose),
+P3 filing-attribution validator + note-stripper. All deployed (HEAD 434834d+).
+final/ = 15 A+ reports; REGISTER.md = 15 rows; preaudit empty; 0 stray runs.
+
+
 Set 2026-05-31. Driving condition (session goal / Stop hook):
 > researcher tuned for accurate data — no falsified/hallucinated data, no missing
 > data, correct cover-page wording, customer-facing report with no leaked agent
