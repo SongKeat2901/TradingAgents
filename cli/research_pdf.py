@@ -630,6 +630,7 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r"\bdeterministic (?:peer-ratios |net-debt |volume-profile |)block\b", "the verified dataset"),
     # Internal v1/v2 pass labels.
     (r"\bTA Agent v2\b", "Technical analysis"),
+    (r"\b(?:the\s+)?TA Agent(?:'s)?\b", "the technical analysis"),
     (r"\bTA v2\b", "Technical analysis"),
     (r"\bTA v1\b", "Technical analysis (first pass)"),
     (r" — v2 Report\b", ""),
