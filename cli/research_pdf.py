@@ -415,12 +415,13 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="decision-badge">{decision_short}</div>
     <div class="meta">
         Generated {generated_at} SGT<br>
-        Multi-agent research pipeline · {model_label}
+        TrueKnot Equity Research
     </div>
     <div class="disclaimer">
-        This document is research output from a simulated multi-agent decision pipeline.
-        It is for educational and research purposes only and does not constitute financial,
-        investment, or trading advice. Past data does not guarantee future results.
+        This document is equity research prepared by TrueKnot for informational purposes
+        only and does not constitute financial, investment, or trading advice, nor an offer
+        or solicitation to buy or sell any security. It may not be relied upon as the basis
+        for any investment decision. Past performance does not guarantee future results.
     </div>
     <div class="cover-corporate-footer">
         <span>TrueKnot Pte. Ltd. &nbsp;·&nbsp; UEN 202608241M</span>
@@ -602,6 +603,25 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r"raw/pm_brief\.md", "the setup brief"),
     (r"\bpm_brief\.md\b", "the setup brief"),
     (r"\bpeer_ratios\.json\b", "the peer-ratios dataset"),
+    # Generic catch-all for any other raw/<file>.{json,md}. MUST run before the
+    # bare-filename mappings below — otherwise a bare rule strips the filename
+    # and orphans the "raw/" prefix. (Specific friendly raw/ names above still
+    # win because they appear earlier in this list.)
+    (r"raw/[A-Za-z0-9_]+\.(?:json|md)", "internal data"),
+    # Remaining bare internal data filenames (cited without the raw/ prefix).
+    (r"\bforward_probabilities\.json\b", "the scenario dataset"),
+    (r"\bnet_debt\.json\b", "the balance-sheet dataset"),
+    (r"\bvolume_profile\.json\b", "the volume-profile dataset"),
+    (r"\blatest_session\.json\b", "the price snapshot"),
+    (r"\bclassification\.json\b", "the technical classifier output"),
+    (r"\breference\.json\b", "the reference snapshot"),
+    (r"\bfinancials\.json\b", "the financials dataset"),
+    (r"\bpeers\.json\b", "the peer dataset"),
+    (r"\bcalendar\.json\b", "the earnings calendar"),
+    (r"\bsec_filing\.md\b", "the 10-Q text"),
+    # Internal QC rule references (in addition to the Item NN patterns below).
+    (r"\bRule 16[a-c]?\b", "the numerical-trace check"),
+    (r"\bdeterministic (?:peer-ratios |net-debt |volume-profile |)block\b", "the verified dataset"),
     # Internal v1/v2 pass labels.
     (r"\bTA Agent v2\b", "Technical analysis"),
     (r"\bTA v2\b", "Technical analysis"),
@@ -902,7 +922,7 @@ def build_research_pdf(
     # pre-date Phase 6.7. Working notes always rendered as Appendix G.
     if decision_executive_md_path.exists():
         decision_html = render_md_polished("decision_executive.md")
-        decision_working_notes_html = render_md("decision.md")
+        decision_working_notes_html = render_md_polished("decision.md")
     else:
         decision_html = render_md_polished("decision.md")
         decision_working_notes_html = (
@@ -923,12 +943,12 @@ def build_research_pdf(
         technicals_html=technicals_html,
         decision_html=decision_html,
         decision_working_notes_html=decision_working_notes_html,
-        debate_risk_html=render_md("debate_risk.md"),
-        debate_bull_bear_html=render_md("debate_bull_bear.md"),
-        analyst_market_html=render_md("analyst_market.md"),
-        analyst_fundamentals_html=render_md("analyst_fundamentals.md"),
-        analyst_news_html=render_md("analyst_news.md"),
-        analyst_social_html=render_md("analyst_social.md"),
+        debate_risk_html=render_md_polished("debate_risk.md"),
+        debate_bull_bear_html=render_md_polished("debate_bull_bear.md"),
+        analyst_market_html=render_md_polished("analyst_market.md"),
+        analyst_fundamentals_html=render_md_polished("analyst_fundamentals.md"),
+        analyst_news_html=render_md_polished("analyst_news.md"),
+        analyst_social_html=render_md_polished("analyst_social.md"),
     )
 
     pdf_path = out / f"research-{date}-{ticker}.pdf"
