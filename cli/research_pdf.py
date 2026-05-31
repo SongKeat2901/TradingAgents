@@ -619,6 +619,12 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r"\bpeers\.json\b", "the peer dataset"),
     (r"\bcalendar\.json\b", "the earnings calendar"),
     (r"\bsec_filing\.md\b", "the 10-Q text"),
+    # Bare "pm_brief" (no .md) — "per pm_brief peer table", "the pm_brief's framing".
+    (r"\bpm_brief\b", "the setup brief"),
+    # General bare <name>.json catch-all (news.json, insider.json, social.json,
+    # prices.json, indicators.json, ...). MUST follow the friendly-named bare
+    # mappings above so those win; this mops up the rest.
+    (r"\b[A-Za-z_][A-Za-z0-9_]*\.json\b", "internal data"),
     # Internal QC rule references (in addition to the Item NN patterns below).
     (r"\bRule 16[a-c]?\b", "the numerical-trace check"),
     (r"\bdeterministic (?:peer-ratios |net-debt |volume-profile |)block\b", "the verified dataset"),

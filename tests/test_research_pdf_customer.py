@@ -50,6 +50,11 @@ def test_clean_agentic_vocabulary_scrubs_bare_internal_filenames():
     assert "net_debt.json" not in scrub("computed in net_debt.json")
     assert "peers.json" not in scrub("the peers.json cell shows 24x")
     assert "forward_probabilities.json" not in scrub("from forward_probabilities.json")
+    # Bare pm_brief (no .md) and any other <name>.json must also be scrubbed.
+    assert "pm_brief" not in scrub("per pm_brief peer table the margin is 40.6%")
+    assert "pm_brief" not in scrub("reinforcing the pm_brief's framing")
+    assert "news.json" not in scrub("sourced from news.json items")
+    assert ".json" not in scrub("see insider.json and social.json")
 
 
 def test_clean_agentic_vocabulary_scrubs_internal_qc_rule_refs():
