@@ -38,6 +38,14 @@ _RATIO_FIELDS = {"ttm_pe", "forward_pe", "nd_ebitda"}
 _PCT_FIELDS = {"latest_quarter_op_margin", "latest_quarter_capex_to_revenue"}
 _DOLLAR_FIELDS = {"net_debt", "ttm_ebitda"}
 
+# Only ratios and percentages are auto-corrected. The $ magnitudes
+# (net_debt / ttm_ebitda) are deliberately EXCLUDED: they were not the
+# fabrication vector (the 2026-05-31 audit found P/E inflation, not $-cell
+# drift), they carry inline arithmetic + markdown bold that reformatting
+# would damage, and unit handling ($B vs $M, sign placement) is finicky.
+# Touching them only risked cosmetic regressions on otherwise-clean reports.
+_CORRECTABLE_FIELDS = _RATIO_FIELDS | _PCT_FIELDS
+
 # Files the corrector rewrites in a run dir. Order is stable for the log.
 _TARGET_FILES = ("decision.md", "decision_executive.md")
 
@@ -245,7 +253,7 @@ def correct_peer_metrics_text(
         iter_peer_metric_spans(text, peer_tickers, main_ticker=main_ticker)
     ):
         field = _VERIFIABLE_METRICS.get(_normalise_metric(metric_raw))
-        if not field:
+        if not field or field not in _CORRECTABLE_FIELDS:
             continue
         cell = peer_ratios.get(ticker)
         if not isinstance(cell, dict) or cell.get("unavailable"):

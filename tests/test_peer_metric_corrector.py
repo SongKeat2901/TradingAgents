@@ -103,6 +103,20 @@ def test_subject_ticker_metrics_are_not_touched():
     assert corrections == []
 
 
+def test_dollar_magnitude_fields_are_never_corrected():
+    # net_debt / ttm_ebitda ($ magnitudes) must be left ENTIRELY alone — even
+    # a correct value must not be reformatted (the bug that stripped bold and
+    # turned "−$745M" into "$-745M" on the A+ MSTR/SOUN runs).
+    for text in (
+        "GOOGL Net Debt **−$36.36B** in the table.",   # matches actual, bold
+        "AMZN TTM EBITDA $130B is large.",              # matches actual
+        "GOOGL Net Debt $1.90B looks wrong.",           # does NOT match actual
+    ):
+        out, corrections = _correct(text)
+        assert out == text, out
+        assert corrections == []
+
+
 def test_unavailable_peer_field_is_not_corrected():
     text = "GOOGL ND/EBITDA 9.9x cited."  # nd_ebitda is None in _RATIOS
     out, corrections = _correct(text)
