@@ -47,7 +47,7 @@ ssh macmini-trueknot 'until ! pgrep -f "tradingresearch --ticker <T>" >/dev/null
 ## Architecture (HEAD bcf4301, Phase 6.6)
 
 ```
-PM Pre-flight (Opus 4.7 / CLI) — appends calendar block + SEC filing footer to pm_brief.md
+PM Pre-flight (Opus 4.8 / CLI) — appends calendar block + SEC filing footer to pm_brief.md
   → Researcher (Python, deterministic data + classifier + peer-ratios block)
   → TA v1 → 4 analysts → TA v2 → Bull/Bear → RM → Trader → Risk team → PM → QC
   → write_research_outputs → research_pdf (TrueKnot-branded)
@@ -65,7 +65,7 @@ can't paraphrase. See memory: `project_phase6_deterministic_blocks_pattern.md`.
 
 | File | Role |
 |---|---|
-| `cli/research.py` | Main CLI entry; default `--deep claude-opus-4-7`, `--quick claude-sonnet-4-6` |
+| `cli/research.py` | Main CLI entry; default `--deep claude-opus-4-8`, `--quick claude-sonnet-4-6` |
 | `cli/research_pdf.py` | TrueKnot-branded PDF generator (executive summary + appendix + vocab cleanup) |
 | `cli/research_writer.py` | Writes per-run markdown + state.json with `_meta` block |
 | `tradingagents/graph/trading_graph.py` | Graph wiring (`deep_via_cli`/`quick_via_cli` routing) |

@@ -30,7 +30,8 @@ MODEL_OPTIONS: ProviderModeOptions = {
             ("Claude Sonnet 4.5 - Agents and coding", "claude-sonnet-4-5"),
         ],
         "deep": [
-            ("Claude Opus 4.7 - Latest frontier, 1M context", "claude-opus-4-7"),
+            ("Claude Opus 4.8 - Latest frontier, 1M context", "claude-opus-4-8"),
+            ("Claude Opus 4.7 - Prior frontier, 1M context", "claude-opus-4-7"),
             ("Claude Opus 4.6 - Most intelligent, agents and coding", "claude-opus-4-6"),
             ("Claude Opus 4.5 - Premium, max intelligence", "claude-opus-4-5"),
             ("Claude Sonnet 4.6 - Best speed and intelligence balance", "claude-sonnet-4-6"),
@@ -44,7 +45,8 @@ MODEL_OPTIONS: ProviderModeOptions = {
             ("Claude Haiku 4.5 - Fastest, cheapest on subscription quota", "claude-haiku-4-5"),
         ],
         "deep": [
-            ("Claude Opus 4.7 - Latest frontier, 1M context", "claude-opus-4-7"),
+            ("Claude Opus 4.8 - Latest frontier, 1M context", "claude-opus-4-8"),
+            ("Claude Opus 4.7 - Prior frontier, 1M context", "claude-opus-4-7"),
             ("Claude Sonnet 4.6 - Recommended on subscription quota", "claude-sonnet-4-6"),
             ("Claude Opus 4.6 - Prior frontier, burns quota fast", "claude-opus-4-6"),
             ("Claude Sonnet 4.5 - Agents and coding", "claude-sonnet-4-5"),

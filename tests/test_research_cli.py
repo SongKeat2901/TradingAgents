@@ -143,7 +143,7 @@ def test_main_runs_graph_writes_files_prints_json(tmp_path, monkeypatch, capsys)
 
     # Config flowed through
     assert captured_config["llm_provider"] == "claude_code"
-    assert captured_config["deep_think_llm"] == "claude-opus-4-7"
+    assert captured_config["deep_think_llm"] == "claude-opus-4-8"
 
     captured = capsys.readouterr().out.strip().splitlines()
 
@@ -483,13 +483,13 @@ def test_deep_cooldown_default(tmp_path):
 
 
 def test_deep_default_is_opus(tmp_path):
-    """Opus 4.7 is the latest-frontier default deep model (2026-05-05); CLI
-    subprocess path can run it without 429s. Bumped from 4.6 per user."""
+    """Opus 4.8 is the latest-frontier default deep model (2026-06-01); CLI
+    subprocess path runs it without 429s. Bumped 4.6 → 4.7 → 4.8 per user."""
     from cli.research import build_parser
     parser = build_parser()
     ns = parser.parse_args(["--ticker", "X", "--date", "2024-01-01",
                             "--output-dir", str(tmp_path)])
-    assert ns.deep == "claude-opus-4-7"
+    assert ns.deep == "claude-opus-4-8"
 
 
 def test_graph_skips_rate_limiter_when_pacing_zero(tmp_path, monkeypatch):
