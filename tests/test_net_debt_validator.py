@@ -864,3 +864,13 @@ def test_net_debt_raise_flow_not_flagged():
     from tradingagents.validators.net_debt_validator import extract_net_debt_claims
     claims = extract_net_debt_claims("Q1 saw a $29.9B net debt raise to fund capex.")
     assert claims == [], [c.value_raw for c in claims]
+
+
+def test_ebitda_denominator_after_division_glyph_not_bound():
+    """Phase 9: '$96.15B net debt ÷ $27.44B TTM EBITDA' must not bind the
+    EBITDA denominator to 'net debt' (÷/× are ratio operators like /)."""
+    from tradingagents.validators.net_debt_validator import extract_net_debt_claims
+    c = extract_net_debt_claims("Leverage: $96.15B net debt ÷ $27.44B TTM EBITDA = 3.50x.")
+    assert all(x.value_raw != "$27.44B" for x in c), [(x.value_raw, x.label) for x in c]
+    c2 = extract_net_debt_claims("$5.0B net debt × 2 ignored $99.9B EBITDA")
+    assert all(x.value_raw != "$99.9B" for x in c2)

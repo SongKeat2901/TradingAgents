@@ -99,7 +99,7 @@ class NetDebtViolation:
 # with "Net Debt" from the citation. Symmetric with `_PATTERN_LABEL_FIRST`.
 _PATTERN_VALUE_FIRST = re.compile(
     r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?"
-    r"(?P<bridge>[^\n.;|/]{0,30}?)"
+    r"(?P<bridge>[^\n.;|/÷×]{0,30}?)"
     r"\s+(?P<label>net\s+(?:cash|debt))",
     re.IGNORECASE,
 )
@@ -130,7 +130,7 @@ _PATTERN_LABEL_FIRST = re.compile(
     # change/swing) post-match. "net debt *increase* of $2.92B" matches
     # the regex; the bridge capture lets us recognize $2.92B as a delta
     # amount, not a position magnitude.
-    r"(?P<bridge>[^\n.;|/]{0,20}?)"
+    r"(?P<bridge>[^\n.;|/÷×]{0,20}?)"
     # Phase 7.12 v2 (MSFT 2026-05-21 fix): optionally consume an inline
     # subtraction prefix `$A − $B =` so the captured value is the
     # derivation RESULT, not the minuend. Same root cause as the
