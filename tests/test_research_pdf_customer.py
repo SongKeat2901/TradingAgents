@@ -88,3 +88,10 @@ def test_appendix_sections_are_polished_not_verbatim(tmp_path, monkeypatch):
         )
     # PM working notes (decision.md as appendix) must also be polished.
     assert 'render_md_polished("decision.md")' in src
+
+
+def test_residual_raw_paths_fully_scrubbed():
+    from cli.research_pdf import _clean_agentic_vocabulary as scrub
+    # no-extension, unmapped-name, and trailing forms all leave no "raw/"
+    assert "raw/" not in scrub("intrinsic value model (raw/intrinsic_value DCF)")
+    assert "raw/" not in scrub("see raw/something_unmapped and raw/peers.json")

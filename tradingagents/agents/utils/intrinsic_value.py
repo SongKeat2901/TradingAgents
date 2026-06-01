@@ -358,7 +358,7 @@ def _pct(v):
 
 def format_intrinsic_value_block(iv: dict) -> str:
     td = iv.get("trade_date", "?")
-    head = f"\n\n## Intrinsic value (computed from raw/ data, trade_date {td})\n\n"
+    head = f"\n\n## Intrinsic value (computed from fundamentals & balance-sheet data, trade_date {td})\n\n"
     inp = iv["inputs"]
     fv = iv["fair_value"]
     recon = iv["reconciliation"]

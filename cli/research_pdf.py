@@ -609,6 +609,9 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     # and orphans the "raw/" prefix. (Specific friendly raw/ names above still
     # win because they appear earlier in this list.)
     (r"raw/[A-Za-z0-9_]+\.(?:json|md)", "internal data"),
+    # Final catch-all for any residual raw/<token> (no extension, space, or an
+    # unmapped name) — must stay AFTER the friendly + .json/.md mappings so those win.
+    (r"\braw/[\w.\-]*", "internal data"),
     # Remaining bare internal data filenames (cited without the raw/ prefix).
     (r"\bforward_probabilities\.json\b", "the scenario dataset"),
     (r"\bintrinsic_value\.json\b", "the valuation dataset"),
