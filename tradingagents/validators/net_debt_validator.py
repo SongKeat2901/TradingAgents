@@ -184,6 +184,9 @@ _DELTA_COMPARATORS_RE = re.compile(
     r"|over|under"
     r"|sequentially|year[-\s]?over[-\s]?year|quarter[-\s]?over[-\s]?quarter"
     r"|YoY|QoQ"
+    # Phase 9: debt-flow words trailing the label ("net debt raise/issuance")
+    # mean the value is a financing cash flow, not a net-debt position.
+    r"|raise|raised|issuance|issued|repaid|repayment|drawdown|drawn|borrowing"
     r")\b"
     r"|^[\-––]\s*\d",   # range endpoint: `$5–6B`, `$5-6B`
     re.IGNORECASE,
@@ -204,7 +207,11 @@ _DELTA_COMPARATORS_RE = re.compile(
 # legitimate claims like "net debt and EBITDA are both stable at $X".
 _DELTA_BRIDGE_RE = re.compile(
     # Stems (no closing \b — match "increase/increased/increasing" etc.)
-    r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen)"
+    # Phase 9 (GOOGL 2026-05-26 fix): debt-flow words (raise/raised, issuance/
+    # issued, repaid/repayment, drawn) mean the value is a financing CASH FLOW
+    # (e.g. "$29.9B net debt raise" = Q1 debt issuance), not a net-debt position.
+    r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen"
+    r"|rais|issu|repaid|repay|repaym|drawn|drew|borrow)"
     # Full words (require closing \b)
     r"|\b(?:higher|lower|above|below|more|less|over|under|plus)\b"
     # Bare additive operator (with whitespace either side)
@@ -322,6 +329,19 @@ def _build_canonical_derivations(net_debt: dict) -> list[tuple[str, float]]:
     # Cash + STI alone (ditto, framed as net-cash position)
     if cash_sti:
         candidates.append(("Cash + STI", cash_sti))
+
+    # Component cells: a value matching a raw balance-sheet component (Cash,
+    # STI, LTD, CD, capital leases) is a TRACEABLE figure cited inside a
+    # reconciliation near a "net debt"/"net cash" label — not a fabricated
+    # net-position claim. Accepting them kills the recurring false positives
+    # where the validator paired a component cell with a nearby label (INTC
+    # 2026-05-29: Cash $17.25B / STI $15.54B beside "Net Debt of $27.78B").
+    sti = (cash_sti - cash) if (cash_sti and cash and cash_sti != cash) else 0.0
+    for lbl, val in (("Cash component", cash), ("STI component", sti),
+                     ("Long-Term Debt component", ltd), ("Current Debt component", cd),
+                     ("Capital-lease component", cl)):
+        if val:
+            candidates.append((lbl, abs(val)))
 
     return candidates
 

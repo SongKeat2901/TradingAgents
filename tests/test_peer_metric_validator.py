@@ -749,3 +749,18 @@ def test_value_parser_handles_common_formats():
     assert _parse_value("-37.83%")[0] == -37.83
     # Unparseable
     assert _parse_value("low single-digit")[1] == "raw"
+
+
+def test_subject_net_debt_misbound_to_peer_skipped(tmp_path):
+    """Phase 9: the subject's own net debt ($27.78B) on a line citing a peer
+    (NVDA) must not be flagged as the peer's wrong net debt (INTC FP)."""
+    import json as _json
+    from tradingagents.validators.peer_metric_validator import validate_peer_metrics
+    pr = tmp_path / "peer_ratios.json"; pr.write_text(_json.dumps({"NVDA": {"net_debt": -68_220_000_000}}))
+    peers = tmp_path / "peers.json"; peers.write_text(_json.dumps({"NVDA": {}}))
+    text = "INTC Net Debt of $27.78B vs NVDA at ND/EBITDA -0.41x."
+    # without the subject figure → would mis-bind $27.78B to NVDA and flag
+    v_no = validate_peer_metrics(text, "decision.md", pr, peers, main_ticker="INTC")
+    v_yes = validate_peer_metrics(text, "decision.md", pr, peers, main_ticker="INTC",
+                                  subject_net_debt=27_780_000_000)
+    assert not any(x.metric.lower().strip() == "net debt" and x.ticker == "NVDA" for x in v_yes)

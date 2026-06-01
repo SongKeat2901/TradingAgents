@@ -407,6 +407,7 @@ def validate_peer_metrics(
     peer_ratios_path: Path,
     peers_path: Path,
     main_ticker: str | None = None,
+    subject_net_debt: float | None = None,
 ) -> list[PeerMetricViolation]:
     """Scan markdown text for peer-metric claims and verify against
     peer_ratios.json. Returns structured violations.
@@ -461,6 +462,13 @@ def validate_peer_metrics(
             # value's kind doesn't match the metric's expected unit shape.
             expected_kinds = _METRIC_EXPECTED_KINDS.get(verifiable_field, set())
             if expected_kinds and kind not in expected_kinds:
+                continue
+            # Phase 9 subject-figure guard: a $-magnitude net_debt value that
+            # matches the SUBJECT ticker's own net debt is the subject's figure
+            # mis-bound to a nearby peer ticker (INTC 2026-05-29: INTC's $27.78B
+            # net debt sat on a line citing NVDA). Skip — not a peer claim.
+            if (verifiable_field == "net_debt" and subject_net_debt is not None
+                    and _values_match(claimed_val, float(subject_net_debt), kind)):
                 continue
             if not _values_match(claimed_val, float(actual), kind):
                 violations.append(PeerMetricViolation(

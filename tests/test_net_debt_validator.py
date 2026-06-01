@@ -833,3 +833,34 @@ def test_to_dollars_handles_billions_and_millions():
     assert _to_dollars("78,272", "M") == 78_272_000_000.0
     assert _to_dollars("38.0", "B") == 38_000_000_000.0
     assert _to_dollars("not-a-number", "B") is None
+
+
+def test_component_cell_near_label_not_flagged(tmp_path):
+    """Phase 9: a Cash/STI component cell cited inside a reconciliation near a
+    'net debt' label must not be flagged as definitional_drift (INTC FP)."""
+    from tradingagents.validators.net_debt_validator import (
+        extract_net_debt_claims, validate_net_debt_claims,
+    )
+    import json as _json
+    nd = {"net_debt": 27_780_000_000, "total_debt": 45_030_000_000,
+          "cash_and_equivalents": 17_250_000_000,
+          "cash_plus_short_term_investments": 32_790_000_000,
+          "long_term_debt": 40_000_000_000, "current_debt": 5_030_000_000,
+          "capital_lease_obligations": 0}
+    p = tmp_path / "net_debt.json"; p.write_text(_json.dumps(nd))
+    # "$17.25B" (Cash) sits right before a "net cash" label in a reconciliation
+    text = "Net debt $27.78B; the $17.25B cash and $15.54B short-term investments net cash bridge."
+    claims = extract_net_debt_claims(text)
+    for c in claims:
+        c2 = type(c)(**{**c.__dict__, "file": "decision.md"})
+    claims = [type(c)(**{**c.__dict__, "file": "decision.md"}) for c in claims]
+    v = validate_net_debt_claims(claims, p)
+    mats = [x for x in v if x.severity == "MATERIAL"]
+    assert mats == [], [(x.claimed_value, x.match_text) for x in mats]
+
+
+def test_net_debt_raise_flow_not_flagged():
+    """Phase 9: '$29.9B net debt raise' is a debt issuance flow, not a position."""
+    from tradingagents.validators.net_debt_validator import extract_net_debt_claims
+    claims = extract_net_debt_claims("Q1 saw a $29.9B net debt raise to fund capex.")
+    assert claims == [], [c.value_raw for c in claims]

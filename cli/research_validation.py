@@ -98,6 +98,17 @@ def _collect_violations(
         if sec_filing_path.exists() else None
     )
 
+    # Subject's own net debt (raw $ magnitude) — lets the peer-metric validator
+    # skip a $-figure mis-bound to an adjacent peer ticker when it's really the
+    # subject's net debt (INTC 2026-05-29 false positive).
+    subject_net_debt = None
+    if net_debt_json.exists():
+        try:
+            _nd = json.loads(net_debt_json.read_text(encoding="utf-8")).get("net_debt")
+            subject_net_debt = abs(float(_nd)) if _nd is not None else None
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            subject_net_debt = None
+
     price_date_claims: list[DateCloseClaim] = []
     quote_claims: list[AttributedQuote] = []
     net_debt_claims: list[NetDebtClaim] = []
@@ -139,7 +150,7 @@ def _collect_violations(
         peer_violations.extend(
             validate_peer_metrics(
                 text, fname, peer_ratios_json, peers_json,
-                main_ticker=main_ticker,
+                main_ticker=main_ticker, subject_net_debt=subject_net_debt,
             )
         )
         filing_attribution_violations.extend(
