@@ -133,15 +133,16 @@ def dcf_value(fund: dict, wacc: float, near_g: float, term_g: float,
     return equity / shares
 
 
-def epv_value(fund: dict, wacc: float, net_debt: dict) -> float | None:
-    ebit = fund.get("ebit")
+def epv_value(fund: dict, cost_of_equity: float) -> float | None:
+    """Earnings Power Value of equity = TTM net income capitalised at the cost
+    of equity, no growth (the conservative floor). NI is TTM and post-interest,
+    so this is an equity-level value — no net-debt adjustment, no quarterly/TTM
+    mixing. Returns None if NI <= 0 or shares unknown."""
+    ni = fund.get("net_income")
     shares = fund.get("diluted_shares")
-    tax = fund.get("tax") if fund.get("tax") is not None else 0.21
-    if not ebit or ebit <= 0 or not shares or shares <= 0 or wacc <= 0:
+    if not ni or ni <= 0 or not shares or shares <= 0 or cost_of_equity <= 0:
         return None
-    ev = ebit * (1 - tax) / wacc
-    equity = ev - ((net_debt or {}).get("net_debt") or 0.0)
-    return equity / shares
+    return (ni / cost_of_equity) / shares
 
 
 def multiples_value(fund: dict, peer_ratios: dict, net_debt: dict) -> dict:
@@ -252,24 +253,39 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
     fair_value = {"bear": None, "base": None, "bull": None}
 
     if fx_caveat is None and profile == "STANDARD":
-        base = dcf_value(fund, wacc, near_g, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-        methods["epv"] = {"value": conv(epv_value(fund, wacc, net_debt))}
-        methods["multiples"] = {k: conv(v) for k, v in multiples_value(fund, peer_ratios, net_debt).items()}
-        if base is not None:
+        # Stable earnings anchors (consistent TTM): EPV floor + peer-multiple.
+        epv = conv(epv_value(fund, coe))
+        mult = conv(multiples_value(fund, peer_ratios, net_debt).get("pe_implied"))
+        methods["epv"] = {"value": epv}
+        methods["multiples"] = {"pe_implied": mult, "ev_ebitda_implied": None}
+
+        # DCF cash-flow cross-check. FCF is noisy across capex cycles, so it
+        # only feeds the fair-value base when it reasonably tracks earnings
+        # (FCF/NI ≥ 0.5 and > 0); otherwise it's shown but flagged-out.
+        dcf_base = dcf_value(fund, wacc, near_g, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
+        ni, fcf = fund.get("net_income"), fund.get("fcf")
+        fcf_quality = (fcf / ni) if (fcf and ni and ni > 0) else None
+        dcf_usable = dcf_base is not None and fcf_quality is not None and fcf_quality >= 0.5
+        if dcf_base is not None:
             bear = dcf_value(fund, wacc + DISCOUNT_DELTA, near_g - GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
             bull = dcf_value(fund, wacc - DISCOUNT_DELTA, near_g + GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-            methods["dcf"] = {"bear": conv(bear), "base": conv(base), "bull": conv(bull)}
-            rdg = reverse_dcf_growth(fund, wacc, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, price) if price else None
-            methods["reverse_dcf"] = {"implied_growth": rdg}
-            fair_value = {"bear": conv(bear), "base": conv(base), "bull": conv(bull)}
+            methods["dcf"] = {"bear": conv(bear), "base": conv(dcf_base), "bull": conv(bull),
+                              "fcf_to_ni": round(fcf_quality, 2) if fcf_quality is not None else None,
+                              "in_base": dcf_usable}
+            if not dcf_usable:
+                methods["dcf"]["excluded_reason"] = (
+                    f"FCF/NI={fcf_quality:.2f} (<0.5) — current FCF capex-depressed; "
+                    "shown as cross-check, excluded from fair-value base")
+            methods["reverse_dcf"] = {"implied_growth":
+                reverse_dcf_growth(fund, wacc, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, price) if price else None}
         else:
-            # profitable but FCF ≤ 0 (capex-heavy): DCF not meaningful → EPV/multiples base
-            skipped.append({"method": "dcf", "reason": "FCF ≤ 0 — DCF base not meaningful; using EPV/multiples"})
-            fb = methods["epv"]["value"]
-            if fb is None:
-                fb = methods["multiples"].get("pe_implied")
-            if fb is not None:
-                fair_value = {"bear": None, "base": fb, "bull": None}
+            skipped.append({"method": "dcf", "reason": "FCF ≤ 0 — DCF base not meaningful"})
+
+        # triangulate the fair-value range from the usable estimates
+        est = [v for v in (epv, mult, (conv(dcf_base) if dcf_usable else None)) if isinstance(v, (int, float))]
+        if est:
+            est_sorted = sorted(est)
+            fair_value = {"bear": est_sorted[0], "base": median(est_sorted), "bull": est_sorted[-1]}
     elif fx_caveat is None and profile == "UNPROFITABLE":
         skipped += [{"method": "dcf", "reason": "no positive FCF/earnings base"},
                     {"method": "epv", "reason": "no positive operating earnings"}]

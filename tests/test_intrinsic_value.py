@@ -57,9 +57,9 @@ def test_dcf_known():
 
 def test_epv_floor():
     from tradingagents.agents.utils.intrinsic_value import parse_fundamentals, epv_value
-    v = epv_value(parse_fundamentals(_fin()), wacc=0.10, net_debt={"net_debt": -50000000})
-    expected = (150000000 * 0.85 / 0.10 + 50000000) / 50000000
-    assert abs(v - expected) < 1.0
+    # EPV of equity = TTM NI / cost_of_equity / shares = 100M / 0.10 / 50M = $20
+    v = epv_value(parse_fundamentals(_fin()), cost_of_equity=0.10)
+    assert abs(v - (100000000 / 0.10 / 50000000)) < 1e-6
 
 
 def test_reverse_dcf_recovers_growth():
