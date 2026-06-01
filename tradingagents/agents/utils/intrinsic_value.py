@@ -89,9 +89,11 @@ def classify_valuation_profile(fund: dict, ticker: str | None) -> str:
     sector = (fund.get("sector") or "")
     if sector.startswith("Financial") or "Bank" in sector:
         return "FINANCIAL"
-    ni, fcf = fund.get("net_income"), fund.get("fcf")
-    if (ni is not None and ni <= 0) or (fcf is not None and fcf <= 0):
+    ni = fund.get("net_income")
+    if ni is not None and ni <= 0:
         return "UNPROFITABLE"
+    # Profitable but capex-heavy (negative FCF, e.g. AMKR) stays STANDARD: the
+    # FCF-DCF auto-skips on a non-positive base, and EPV/multiples carry the value.
     return "STANDARD"
 
 
@@ -180,11 +182,17 @@ def mc_ev_from_forward(forward_probabilities: dict | None) -> float | None:
     if not isinstance(forward_probabilities, dict):
         return None
     rows = None
-    for key in ("scenarios", "terminal_zones", "zones", "bins", "partition"):
-        v = forward_probabilities.get(key)
-        if isinstance(v, list) and v:
-            rows = v
-            break
+    sc = forward_probabilities.get("scenarios")
+    if isinstance(sc, dict) and sc:           # real schema: {bull,base,bear} dicts
+        rows = list(sc.values())
+    elif isinstance(sc, list) and sc:
+        rows = sc
+    if rows is None:
+        for key in ("terminal_zones", "zones", "bins", "partition"):
+            v = forward_probabilities.get(key)
+            if isinstance(v, list) and v:
+                rows = v
+                break
     if rows is None:
         return None
     ev = 0.0
@@ -225,10 +233,15 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
     methods: dict[str, Any] = {}
     fx_caveat = None
 
-    # currency mismatch without FX → cannot compare to a USD price
+    # Foreign issuer: financials in a non-USD currency while price is a USD ADR.
+    # A correct USD per-share IV needs both the FX rate AND the ADR-to-ordinary
+    # ratio (e.g. 1 TSM ADR = 5 ordinary shares); getting that wrong is worse than
+    # an honest gap, so v1 skips with a caveat rather than fabricate a figure.
     if fund["currency"] != "USD" and fx_rate is None:
-        fx_caveat = (f"Financials reported in {fund['currency']}; USD FX rate "
-                     f"unavailable — per-share USD intrinsic value not computed.")
+        fx_caveat = (f"Foreign issuer — financials reported in {fund['currency']} "
+                     f"while price is a USD ADR; USD-comparable per-share intrinsic "
+                     f"value requires FX + ADR-ratio adjustment (out of scope for v1). "
+                     f"Rely on the scenario EV.")
         skipped.append({"method": "all", "reason": fx_caveat})
 
     def conv(v):  # convert reporting-currency per-share to price currency
@@ -240,15 +253,23 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
 
     if fx_caveat is None and profile == "STANDARD":
         base = dcf_value(fund, wacc, near_g, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-        bear = dcf_value(fund, wacc + DISCOUNT_DELTA, near_g - GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-        bull = dcf_value(fund, wacc - DISCOUNT_DELTA, near_g + GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-        methods["dcf"] = {"bear": conv(bear), "base": conv(base), "bull": conv(bull)}
         methods["epv"] = {"value": conv(epv_value(fund, wacc, net_debt))}
         methods["multiples"] = {k: conv(v) for k, v in multiples_value(fund, peer_ratios, net_debt).items()}
-        rdg = reverse_dcf_growth(fund, wacc, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, price) if price else None
-        methods["reverse_dcf"] = {"implied_growth": rdg}
         if base is not None:
+            bear = dcf_value(fund, wacc + DISCOUNT_DELTA, near_g - GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
+            bull = dcf_value(fund, wacc - DISCOUNT_DELTA, near_g + GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
+            methods["dcf"] = {"bear": conv(bear), "base": conv(base), "bull": conv(bull)}
+            rdg = reverse_dcf_growth(fund, wacc, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, price) if price else None
+            methods["reverse_dcf"] = {"implied_growth": rdg}
             fair_value = {"bear": conv(bear), "base": conv(base), "bull": conv(bull)}
+        else:
+            # profitable but FCF ≤ 0 (capex-heavy): DCF not meaningful → EPV/multiples base
+            skipped.append({"method": "dcf", "reason": "FCF ≤ 0 — DCF base not meaningful; using EPV/multiples"})
+            fb = methods["epv"]["value"]
+            if fb is None:
+                fb = methods["multiples"].get("pe_implied")
+            if fb is not None:
+                fair_value = {"bear": None, "base": fb, "bull": None}
     elif fx_caveat is None and profile == "UNPROFITABLE":
         skipped += [{"method": "dcf", "reason": "no positive FCF/earnings base"},
                     {"method": "epv", "reason": "no positive operating earnings"}]

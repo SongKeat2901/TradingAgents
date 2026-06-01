@@ -140,3 +140,22 @@ def test_fetch_risk_free_fallback(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", boom)
     rf = iv.fetch_risk_free()
     assert isinstance(rf, float) and 0.0 < rf < 0.10
+
+
+def test_mc_ev_scenarios_dict():
+    from tradingagents.agents.utils.intrinsic_value import mc_ev_from_forward
+    fwd = {"scenarios": {"bull": {"probability": 0.5, "target": 120},
+                         "base": {"probability": 0.3, "target": 100},
+                         "bear": {"probability": 0.2, "target": 80}}}
+    assert mc_ev_from_forward(fwd) == pytest.approx(0.5 * 120 + 0.3 * 100 + 0.2 * 80)
+
+
+def test_profitable_negative_fcf_stays_standard_epv_base():
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    # NI > 0 but FCF < 0 (capex-heavy, AMKR-like)
+    f = _FUND_TXT.replace("Free Cash Flow: 90000000", "Free Cash Flow: -20000000")
+    iv = compute_intrinsic_value(_fin(f), {"net_debt": 100000000}, {"reference_price": 60.0},
+                                 {"PEERA": {"ttm_pe": 18}}, risk_free=0.04, ticker="AMKR")
+    assert iv["profile"] == "STANDARD"
+    assert any(s["method"] == "dcf" for s in iv["skipped_methods"])
+    assert iv["fair_value"]["base"] is not None  # EPV provided the base
