@@ -55,6 +55,9 @@ def test_clean_agentic_vocabulary_scrubs_bare_internal_filenames():
     assert "pm_brief" not in scrub("reinforcing the pm_brief's framing")
     assert "news.json" not in scrub("sourced from news.json items")
     assert ".json" not in scrub("see insider.json and social.json")
+    # intrinsic-value artifact (both raw/ and bare forms) → friendly name, no leak
+    assert "intrinsic_value" not in scrub("per raw/intrinsic_value.json the IV base is $X")
+    assert "intrinsic_value" not in scrub("the intrinsic_value.json fair value")
 
 
 def test_clean_agentic_vocabulary_scrubs_internal_qc_rule_refs():

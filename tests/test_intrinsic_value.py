@@ -126,3 +126,17 @@ def test_format_block_not_computable():
         compute_intrinsic_value(_fin(), {"net_debt": 0}, {"reference_price": 100.0},
                                 {}, risk_free=0.04, ticker="MSTR"))
     assert "not computable" in b.lower()
+
+
+# ---- Task 6: risk-free fallback (no network) ----
+def test_fetch_risk_free_fallback(monkeypatch):
+    import tradingagents.agents.utils.intrinsic_value as iv
+    import builtins
+    real_import = builtins.__import__
+    def boom(name, *a, **k):
+        if name == "yfinance":
+            raise ImportError("no yfinance")
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", boom)
+    rf = iv.fetch_risk_free()
+    assert isinstance(rf, float) and 0.0 < rf < 0.10

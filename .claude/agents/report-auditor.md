@@ -39,6 +39,7 @@ absent files (note absence; don't fail).
 - **T12 Forbidden filing phrasings** ("pending adjudication", "awaiting filing", "not yet disclosed", "data to follow", "binary catalyst"): allowed only for a genuinely future/next filing, NEVER for a filing already in sec_filing.md. Also: a "Note N" prose citation to an XBRL-stub filing (one carrying "XBRL ENCODING WARNING") is fabricated attribution = FAIL.
 - **T13 QC verdict** (state.json): qc_passed, qc_retries, qc_feedback. A clean pass after ONE legitimate, fully-resolved retry is acceptable for A+ (≈every run has one).
 - **T14 Block ordering** (pm_brief.md): Calendar → SEC-filing footer → Peer-ratios, appended after the LLM brief.
+- **T15 Intrinsic value** (raw/intrinsic_value.json + the report's valuation section): recompute the IV from the stated inputs/assumptions and verify — (a) the **profile** is correct for the company (STANDARD/UNPROFITABLE/FINANCIAL/NAV_PROXY) and skipped methods carry honest reasons (no DCF forced on a loss-maker / financial / NAV proxy); (b) **cost of equity** = risk_free + beta·ERP(5%) and **WACC** match the printed inputs; (c) the **DCF/EPV/multiples** fair values recompute from the inputs; (d) **reconciliation** arithmetic (IV base, MC EV = Σp·target, margin-of-safety, AGREE/DIVERGE flag at the 15% tolerance) is correct; (e) any IV figure cited in the report **matches raw/intrinsic_value.json verbatim** — a report IV number not in the artifact is fabrication = FAIL; (f) "not computable" / currency-caveat cases are stated honestly, never back-filled. N/A only if the run predates the IV block.
 
 ## Grade (exactly one; when torn, pick the LOWER)
 - **A+**: all applicable tiers PASS, zero verified discrepancies, QC clean pass.
@@ -59,7 +60,7 @@ expected_value: <number or null>
 ev_vs_spot_pct: <number or null>
 qc_passed: <true|false>
 qc_retries: <int>
-tiers: {T1: PASS, T2: PASS, T3: PASS, T4: PASS, T5: PASS, T6: PASS, T7: PASS, T8: PASS, T9: PASS, T10: PASS, T11: PASS, T12: PASS, T13: PASS, T14: PASS}
+tiers: {T1: PASS, T2: PASS, T3: PASS, T4: PASS, T5: PASS, T6: PASS, T7: PASS, T8: PASS, T9: PASS, T10: PASS, T11: PASS, T12: PASS, T13: PASS, T14: PASS, T15: PASS}
 issues:
   - "<tier: claimed value vs true value from raw/, file>"   # empty list if none
 ```

@@ -367,6 +367,32 @@ def fetch_research_pack(state: dict) -> None:
     with open(pm_brief_path, "a", encoding="utf-8") as f:
         f.write(net_debt_block)
 
+    # Intrinsic value (2026-06-01): deterministic triangulated fair value +
+    # reconciliation against the MC scenario EV. Computed in Python from the
+    # data already in memory (financials + net_debt + reference + peer ratios +
+    # forward_probabilities); the LLM only interprets it. Decision-support only —
+    # the rating still derives from the scenario engine. Runs AFTER net-debt so
+    # it can cite net debt, and reads forward_probabilities for the EV reconcile.
+    from tradingagents.agents.utils.intrinsic_value import (
+        compute_intrinsic_value,
+        fetch_risk_free,
+        format_intrinsic_value_block,
+    )
+    try:
+        risk_free = fetch_risk_free()
+        iv = compute_intrinsic_value(
+            financials, net_debt, reference, ratios, risk_free,
+            forward_probabilities=forward_probabilities, ticker=ticker,
+        )
+        (raw / "intrinsic_value.json").write_text(
+            json.dumps(iv, indent=2, default=str), encoding="utf-8"
+        )
+        iv_block = format_intrinsic_value_block(iv)
+    except Exception as exc:  # noqa: BLE001 - IV must never crash the run
+        iv_block = f"\n\n## Intrinsic value\n\n(intrinsic value unavailable — {exc})\n"
+    with open(pm_brief_path, "a", encoding="utf-8") as f:
+        f.write(iv_block)
+
     # Phase 6.9 deterministic latest-session block: the 2026-05-08 COIN run
     # surfaced a forward-projection failure mode where the Market Analyst
     # invented a "May 8 trade-date close of $206.50 on 14.39M shares" when

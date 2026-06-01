@@ -595,6 +595,7 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     # File-path leaks.
     (r"raw/peer_ratios\.json", "the peer-ratios dataset"),
     (r"raw/peers\.json", "the peer dataset"),
+    (r"raw/intrinsic_value\.json", "the valuation dataset"),
     (r"raw/sec_filing\.md", "the 10-Q text"),
     (r"raw/financials\.json", "the financials dataset"),
     (r"raw/calendar\.json", "the earnings calendar"),
@@ -610,6 +611,7 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r"raw/[A-Za-z0-9_]+\.(?:json|md)", "internal data"),
     # Remaining bare internal data filenames (cited without the raw/ prefix).
     (r"\bforward_probabilities\.json\b", "the scenario dataset"),
+    (r"\bintrinsic_value\.json\b", "the valuation dataset"),
     (r"\bnet_debt\.json\b", "the balance-sheet dataset"),
     (r"\bvolume_profile\.json\b", "the volume-profile dataset"),
     (r"\blatest_session\.json\b", "the price snapshot"),
