@@ -230,6 +230,19 @@ def compute_forward_probabilities(ticker: str, trade_date: str, spot: float | No
     }
 
 
+def _round_pcts_to_100(probs: list[float]) -> list[int]:
+    """Round fractional probabilities to integer percentages that sum to EXACTLY
+    100, via the largest-remainder method (e.g. [0.4558,0.0886,0.4556] →
+    [46,9,45], not the independent-rounding [46,9,46]=101)."""
+    pcts = [p * 100 for p in probs]
+    floors = [int(x) for x in pcts]
+    rem = round(sum(pcts)) - sum(floors)
+    order = sorted(range(len(pcts)), key=lambda i: pcts[i] - floors[i], reverse=True)
+    for k in range(int(rem)):
+        floors[order[k % len(order)]] += 1
+    return floors
+
+
 def format_forward_block(out: dict) -> str:
     if out.get("unavailable_reason"):
         return (
@@ -240,15 +253,22 @@ def format_forward_block(out: dict) -> str:
             "and do not invent figures.\n"
         )
     s = out["scenarios"]
-    def pct(x): return f"{x * 100:.0f}%"
+    # Largest-remainder rounding so the THREE displayed integer percentages sum
+    # to exactly 100% (independent rounding gave e.g. 46/9/46 = 101%, which the
+    # PM copied verbatim and an audit flagged as a 101% sum). The underlying
+    # float probabilities are unchanged in the JSON; only the display is fixed.
+    _probs = [s["bull"]["probability"], s["base"]["probability"], s["bear"]["probability"]]
+    _ints = _round_pcts_to_100(_probs)
+    _pct_by_key = {"bull": _ints[0], "base": _ints[1], "bear": _ints[2]}
+    def pct(key): return f"{_pct_by_key[key]}%"
     def tgt(x): return f"${x:.2f}" if x is not None else "(n/a)"
     def qtl(x): return f"${x:.2f}" if x is not None else "(n/a)"
     return (
         "\n\n## 12-month scenario probabilities (block-bootstrap MC on 36-mo history)\n\n"
         "| Scenario | Target | Probability (terminal zone) |\n|---|---|---|\n"
-        f"| Bull | {tgt(s['bull']['target'])} | {pct(s['bull']['probability'])} |\n"
-        f"| Base | {tgt(s['base']['target'])} | {pct(s['base']['probability'])} |\n"
-        f"| Bear | {tgt(s['bear']['target'])} | {pct(s['bear']['probability'])} |\n\n"
+        f"| Bull | {tgt(s['bull']['target'])} | {pct('bull')} |\n"
+        f"| Base | {tgt(s['base']['target'])} | {pct('base')} |\n"
+        f"| Bear | {tgt(s['bear']['target'])} | {pct('bear')} |\n\n"
         f"Terminal price quantiles: p05 {qtl(out['terminal_quantiles']['p05'])} · "
         f"p50 {qtl(out['terminal_quantiles']['p50'])} · "
         f"p95 {qtl(out['terminal_quantiles']['p95'])}.\n\n"

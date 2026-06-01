@@ -97,3 +97,20 @@ def test_terminal_zone_probabilities_classifies_by_end_price():
     assert out["base"] == pytest.approx(0.2)
     assert out["bear"] == pytest.approx(0.4)
     assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_displayed_scenario_pcts_sum_to_100():
+    """Largest-remainder rounding: the THREE scenario % in the block sum to 100
+    (independent rounding produced 46/9/46=101 which the PM copied verbatim)."""
+    import re
+    from tradingagents.agents.utils.forward_distribution import format_forward_block, _round_pcts_to_100
+    assert sum(_round_pcts_to_100([0.4558, 0.0886, 0.4556])) == 100
+    assert sum(_round_pcts_to_100([0.6390, 0.2605, 0.1005])) == 100
+    out = {"scenarios": {"bull": {"target": 120, "probability": 0.4558},
+                         "base": {"target": 100, "probability": 0.0886},
+                         "bear": {"target": 80, "probability": 0.4556}},
+           "terminal_quantiles": {"p05": 70, "p50": 100, "p95": 140}}
+    block = format_forward_block(out)
+    # the scenario-table % are the first three "<n>%" tokens
+    pcts = [int(x) for x in re.findall(r"\| (?:Bull|Base|Bear) \| \$[\d.]+ \| (\d+)% \|", block)]
+    assert pcts == [46, 9, 45] and sum(pcts) == 100
