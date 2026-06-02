@@ -95,13 +95,18 @@ to enumerate them yourself in the brief."""
 
 
 _PEER_LINE = re.compile(
-    # `- TICKER: ...` / `- **TICKER**: ...` / `- *TICKER*: ...` and now also
-    # `- **TICKER** (Company Name): ...` (the format the LLM emitted for
-    # TSCO 2026-05-06, which the prior regex's strict `**:` requirement
-    # silently dropped — peers.json wrote `{}` and the run crashed at the
-    # Phase 6.4 invariant gate). The optional `(...)` group consumes a
-    # parenthesized company-name expansion before the colon.
-    r"^-\s+(?:\*{1,2})?([A-Z]{1,5})(?:\*{1,2})?(?:\s+\([^)\n]+\))?\s*:\s",
+    # Tolerant peer-line matcher. Handles every observed PM Pre-flight format:
+    #   `- TICKER: ...`            `- **TICKER**: ...`       `- *TICKER*: ...`
+    #   `- **TICKER** (Company): ` (TSCO 2026-05-06)
+    #   `- **TICKER (Company):** ` (NOW 2026-05-29 — the LLM wrapped the WHOLE
+    #     label incl. the colon in bold, so the colon is followed by `**`, not
+    #     whitespace; the prior `:\s` requirement dropped every line → peers.json
+    #     wrote `{}` → Phase 6.4 invariant crashed the run).
+    # Strategy: capture the first uppercase 1-5 letter token (peers are written
+    # ticker-first), then allow any non-colon label text (parenthetical company
+    # name, bold markers) up to the label colon. No whitespace required after
+    # the colon, so a trailing `**`/`*` no longer defeats the match.
+    r"^-\s+\*{0,2}\s*([A-Z]{1,5})\b[^:\n]*:",
     re.MULTILINE,
 )
 

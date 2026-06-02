@@ -147,6 +147,36 @@ def test_pm_preflight_extracts_peers_with_parenthesized_company_name(tmp_path):
     assert sorted(out["peers"]) == ["BOOT", "CHWY", "DKS", "ORLY"]
 
 
+def test_pm_preflight_extracts_peers_when_bold_wraps_whole_label(tmp_path):
+    """Regression for NOW (ServiceNow) 2026-05-29: the LLM wrapped the ENTIRE
+    label including the colon in bold — `- **CRM (Salesforce):** rationale` —
+    so the colon is followed by `**`, not whitespace. The prior regex's `:\\s`
+    requirement dropped every line, peers.json wrote `{}`, and the run crashed
+    ~75s in at the Phase 6.4 invariant. The tolerant regex must accept it."""
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    now_brief = """\
+# PM Pre-flight Brief: NOW 2026-05-29
+
+## Peer set
+- **CRM (Salesforce):** closest public comp — enterprise SaaS platform.
+- **WDAY (Workday):** enterprise back-office SaaS with similar cRPO model.
+- **MSFT (Microsoft):** strategic frenemy — Power Platform/Copilot overlap.
+
+## What this run must answer
+1. x
+"""
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=now_brief)
+    node = create_pm_preflight_node(fake_llm)
+    out = node({
+        "company_of_interest": "NOW",
+        "trade_date": "2026-05-29",
+        "raw_dir": str(tmp_path / "raw"),
+    })
+    assert sorted(out["peers"]) == ["CRM", "MSFT", "WDAY"]
+
+
 def test_pm_preflight_handles_no_peers_etf(tmp_path):
     from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
 
