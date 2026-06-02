@@ -34,19 +34,41 @@ def test_no_adjustment_when_requested_date_at_or_before_latest():
         assert adj is False
 
 
-def test_adjusts_when_requested_date_after_latest_close():
-    """The COIN/MSFT scenario: user passes 2026-05-08, yfinance only has
-    through 2026-05-07. trade_date and output_dir both adjusted."""
+def test_adjusts_only_when_requested_date_is_in_the_future_beyond_today():
+    """A GENUINELY FUTURE date (beyond today) has no data and the LLM could
+    invent a post-print close, so it is rewound to the latest close. (Far-future
+    date used so the assertion holds regardless of the real current date.)"""
     from cli.auto_resolve_date import auto_resolve_trade_date
 
-    with patch("cli.auto_resolve_date._fetch_latest_close_date", return_value="2026-05-07"):
+    with patch("cli.auto_resolve_date._fetch_latest_close_date", return_value="2099-05-07"):
         d, o, adj = auto_resolve_trade_date(
-            "MSFT", "2026-05-08",
-            "/Users/trueknot/.openclaw/data/research/2026-05-08-MSFT",
+            "MSFT", "2099-05-08",
+            "/Users/trueknot/.openclaw/data/research/2099-05-08-MSFT",
         )
-        assert d == "2026-05-07"
-        assert o == "/Users/trueknot/.openclaw/data/research/2026-05-07-MSFT"
+        assert d == "2099-05-07"
+        assert o == "/Users/trueknot/.openclaw/data/research/2099-05-07-MSFT"
         assert adj is True
+
+
+def test_today_not_rewound_even_when_after_latest_close():
+    """2026-06-02 staleness fix: today's date is AFTER the latest close (the
+    session hasn't closed yet) but must NOT be rewound — rewinding pushed the
+    whole report (incl. the news window) back to yesterday. Keep trade_date =
+    today; the deterministic reference block uses yesterday's close for price."""
+    import datetime as _dtmod
+    from cli import auto_resolve_date as mod
+
+    class _FrozenDT(_dtmod.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 6, 2, 9, 30, 0)  # market open, not yet closed
+
+    with patch.object(mod, "datetime", _FrozenDT), \
+         patch("cli.auto_resolve_date._fetch_latest_close_date", return_value="2026-06-01"):
+        d, o, adj = mod.auto_resolve_trade_date("MSFT", "2026-06-02", "/data/2026-06-02-MSFT")
+        assert d == "2026-06-02"          # today kept, NOT rewound to 06-01
+        assert o == "/data/2026-06-02-MSFT"
+        assert adj is False
 
 
 def test_no_adjustment_to_output_dir_when_basename_lacks_date():
@@ -54,11 +76,11 @@ def test_no_adjustment_to_output_dir_when_basename_lacks_date():
     it alone (e.g., custom dir names like 'msft-test-run')."""
     from cli.auto_resolve_date import auto_resolve_trade_date
 
-    with patch("cli.auto_resolve_date._fetch_latest_close_date", return_value="2026-05-07"):
+    with patch("cli.auto_resolve_date._fetch_latest_close_date", return_value="2099-05-07"):
         d, o, adj = auto_resolve_trade_date(
-            "MSFT", "2026-05-08", "/data/custom-msft-run",
+            "MSFT", "2099-05-08", "/data/custom-msft-run",  # far-future → rewound
         )
-        assert d == "2026-05-07"
+        assert d == "2099-05-07"
         assert o == "/data/custom-msft-run"  # unchanged
         assert adj is True
 

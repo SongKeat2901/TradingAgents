@@ -80,6 +80,20 @@ def auto_resolve_trade_date(
         # Requested date already at or before latest close — no adjustment.
         return requested_date, requested_output_dir, False
 
+    # req > lat. Two cases:
+    #  (a) req is TODAY (or a past day yfinance hasn't indexed yet): the session
+    #      simply hasn't closed. Do NOT rewind — keep trade_date = today so the
+    #      report's news/calendar/context are current, while the deterministic
+    #      reference block uses the latest close on/before today (= yesterday's
+    #      close) for price. Rewinding here was the staleness bug: it pushed the
+    #      whole report — including the news window — back to yesterday.
+    #  (b) req is genuinely in the FUTURE (> today): there is no data for it and
+    #      the LLM could invent a post-print close, so rewind to the latest close
+    #      (the original Fix #13 anti-hallucination purpose).
+    today = datetime.now().date()
+    if req <= today:
+        return requested_date, requested_output_dir, False
+
     # Adjust output_dir basename if it contains the requested date string.
     out = Path(requested_output_dir)
     new_basename = out.name.replace(requested_date, latest)
@@ -88,7 +102,7 @@ def auto_resolve_trade_date(
     print(
         f"[auto-resolve] trade_date adjusted: {requested_date} → {latest} "
         f"(yfinance latest close for {ticker} is {latest}, requested date "
-        f"is in the future or session not yet closed). "
+        f"is in the future beyond today). "
         f"Output dir: {requested_output_dir} → {new_output_dir}",
         file=sys.stderr,
     )

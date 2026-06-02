@@ -76,7 +76,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run a multi-agent equity research workflow on a ticker for a date.",
     )
     p.add_argument("--ticker", required=True, help="US-listed ticker symbol, e.g. NVDA.")
-    p.add_argument("--date", required=True, help="Trade date YYYY-MM-DD (historical).")
+    p.add_argument(
+        "--date",
+        default=None,
+        help="Trade date YYYY-MM-DD. Defaults to TODAY (the freshest run). The "
+        "deterministic reference block uses the latest close on/before this date "
+        "for price, while news/calendar context are as-of this date — so the "
+        "default 'today' gives yesterday's close + today's news. Pass an explicit "
+        "past date only for historical backtests.",
+    )
     p.add_argument(
         "--output-dir", default=None,
         help=(
@@ -319,6 +327,13 @@ def _safe_notify_failure(
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # No --date → default to today. A research tool's whole value is current
+    # data; a stale pinned date has no purpose. Omitting --date now always
+    # produces an as-of-today report (latest close for price + today's news).
+    if not args.date:
+        from datetime import datetime as _dt
+        args.date = _dt.now().strftime("%Y-%m-%d")
 
     # No --output-dir → default to the TK Research working-copy (preaudit)
     # location. Computed here (not as an argparse default) because it depends

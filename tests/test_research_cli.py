@@ -42,12 +42,18 @@ def test_parse_minimal_args_succeeds():
     assert ns.token_source == "keychain"  # default
 
 
-def test_missing_required_arg_exits():
+def test_ticker_required_date_optional():
+    """--ticker is required; --date is now OPTIONAL (defaults to today in main()
+    so a research run never silently uses a stale pinned date)."""
     from cli.research import build_parser
 
     parser = build_parser()
+    # --ticker still required
     with pytest.raises(SystemExit):
-        parser.parse_args(["--ticker", "NVDA"])  # missing --date (still required)
+        parser.parse_args(["--date", "2024-05-10"])  # missing --ticker
+    # --date optional → parser leaves it None; main() fills in today
+    ns = parser.parse_args(["--ticker", "NVDA"])
+    assert ns.date is None
 
 
 def test_output_dir_optional_parses_to_none():
