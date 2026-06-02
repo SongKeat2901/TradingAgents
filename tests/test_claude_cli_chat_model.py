@@ -76,16 +76,21 @@ def test_invoke_calls_claude_cli_and_returns_aimessage(monkeypatch):
 def test_invoke_raises_on_cli_failure(monkeypatch):
     from tradingagents.llm_clients import claude_cli_chat_model as mod
 
+    calls = {"n": 0}
+
     def fake_run(cmd, **kwargs):
+        calls["n"] += 1
         raise subprocess.CalledProcessError(
             returncode=1, cmd=cmd, stderr="auth: invalid token"
         )
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)  # no real backoff
 
-    llm = mod.ClaudeCliChatModel()
+    llm = mod.ClaudeCliChatModel(max_retries=2)
     with pytest.raises(RuntimeError, match="exited 1"):
         llm.invoke([HumanMessage(content="hi")])
+    assert calls["n"] == 3  # 1 initial + 2 retries
 
 
 def test_invoke_raises_on_timeout(monkeypatch):
@@ -95,10 +100,40 @@ def test_invoke_raises_on_timeout(monkeypatch):
         raise subprocess.TimeoutExpired(cmd=cmd, timeout=5.0)
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
 
-    llm = mod.ClaudeCliChatModel(timeout_seconds=5.0)
+    llm = mod.ClaudeCliChatModel(timeout_seconds=5.0, max_retries=1)
     with pytest.raises(RuntimeError, match="timed out after 5"):
         llm.invoke([HumanMessage(content="hi")])
+
+
+def test_invoke_retries_transient_failure_then_succeeds(monkeypatch):
+    """MSFT 2026-05-29: a transient claude-CLI exit-1 mid-run killed a ~10-min
+    run. The client must retry a transient failure (and an empty output) with
+    backoff and succeed when the next attempt returns."""
+    from tradingagents.llm_clients import claude_cli_chat_model as mod
+
+    seq = [
+        subprocess.CalledProcessError(returncode=1, cmd="c", stderr=""),  # 429-like
+        MagicMock(stdout="", stderr="", returncode=0),                     # empty
+        MagicMock(stdout="**BUY**\n\nThesis.\n", stderr="", returncode=0), # good
+    ]
+    calls = {"n": 0}
+
+    def fake_run(cmd, **kwargs):
+        item = seq[calls["n"]]
+        calls["n"] += 1
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+
+    llm = mod.ClaudeCliChatModel(max_retries=4)
+    result = llm.invoke([HumanMessage(content="decide")])
+    assert result.content.startswith("**BUY**")
+    assert calls["n"] == 3  # failed, empty, then succeeded
 
 
 def test_invoke_raises_on_missing_cli(monkeypatch):

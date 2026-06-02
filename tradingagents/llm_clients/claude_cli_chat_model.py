@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import glob
 import os
+import random
 import shutil
 import subprocess
+import time
 from typing import Any, List, Optional
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -121,6 +123,18 @@ class ClaudeCliChatModel(BaseChatModel):
     steady-state behavior; if a ticker is still hitting this, the prompt
     itself needs trimming (sec_filing.md excerpt instead of full 10-K text)."""
 
+    max_retries: int = 4
+    """Retries on a transient `claude -p` failure (non-zero exit / timeout /
+    empty output). The personal subscription intermittently 429s mid-run — the
+    MSFT 2026-05-29 run died when a single Fundamentals-Analyst call exited 1
+    with no stderr, killing a ~10-min run. Each analyst/judge call is now
+    retried with exponential backoff so a transient spike is ridden out instead
+    of aborting the whole run."""
+
+    retry_base_delay: float = 8.0
+    """Base seconds for exponential backoff between retries (8, 16, 32, 64 …
+    plus jitter). Generous spacing lets a per-minute bucket refill."""
+
     @property
     def _llm_type(self) -> str:
         return "claude-cli"
@@ -146,33 +160,55 @@ class ClaudeCliChatModel(BaseChatModel):
 
         cmd = [cli_path, "-p", "--model", model_arg]
 
-        try:
-            result = subprocess.run(
-                cmd,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=self.timeout_seconds,
-            )
-        except subprocess.CalledProcessError as e:
-            stderr = (e.stderr or "")[:1000]
-            raise RuntimeError(
-                f"claude CLI exited {e.returncode}: {stderr.strip()}"
-            ) from e
-        except subprocess.TimeoutExpired as e:
-            raise RuntimeError(
-                f"claude CLI timed out after {self.timeout_seconds}s"
-            ) from e
-        except FileNotFoundError as e:
-            raise RuntimeError(
-                f"claude CLI not found at {cli_path!r}. Set cli_path on "
-                f"ClaudeCliChatModel, set claude_code_cli_path in config, "
-                f"or install claude such that it's on PATH or in a "
-                f"recognised location (~/.nvm/versions/node/*/bin/claude, "
-                f"/opt/homebrew/bin/claude, /usr/local/bin/claude)."
-            ) from e
+        # Retry transient failures (non-zero exit / timeout / empty output) with
+        # exponential backoff. The personal subscription 429s intermittently;
+        # without this a single bad call aborts a ~30-min run (MSFT 2026-05-29
+        # died on one Fundamentals-Analyst exit-1). FileNotFoundError is a
+        # config error, never retried.
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    input=prompt,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=self.timeout_seconds,
+                )
+                text = result.stdout.strip()
+                if not text:
+                    raise RuntimeError("claude CLI returned empty output")
+                message = AIMessage(content=text)
+                return ChatResult(generations=[ChatGeneration(message=message)])
+            except FileNotFoundError as e:
+                raise RuntimeError(
+                    f"claude CLI not found at {cli_path!r}. Set cli_path on "
+                    f"ClaudeCliChatModel, set claude_code_cli_path in config, "
+                    f"or install claude such that it's on PATH or in a "
+                    f"recognised location (~/.nvm/versions/node/*/bin/claude, "
+                    f"/opt/homebrew/bin/claude, /usr/local/bin/claude)."
+                ) from e
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as e:
+                last_exc = e
+                if attempt < self.max_retries:
+                    delay = self.retry_base_delay * (2 ** attempt) + random.uniform(0, 3)
+                    time.sleep(delay)
+                    continue
+                break
 
-        text = result.stdout.strip()
-        message = AIMessage(content=text)
-        return ChatResult(generations=[ChatGeneration(message=message)])
+        # Retries exhausted — surface a descriptive error.
+        if isinstance(last_exc, subprocess.CalledProcessError):
+            stderr = (last_exc.stderr or "")[:1000]
+            raise RuntimeError(
+                f"claude CLI exited {last_exc.returncode} after "
+                f"{self.max_retries + 1} attempts: {stderr.strip()}"
+            ) from last_exc
+        if isinstance(last_exc, subprocess.TimeoutExpired):
+            raise RuntimeError(
+                f"claude CLI timed out after {self.timeout_seconds}s "
+                f"({self.max_retries + 1} attempts)"
+            ) from last_exc
+        raise RuntimeError(
+            f"claude CLI failed after {self.max_retries + 1} attempts: {last_exc}"
+        ) from last_exc
