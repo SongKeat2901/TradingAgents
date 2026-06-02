@@ -86,8 +86,71 @@ def test_appendix_sections_are_polished_not_verbatim(tmp_path, monkeypatch):
         assert f'render_md_polished("{section}")' in src, (
             f"appendix section {section} still rendered verbatim (leaks scaffolding)"
         )
-    # PM working notes (decision.md as appendix) must also be polished.
+    # decision.md remains available as the Investment Recommendation fallback
+    # source (older runs without decision_executive.md); always polished.
     assert 'render_md_polished("decision.md")' in src
+
+
+def test_pm_brief_and_working_notes_dumps_removed_from_customer_pdf():
+    """2026-06-02 full-scrub policy: the raw PM setup-brief ('Investment
+    Thesis') and the unfiltered 'PM Working Notes' appendix are the two
+    largest process-narration / instruction leak surfaces (the MSFT
+    2026-05-29 audit found 'Interpretation rules for analysts', 'cited
+    verbatim from raw cells' there). Troubleshooting uses the raw/ run-dir
+    files, not the PDF, so these dumps are dropped from the customer PDF
+    wholesale rather than phrase-scrubbed."""
+    import cli.research_pdf as pdf
+    import inspect
+
+    template = pdf._HTML_TEMPLATE
+    assert "Investment Thesis" not in template, "raw pm_brief dump still in PDF"
+    assert "{pm_brief_html}" not in template
+    assert "PM Working Notes" not in template, "unfiltered working-notes dump still in PDF"
+    assert "{decision_working_notes_html}" not in template
+
+    src = inspect.getsource(pdf.build_research_pdf)
+    assert "pm_brief_html" not in src, "build still assembles the pm_brief dump"
+    assert "decision_working_notes_html" not in src
+
+
+def test_strip_llm_directives_removes_interpretation_rules_leadin():
+    """MSFT 2026-05-29 p31 leak: analyst notes restate the setup brief's
+    'authoritative interpretation rules for this report' with a verbatim
+    blockquote of the agent-facing rules. Strip the lead-in + blockquote;
+    keep the substantive analysis that follows."""
+    from cli.research_pdf import _strip_llm_directives as strip
+
+    text = (
+        "## Business-model framing\n\n"
+        "Per `pm_brief.md`, the authoritative interpretation rules for this report are:\n\n"
+        "> *\"Treat Azure constant-currency growth as the single most important KPI; "
+        "capex is a margin headwind.\"*\n\n"
+        "The three-segment structure is the analytical frame: Intelligent Cloud is the "
+        "growth engine. Every interpretation that follows applies these rules.\n"
+    )
+    out = strip(text)
+    assert "interpretation rules for this report" not in out
+    assert "Treat Azure constant-currency growth" not in out, "agent-rule blockquote leaked"
+    assert "Every interpretation that follows applies these rules" not in out
+    # Substantive analysis survives.
+    assert "Intelligent Cloud is the" in out
+    assert "## Business-model framing" in out
+
+
+def test_clean_agentic_vocabulary_neutralises_provenance_narration():
+    """Process-narration phrases ('cited verbatim from raw cells', 'quoted
+    verbatim from the peer dataset') must not reach the customer PDF. They
+    are neutralised to plain, grammatical provenance language rather than
+    deleted mid-sentence."""
+    from cli.research_pdf import _clean_agentic_vocabulary as scrub
+
+    out = scrub("Both numbers are cited verbatim from raw cells; they agree.")
+    assert "verbatim from raw cells" not in out
+    assert "cited verbatim" not in out
+
+    out2 = scrub("Peer ratios quoted verbatim from the peer dataset: GOOGL 28x.")
+    assert "verbatim" not in out2
+    assert "GOOGL 28x" in out2  # the data survives
 
 
 def test_residual_raw_paths_fully_scrubbed():

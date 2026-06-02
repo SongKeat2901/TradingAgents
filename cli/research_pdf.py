@@ -434,10 +434,6 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <div class="exec-summary-banner">Distilled from the full investment recommendation. See pages that follow for setup, technical context, and complete reasoning. Operational source material (analyst reports, debate transcripts) appears in the appendix at the back.</div>
 {executive_summary_html}
 
-<h1>Investment Thesis</h1>
-<div class="section-pretitle">Setup, business-model framing, peer set, what this run must answer.</div>
-{pm_brief_html}
-
 <h1>Technical Setup</h1>
 <div class="section-pretitle">Major historical levels, volume zones, trading playbook.</div>
 {technicals_html}
@@ -472,10 +468,6 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <h1>Appendix F — Social Sentiment Analyst Notes</h1>
 <div class="section-pretitle">Public sentiment and social-media mood.</div>
 {analyst_social_html}
-
-<h1>Appendix G — PM Working Notes</h1>
-<div class="section-pretitle">Unfiltered PM decision document — multi-agent process, reconciliation tables, "what I am rejecting" — kept verbatim for audit. The Investment Recommendation above is the stakeholder-voice translation of this material.</div>
-{decision_working_notes_html}
 
 </body>
 </html>
@@ -653,6 +645,15 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r"\bprior PM transcripts\b", "prior decisions"),
     (r"\bprior debate transcripts\b", "prior decisions"),
     (r"\binherited from prior debate\b", "carried over from prior decisions"),
+    # Phase 9 (2026-06-02 full-scrub): process-narration / provenance phrasing
+    # the LLM emits in analyst notes ("cited verbatim from raw cells", "quoted
+    # verbatim from the peer dataset"). Neutralise to plain provenance language
+    # — the customer must not see how the pipeline sources its numbers. The
+    # specific "raw cells" forms must precede the generic "verbatim from" rule.
+    (r"\bcited verbatim from raw cells\b", "drawn from the underlying data"),
+    (r"\bverbatim from raw cells\b", "from the underlying data"),
+    (r"\b(?:cited |quoted )?verbatim from\b", "sourced from"),
+    (r";?\s*do NOT carry forward prior-decision values", ""),
 ]
 
 
@@ -712,6 +713,16 @@ _LLM_DIRECTIVE_PATTERNS: list[str] = [
     # the pm_brief.md suffix differs).
     r"Treat as \*\*known data\*\*, never as \"pending adjudication\" or \"awaiting filing\"\.",
     r"Treat them as known data, NEVER as 'pending adjudication' or 'awaiting filing'\.",
+    # 2026-06-02 full-scrub: analyst notes sometimes restate the setup brief's
+    # "authoritative interpretation rules for this report" with a verbatim
+    # blockquote of the agent-facing rules (MSFT 2026-05-29 p31). Strip the
+    # lead-in + the blockquote; the substantive analysis that follows stays.
+    r"Per [^\n]*?authoritative interpretation rules for this report are:\s*(?:>[^\n]*\n?)*",
+    # The closing process-narration sentence that frames the rules as binding.
+    r"\s*Every interpretation that follows applies these rules\.",
+    # Stray "Interpretation rules for analysts:" header + its bullet list, in
+    # case the setup-brief framing surfaces outside pm_brief.
+    r"Interpretation rules for analysts:\s*(?:\n-[^\n]*)*",
 ]
 
 
@@ -921,8 +932,12 @@ def build_research_pdf(
     executive_summary_md = _clean_agentic_vocabulary(executive_summary_md)
     executive_summary_html = _demote_h1_to_h2(md.reset().convert(executive_summary_md))
 
-    # Front-of-document sections get the polish pass; appendix sections do not.
-    pm_brief_html = render_md_polished_from_path(out / "raw" / "pm_brief.md")
+    # Every section (front + appendix) gets the polish pass. The raw PM
+    # setup-brief dump (formerly "Investment Thesis") and the unfiltered PM
+    # working-notes appendix were removed from the customer PDF on 2026-06-02
+    # (full-scrub policy) — they were the largest process-narration / agent-
+    # instruction leak surfaces and troubleshooting uses the raw/ run-dir
+    # files, not the PDF.
     technicals_v2 = out / "raw" / "technicals_v2.md"
     technicals_v1 = out / "raw" / "technicals.md"
     technicals_html = render_md_polished_from_path(
@@ -931,17 +946,12 @@ def build_research_pdf(
 
     # Phase 6.7: Investment Recommendation = decision_executive.md when
     # present (stakeholder voice); fall back to decision.md for runs that
-    # pre-date Phase 6.7. Working notes always rendered as Appendix G.
+    # pre-date Phase 6.7. The unfiltered working notes are no longer surfaced
+    # in the customer PDF (2026-06-02 full-scrub policy).
     if decision_executive_md_path.exists():
         decision_html = render_md_polished("decision_executive.md")
-        decision_working_notes_html = render_md_polished("decision.md")
     else:
         decision_html = render_md_polished("decision.md")
-        decision_working_notes_html = (
-            "<em>(working notes are the same document as the Investment "
-            "Recommendation above — this run pre-dates Phase 6.7 stakeholder-"
-            "voice translation)</em>"
-        )
 
     html = _HTML_TEMPLATE.format(
         ticker=ticker,
@@ -951,10 +961,8 @@ def build_research_pdf(
         generated_at=_dt.datetime.now(_dt.timezone(_dt.timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"),
         model_label=_resolve_model_label(out),
         executive_summary_html=executive_summary_html,
-        pm_brief_html=pm_brief_html,
         technicals_html=technicals_html,
         decision_html=decision_html,
-        decision_working_notes_html=decision_working_notes_html,
         debate_risk_html=render_md_polished("debate_risk.md"),
         debate_bull_bear_html=render_md_polished("debate_bull_bear.md"),
         analyst_market_html=render_md_polished("analyst_market.md"),
