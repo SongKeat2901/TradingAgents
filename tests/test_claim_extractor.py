@@ -289,3 +289,17 @@ def test_match_text_includes_surrounding_context():
     # Match text should include both the trigger context and what follows
     assert "2026-05-08" in claims[0].match_text
     assert "buyers" in claims[0].match_text or "$206.50" in claims[0].match_text
+
+
+def test_range_or_list_of_closes_not_bound_to_date():
+    """Phase 9 (TIGR FP): a price that's the start of a range/list of closes
+    ('$5.82–$5.89', '$5.82/$5.89/$5.84') must not be bound to a date."""
+    from tradingagents.validators.claim_extractor import extract_date_close_claims
+    for t in ("On May 22, three consecutive closes at $5.82–$5.89 tested it.",
+              "May 22 prior closes $5.82/$5.89/$5.84 before the breach.",
+              "May 22 ranged $5.82 to $5.89 intraday."):
+        c = extract_date_close_claims(t)
+        assert all(x.price not in (5.82, 5.89, 5.84) for x in c), (t, [(x.date_raw, x.price) for x in c])
+    # genuine single close still extracted
+    c2 = extract_date_close_claims("May 22 close $4.36 confirmed the breakdown.")
+    assert any(abs(x.price - 4.36) < 0.01 for x in c2)

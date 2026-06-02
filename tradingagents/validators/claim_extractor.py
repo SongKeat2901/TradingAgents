@@ -191,6 +191,12 @@ def extract_date_close_claims(text: str, anchor_year: int = 2026) -> list[DateCl
             tail = text[m.end():m.end() + 40]
             if _PREPOSITIONAL_DELTA.match(tail):
                 continue
+            # Phase 9 (TIGR 2026-05-29 FP): a price that's the START of a range
+            # or list — "$5.82–$5.89", "$5.82/$5.89/$5.84", "$5.82 to $5.89"
+            # ("three consecutive closes at $5.82–$5.89") — is not a single
+            # date's close. The range/list endpoint must not be bound to a date.
+            if re.match(r"\s*(?:[–—/]|-\s*\$|to)\s*\$?\d", tail):
+                continue
 
             date_raw = m.group("date")
 
