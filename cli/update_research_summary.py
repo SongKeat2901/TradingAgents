@@ -23,6 +23,7 @@ import argparse
 import os
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
@@ -61,14 +62,36 @@ def parse_register(register_path: Path) -> dict[str, dict]:
     return out
 
 
+def _week_dir_for_date(date_str: str) -> str:
+    """ISO-calendar week folder for a run date, e.g. '2026-05-26' → 'wk 22 2026'.
+    Final reports are organised under final/<week>/<run>/ + final/<week>/pdf/."""
+    try:
+        iso = datetime.strptime(date_str, "%Y-%m-%d").isocalendar()
+        return f"wk {iso[1]} {iso[0]}"
+    except (ValueError, TypeError):
+        return ""
+
+
 def consolidate_pdfs(final_dir: Path) -> int:
-    """Move report PDFs from final/<run>/ into final/pdf/. Returns count moved."""
-    pdfdir = final_dir / "pdf"
-    pdfdir.mkdir(parents=True, exist_ok=True)
+    """Move report PDFs from final/<week>/<run>/ into that week's pdf/ folder.
+    Week-aware (2026-06-02): reports live under final/wk NN YYYY/<date>-<ticker>/.
+    Returns count moved. Also handles legacy final/<run>/ layout."""
     moved = 0
+    # week-organised layout: final/wk NN YYYY/<date>-<ticker>/research-*.pdf
+    for run in final_dir.glob("wk */2026-*"):
+        if not run.is_dir():
+            continue
+        pdfdir = run.parent / "pdf"
+        pdfdir.mkdir(parents=True, exist_ok=True)
+        for pdf in run.glob("research-*.pdf"):
+            shutil.move(str(pdf), str(pdfdir / pdf.name))
+            moved += 1
+    # legacy flat layout: final/<date>-<ticker>/
     for run in final_dir.glob("2026-*"):
         if not run.is_dir():
             continue
+        pdfdir = final_dir / "pdf"
+        pdfdir.mkdir(parents=True, exist_ok=True)
         for pdf in run.glob("research-*.pdf"):
             shutil.move(str(pdf), str(pdfdir / pdf.name))
             moved += 1
@@ -155,7 +178,13 @@ def update_summary(base_path: Path, register_path: Path, final_dir: Path,
         ws.cell(row=r, column=col("Notes"), value=note)
         fn = f"research-{d['date']}-{tkr}.pdf"
         pcell = ws.cell(row=r, column=col("Report PDF"), value=fn)
-        if (final_dir / "pdf" / fn).exists():
+        # Week-aware PDF location: final/<week>/pdf/<fn>. Fall back to the
+        # legacy final/pdf/<fn> for any pre-week-layout reports.
+        week = _week_dir_for_date(d["date"])
+        if week and (final_dir / week / "pdf" / fn).exists():
+            pcell.hyperlink = f"{week}/pdf/{fn}"
+            pcell.font = Font(color="0563C1", underline="single", size=9)
+        elif (final_dir / "pdf" / fn).exists():
             pcell.hyperlink = f"pdf/{fn}"
             pcell.font = Font(color="0563C1", underline="single", size=9)
 

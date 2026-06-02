@@ -74,3 +74,38 @@ def test_operator_added_column_is_preserved(tmp_path):
     assert ws2.cell(row=crow, column=hdr.index("Conviction") + 1).value == "High"  # value preserved
     # and INTC's managed columns got synced
     assert ws2.cell(row=crow, column=hdr.index("EV 12-Month ($)") + 1).value == 124.03
+
+
+def test_week_dir_helper():
+    from cli.update_research_summary import _week_dir_for_date
+    assert _week_dir_for_date("2026-05-26") == "wk 22 2026"
+    assert _week_dir_for_date("2026-05-29") == "wk 22 2026"
+    assert _week_dir_for_date("bad") == ""
+
+
+def test_consolidate_pdfs_week_layout(tmp_path):
+    from cli.update_research_summary import consolidate_pdfs
+    final = tmp_path / "final"
+    run = final / "wk 22 2026" / "2026-05-29-INTC"
+    run.mkdir(parents=True)
+    (run / "research-2026-05-29-INTC.pdf").write_text("x")
+    moved = consolidate_pdfs(final)
+    assert moved == 1
+    assert (final / "wk 22 2026" / "pdf" / "research-2026-05-29-INTC.pdf").exists()
+    assert not (run / "research-2026-05-29-INTC.pdf").exists()
+
+
+def test_pdf_link_is_week_relative(tmp_path):
+    from cli.update_research_summary import update_summary
+    tk = tmp_path / "TK Research"; tk.mkdir()
+    final = tk / "final"
+    wkpdf = final / "wk 22 2026" / "pdf"; wkpdf.mkdir(parents=True)
+    (wkpdf / "research-2026-05-29-INTC.pdf").write_text("x")
+    reg = tk / "REGISTER.md"; reg.write_text(_REGISTER)
+    out = final / "TrueKnot-Research-Summary.xlsx"
+    update_summary(out, reg, final, out, price_fn=lambda t: None)
+    wb = load_workbook(out); ws = wb["Research Summary"]
+    # find INTC row's PDF cell hyperlink
+    links = [c.hyperlink.target for row in ws.iter_rows() for c in row
+             if c.hyperlink and "INTC" in str(c.value)]
+    assert links and links[0] == "wk 22 2026/pdf/research-2026-05-29-INTC.pdf"
