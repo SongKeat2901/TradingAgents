@@ -177,3 +177,24 @@ def test_correct_peer_metrics_in_run_rewrites_files_and_logs(tmp_path):
     assert result["total_corrections"] == 2  # one per file
     log = json.loads((raw / "peer_corrections.json").read_text(encoding="utf-8"))
     assert len(log["corrections"]) == 2
+
+
+def test_respectively_list_value_belonging_to_other_peer_not_fabricated():
+    """TSM 2026-05-29 regression: in a "X and Y ... a and b respectively"
+    list, the span iterator binds the SECOND ticker (UMC/AMZN) to the FIRST
+    value, which actually belongs to the first ticker. The first value
+    matches the OTHER peer's authoritative cell exactly, so snapping it to
+    the bound ticker's value would overwrite a CORRECT number — fabricating
+    the first peer's metric. The corrector must skip it.
+
+    Real case: "ASML and UMC ... ND/EBITDA -0.45x and -0.75x respectively"
+    — iterator bound UMC→-0.45x (ASML's true value); corrector wrote
+    -0.75x, leaving the report claiming ASML at -0.75x (fabricated).
+    Here: GOOGL fwd P/E 29.59x (true) and AMZN 27.04x (true); iterator
+    binds AMZN→29.59x, which equals GOOGL's authoritative cell → skip.
+    """
+    text = "Mega-caps GOOGL and AMZN sit at forward P/E 29.59x and 27.04x respectively."
+    out, corrections = _correct(text)
+    # Both displayed values are correct as written; nothing must change.
+    assert out == text
+    assert corrections == []

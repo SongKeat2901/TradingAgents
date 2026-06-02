@@ -89,6 +89,37 @@ def _claimed_render(field: str, claimed: float, kind: str, glyph: str) -> str | 
     return _format_authoritative(field, claimed, kind, glyph)
 
 
+def _value_matches_other_peer(
+    field: str,
+    claimed_render: str,
+    bound_ticker: str,
+    peer_ratios: dict,
+    kind: str,
+    glyph: str,
+) -> bool:
+    """True if `claimed_render` exactly matches a DIFFERENT peer's authoritative
+    cell for this metric.
+
+    TSM 2026-05-29 anti-fabrication guard: in a "X and Y ... a and b
+    respectively" list the span iterator binds the second ticker (Y) to the
+    first value (a), which actually belongs to X. If that value already
+    matches X's authoritative cell at display precision, the number is
+    correctly X's — only the name↔number binding is ambiguous — so snapping
+    it to Y's value would overwrite a CORRECT figure and fabricate X's metric.
+    Skip the correction (conservative: never corrupt a verbatim peer value)."""
+    if claimed_render is None:
+        return False
+    for other, cell in peer_ratios.items():
+        if other == bound_ticker or not isinstance(cell, dict):
+            continue
+        other_actual = cell.get(field)
+        if other_actual is None:
+            continue
+        if _format_authoritative(field, float(other_actual), kind, glyph) == claimed_render:
+            return True
+    return False
+
+
 # Header phrase (normalised) → peer_ratios field, for markdown-table columns.
 # Reuses the validator's prose phrase map plus a few table-only header spellings.
 _HEADER_FIELD_ALIASES: dict[str, str] = {
@@ -280,6 +311,14 @@ def correct_peer_metrics_text(
         claimed_render = _claimed_render(field, claimed_num, kind, glyph)
         if claimed_render == new_core:
             continue  # already verbatim at display precision
+
+        # TSM 2026-05-29: skip when the claimed value is actually a different
+        # peer's authoritative figure (mis-bound by a "...a and b respectively"
+        # list). Snapping it would fabricate that other peer's metric.
+        if _value_matches_other_peer(
+            field, claimed_render, ticker, peer_ratios, kind, glyph
+        ):
+            continue
 
         new_full = f"**{new_core}**" if bold else new_core
         edits.append((
