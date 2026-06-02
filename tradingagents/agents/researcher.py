@@ -52,6 +52,25 @@ def _close_on_or_before(rows: list[tuple[str, float, float, float]], date: str) 
     return candidate
 
 
+def _close_with_date_on_or_before(
+    rows: list[tuple[str, float, float, float]], date: str
+) -> tuple[Optional[str], Optional[float]]:
+    """Return (close_date, close) on `date` or the most recent trading day
+    before it. `close_date` is the ACTUAL session date — it differs from
+    `date` when the trade_date's session hasn't closed yet (e.g. an intraday
+    'today' run: trade_date 2026-06-02 → close_date 2026-06-01). Recording it
+    stops the report from mislabeling a prior close as the trade_date's close
+    (MSFT 2026-05-29 reported $426.99 'on 2026-05-29' — actually the May-28
+    close)."""
+    result: tuple[Optional[str], Optional[float]] = (None, None)
+    for d, _h, _l, c in rows:
+        if d <= date:
+            result = (d, c)
+        else:
+            break
+    return result
+
+
 def _ytd_high_low(rows: list[tuple[str, float, float, float]], date: str) -> tuple[Optional[float], Optional[float]]:
     """Return (max High, min Low) across rows in the same calendar year as `date`, up to and including `date`."""
     year = date[:4]
@@ -193,13 +212,27 @@ def fetch_research_pack(state: dict) -> None:
     # strings to numeric values here so downstream agents (especially the PM's
     # QC #7 self-audit) can verify price citations against a real number.
     rows = _parse_ohlcv_rows(prices.get("ohlcv", ""))
-    close_on_date = _close_on_or_before(rows, date)
+    close_date, close_on_date = _close_with_date_on_or_before(rows, date)
     ytd_high, ytd_low = _ytd_high_low(rows, date)
+    # Name the ACTUAL close date. When it equals the trade_date the session has
+    # closed; when earlier (intraday 'today' run) it's the latest available
+    # close — say so explicitly so downstream agents never write "closes at $X
+    # on <trade_date>" for a price that is really a prior session's close.
+    if close_date and close_date == date:
+        _ref_source = f"yfinance close of {close_date}"
+    elif close_date:
+        _ref_source = (
+            f"yfinance close of {close_date} (latest available on/before "
+            f"trade_date {date}; {date}'s session has not closed/indexed)"
+        )
+    else:
+        _ref_source = f"yfinance close on or before {date}"
     reference = {
         "ticker": ticker,
         "trade_date": date,
         "reference_price": close_on_date,
-        "reference_price_source": f"yfinance close on or before {date}",
+        "reference_close_date": close_date,
+        "reference_price_source": _ref_source,
         "spot_50dma": _latest_indicator_value(indicators.get("close_50_sma", "")),
         "spot_200dma": _latest_indicator_value(indicators.get("close_200_sma", "")),
         "ytd_high": ytd_high,

@@ -112,6 +112,50 @@ def test_close_on_or_before_falls_back_when_date_is_holiday(tmp_path):
     assert _close_on_or_before(rows, "2025-01-01") is None
 
 
+def test_close_with_date_returns_actual_session_date(tmp_path):
+    """Off-by-one fix (MSFT 2026-05-29): the reference must carry the ACTUAL
+    close date so a prior session's close is never mislabeled as the
+    trade_date's close. When the trade_date row exists, close_date == date;
+    when it doesn't (weekend/intraday-today), close_date is the prior session."""
+    from tradingagents.agents.researcher import (
+        _close_with_date_on_or_before, _parse_ohlcv_rows,
+    )
+    rows = _parse_ohlcv_rows(_OHLCV_STUB)
+    # Exact trading-day row present → returns that day + its close
+    assert _close_with_date_on_or_before(rows, "2026-05-01") == ("2026-05-01", 410.0)
+    # Saturday → falls back to the prior session, and REPORTS that prior date
+    assert _close_with_date_on_or_before(rows, "2026-05-02") == ("2026-05-01", 410.0)
+    # Before any rows → (None, None)
+    assert _close_with_date_on_or_before(rows, "2025-01-01") == (None, None)
+
+
+def test_get_yfin_data_passes_end_inclusive():
+    """yfinance `end` is exclusive; the fetch must add a day so the requested
+    end_date's own session is included (else the trade_date close is dropped
+    and the reference falls back to the prior day — the MSFT 2026-05-29 bug)."""
+    from unittest.mock import patch, MagicMock
+    import pandas as pd
+    from tradingagents.dataflows import y_finance
+
+    captured = {}
+
+    def fake_history(start=None, end=None):
+        captured["start"], captured["end"] = start, end
+        return pd.DataFrame(
+            {"Open": [1.0], "High": [1.0], "Low": [1.0], "Close": [1.0],
+             "Adj Close": [1.0], "Volume": [1]},
+            index=pd.to_datetime(["2026-05-29"]),
+        )
+
+    fake_ticker = MagicMock()
+    fake_ticker.history.side_effect = fake_history
+    with patch.object(y_finance.yf, "Ticker", return_value=fake_ticker), \
+         patch.object(y_finance, "yf_retry", lambda fn: fn()):
+        y_finance.get_YFin_data_online("MSFT", "2021-05-29", "2026-05-29")
+    # end must be the day AFTER the requested end_date (inclusive of 05-29)
+    assert captured["end"] == "2026-05-30"
+
+
 def test_latest_indicator_value_handles_na_and_empty():
     from tradingagents.agents.researcher import _latest_indicator_value
     # Real-format string with N/A entries above the latest numeric

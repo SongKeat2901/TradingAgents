@@ -1,5 +1,5 @@
 from typing import Annotated
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import pandas as pd
 import yfinance as yf
@@ -18,8 +18,16 @@ def get_YFin_data_online(
     # Create ticker object
     ticker = yf.Ticker(symbol.upper())
 
-    # Fetch historical data for the specified date range
-    data = yf_retry(lambda: ticker.history(start=start_date, end=end_date))
+    # Fetch historical data for the specified date range.
+    # yfinance's `end` is EXCLUSIVE — passing end=<trade_date> drops the
+    # trade_date's own session, so the reference-price picker fell back to the
+    # PRIOR trading day's close (MSFT 2026-05-29 reported $426.99, the May-28
+    # close, instead of the real May-29 close $450.24). Add one day so the
+    # requested end_date's session is included when it has closed.
+    _end_inclusive = (
+        datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    ).strftime("%Y-%m-%d")
+    data = yf_retry(lambda: ticker.history(start=start_date, end=_end_inclusive))
 
     # Check if data is empty
     if data.empty:
