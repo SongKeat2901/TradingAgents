@@ -764,3 +764,18 @@ def test_subject_net_debt_misbound_to_peer_skipped(tmp_path):
     v_yes = validate_peer_metrics(text, "decision.md", pr, peers, main_ticker="INTC",
                                   subject_net_debt=27_780_000_000)
     assert not any(x.metric.lower().strip() == "net debt" and x.ticker == "NVDA" for x in v_yes)
+
+
+def test_peer_net_debt_fx_conversion_not_flagged(tmp_path):
+    """AMKR 2026-05-29: a peer net_debt claim disclosing a TWD→USD conversion
+    ('$5.0B USD equivalent (159.8B TWD ÷ 32)') must not be flagged — the
+    peer_ratios.json cell is in TWD, so the USD-equivalent legitimately
+    differs from it. A non-converted wrong $ value still flags."""
+    import json as _json
+    from tradingagents.validators.peer_metric_validator import validate_peer_metrics
+    pr = tmp_path / "peer_ratios.json"
+    pr.write_text(_json.dumps({"ASX": {"net_debt": 159_786_393_000, "nd_ebitda": 1.27}}))
+    peers = tmp_path / "peers.json"; peers.write_text(_json.dumps({"ASX": {}}))
+    ok = "- **ASX net debt ~$5.0B USD equivalent** (159.8B TWD ÷ 32), ND/EBITDA 1.27x"
+    v = validate_peer_metrics(ok, "analyst_fundamentals.md", pr, peers, main_ticker="AMKR")
+    assert not any(x.metric.lower().strip() == "net debt" for x in v)

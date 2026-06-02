@@ -40,13 +40,49 @@ def filing_is_xbrl_stub(sec_filing_text: str | None) -> bool:
     return bool(sec_filing_text) and _XBRL_STUB_MARKER in sec_filing_text
 
 
+_QUOTE_RE = re.compile(r"[\"“”‘’«»]([^\"“”‘’«»]{15,})[\"“”‘’«»]")
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _citation_substantiated(line: str, sec_filing_text: str) -> bool:
+    """True when the Note-citing line carries a verbatim quote that is
+    actually present in the filing text.
+
+    RKLB 2026-05-28: the fetcher tagged the 10-Q with the XBRL-warning header
+    yet the body DID contain the cited note prose ("Remaining backlog totaled
+    $ 2,219,756 ..."). A citation whose quoted text is found in the filing is
+    substantiated, not fabricated — so it must not be flagged. A genuinely
+    fabricated quote (AAPL 2026-05-29) is absent and still flags. Matching is
+    whitespace- and punctuation-tolerant (the filing renders "$ 2,219,756"
+    while the report writes "$2,219,756K"): we look for a contiguous run of
+    the quote's letters/spaces in the filing."""
+    sec_alpha = _norm(re.sub(r"[^A-Za-z ]", " ", sec_filing_text)).lower()
+    for q in _QUOTE_RE.findall(line):
+        # Prefer the alphabetic phrase BEFORE the first digit — number
+        # formatting differs between the filing ("$ 2,219,756") and the report
+        # ("$2,219,756K"), but the surrounding prose ("Remaining backlog
+        # totaled") matches verbatim.
+        prefix = re.split(r"\d", q, 1)[0]
+        for candidate in (prefix, q):
+            alpha = _norm(re.sub(r"[^A-Za-z ]", " ", candidate)).lower()
+            if len(alpha) >= 15 and alpha[:60] in sec_alpha:
+                return True
+    return False
+
+
 def validate_filing_attribution(
     text: str, file_label: str, sec_filing_text: str | None
 ) -> list[FilingAttributionViolation]:
     """Flag `Note <N>` citations when the filing is an XBRL stub.
 
     Returns [] when the filing is NOT a stub (readable filings legitimately
-    carry numbered prose footnotes a report may cite)."""
+    carry numbered prose footnotes a report may cite). A Note citation whose
+    verbatim quote is found in the filing is substantiated and not flagged
+    even under the XBRL-stub heuristic (the warning header can co-exist with
+    readable note prose)."""
     if not text or not filing_is_xbrl_stub(sec_filing_text):
         return []
     violations: list[FilingAttributionViolation] = []
@@ -56,12 +92,15 @@ def validate_filing_attribution(
         le = text.find("\n", m.end())
         if le == -1:
             le = len(text)
+        line = text[ls:le]
+        if sec_filing_text and _citation_substantiated(line, sec_filing_text):
+            continue
         violations.append(FilingAttributionViolation(
             severity="MATERIAL",
             type="fabricated_note_citation",
             file=file_label,
             line_no=ln,
-            match_text=text[ls:le].strip()[:160],
+            match_text=line.strip()[:160],
         ))
     return violations
 

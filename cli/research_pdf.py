@@ -593,8 +593,8 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r"raw/calendar\.json", "the earnings calendar"),
     (r"raw/reference\.json", "the reference snapshot"),
     (r"raw/classification\.json", "the technical classifier output"),
-    (r"raw/pm_brief\.md", "the setup brief"),
-    (r"\bpm_brief\.md\b", "the setup brief"),
+    (r"raw/pm_brief\.md", "our methodology"),
+    (r"\bpm_brief\.md\b", "our methodology"),
     (r"\bpeer_ratios\.json\b", "the peer-ratios dataset"),
     # Generic catch-all for any other raw/<file>.{json,md}. MUST run before the
     # bare-filename mappings below — otherwise a bare rule strips the filename
@@ -617,7 +617,9 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r"\bcalendar\.json\b", "the earnings calendar"),
     (r"\bsec_filing\.md\b", "the 10-Q text"),
     # Bare "pm_brief" (no .md) — "per pm_brief peer table", "the pm_brief's framing".
-    (r"\bpm_brief\b", "the setup brief"),
+    # Neutralised to "our methodology" (NOT "the setup brief" — referencing an
+    # internal setup brief is itself a process leak; 2026-06-02 full-scrub v2).
+    (r"\bpm_brief\b", "our methodology"),
     # General bare <name>.json catch-all (news.json, insider.json, social.json,
     # prices.json, indicators.json, ...). MUST follow the friendly-named bare
     # mappings above so those win; this mops up the rest.
@@ -633,9 +635,10 @@ _AGENTIC_VOCAB_REPLACEMENTS: list[tuple[str, str]] = [
     (r" — v2 Report\b", ""),
     (r" — v2\b", ""),
     (r"\(v2\)", ""),
-    # PM Pre-flight terminology.
-    (r"\bPM Pre-flight Brief\b", "Setup brief"),
-    (r"\bPM Pre-flight\b", "Setup"),
+    # PM Pre-flight terminology → neutral methodology language (no internal-doc leak).
+    (r"\bPM Pre-flight Brief\b", "our methodology"),
+    (r"\bThe PM Pre-flight Brief\b", "Our methodology"),
+    (r"\bPM Pre-flight\b", "our methodology"),
     # QC framework refs that occasionally leak.
     (r"\bItem 16[a-c]?\b", "the numerical-trace check"),
     (r"\bItem 15\b", "the filing-anchor check"),
@@ -713,16 +716,30 @@ _LLM_DIRECTIVE_PATTERNS: list[str] = [
     # the pm_brief.md suffix differs).
     r"Treat as \*\*known data\*\*, never as \"pending adjudication\" or \"awaiting filing\"\.",
     r"Treat them as known data, NEVER as 'pending adjudication' or 'awaiting filing'\.",
-    # 2026-06-02 full-scrub: analyst notes sometimes restate the setup brief's
-    # "authoritative interpretation rules for this report" with a verbatim
-    # blockquote of the agent-facing rules (MSFT 2026-05-29 p31). Strip the
-    # lead-in + the blockquote; the substantive analysis that follows stays.
-    r"Per [^\n]*?authoritative interpretation rules for this report are:\s*(?:>[^\n]*\n?)*",
+    # 2026-06-02 full-scrub v2: analyst notes across the batch restate the
+    # setup brief's "interpretation rules for analysts" with a verbatim quote
+    # of the agent-facing rules. Six distinct lead-in phrasings were observed
+    # (ONDS/RKLB/AAOI/FUTU/INTC/ORCL), e.g.:
+    #   "The PM Pre-flight Brief specifies the following interpretation rules, quoted verbatim:"
+    #   "Per pm_brief.md interpretation rules for analysts (quoted verbatim):"
+    #   "Quoting the interpretation rules for analysts verbatim from pm_brief.md:"
+    # (A) lead-in line ending ":" + the following quoted block (blockquote /
+    #     bullets / numbered), with optional blank lines between.
+    r"(?im)^[ \t]*[^\n]*\binterpretation rules\b[^\n]*:[ \t]*\n(?:[ \t]*\n)*(?:[ \t]*(?:>|[-*]|\d+\.)[^\n]*\n?)+",
+    # (B) any remaining single line mentioning "interpretation rules" (lead-ins
+    #     whose rules follow as prose, the trailing provenance footnote that
+    #     lists "...interpretation rules)", a stray header). No legitimate
+    #     customer-facing text references "interpretation rules".
+    r"(?im)^[^\n]*\binterpretation rules\b[^\n]*\n?",
     # The closing process-narration sentence that frames the rules as binding.
     r"\s*Every interpretation that follows applies these rules\.",
-    # Stray "Interpretation rules for analysts:" header + its bullet list, in
-    # case the setup-brief framing surfaces outside pm_brief.
-    r"Interpretation rules for analysts:\s*(?:\n-[^\n]*)*",
+    # (C) anti-hallucination provenance narration — an italic sourcing footnote
+    #     ("*All numerical claims in this report trace to the following
+    #     sources: ... No figures were invented or sourced from memory.*").
+    #     Strip the whole italic paragraph when it carries either marker.
+    r"\*[^*\n]*?(?:No figures were invented|trace to the following sources)[^*\n]*\*",
+    # Bare defensive sentence, if it survives outside an italic run.
+    r"(?i)\s*No figures were invented or sourced from memory\.",
 ]
 
 

@@ -77,6 +77,23 @@ _METRIC_EXPECTED_KINDS: dict[str, set[str]] = {
     "ttm_ebitda": {"billions", "millions"},
 }
 
+# A net_debt claim that discloses a foreign-currency → USD conversion. The
+# peer_ratios.json cell is stored in the issuer's reporting currency, so a
+# disclosed USD-equivalent can't be unit-compared against it. Matches forms
+# like "159.8B TWD ÷ 32", "936.2B TWD / 32", "$5.0B USD equivalent".
+_FX_CONVERSION_RE = re.compile(
+    r"\b(?:TWD|HKD|KRW|JPY|EUR|CNY|RMB|GBP|SGD|INR)\b\s*[÷/]\s*\d"
+    r"|USD[\s\-]*equiv",
+    re.IGNORECASE,
+)
+
+
+def _discloses_fx_conversion(text: str | None) -> bool:
+    """True when the match context discloses a foreign-currency → USD
+    conversion (so a USD-equivalent net_debt legitimately differs from the
+    issuer-currency peer_ratios.json cell)."""
+    return bool(text) and bool(_FX_CONVERSION_RE.search(text))
+
 # Metrics that are NOT in peer_ratios.json — citing them as if they were
 # is a fabricated source attribution.
 _NON_VERIFIABLE_METRICS = {
@@ -469,6 +486,14 @@ def validate_peer_metrics(
             # net debt sat on a line citing NVDA). Skip — not a peer claim.
             if (verifiable_field == "net_debt" and subject_net_debt is not None
                     and _values_match(claimed_val, float(subject_net_debt), kind)):
+                continue
+            # Phase 9 (AMKR 2026-05-29): a peer net_debt claim that discloses a
+            # foreign-currency conversion — "$5.0B USD equivalent (159.8B TWD ÷
+            # 32)" for ASX/TSM — cannot be compared against peer_ratios.json,
+            # which stores net_debt in the issuer's reporting currency (TWD).
+            # The disclosed USD-equivalent legitimately differs from the TWD
+            # cell, so the unit mismatch is not a fabrication. Skip.
+            if verifiable_field == "net_debt" and _discloses_fx_conversion(match_text):
                 continue
             if not _values_match(claimed_val, float(actual), kind):
                 violations.append(PeerMetricViolation(

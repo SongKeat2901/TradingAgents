@@ -153,6 +153,65 @@ def test_clean_agentic_vocabulary_neutralises_provenance_narration():
     assert "GOOGL 28x" in out2  # the data survives
 
 
+def test_full_scrub_v2_kills_all_interpretation_rule_leadins():
+    """2026-06-02 batch: six distinct lead-in phrasings restate the setup
+    brief's interpretation rules with a verbatim quoted block. All must be
+    stripped (lead-in + the quoted rules), regardless of phrasing or whether
+    the rules follow as a blockquote, bullets, or numbered list."""
+    from cli.research_pdf import _strip_llm_directives as strip
+
+    leadins = [
+        'The following rules are quoted verbatim from the pm_brief.md "Interpretation rules for analysts" and govern every numerical interpretation in this report:',
+        "The PM Pre-flight Brief specifies the following interpretation rules, quoted verbatim:",
+        "Per pm_brief.md interpretation rules for analysts (quoted verbatim):",
+        "From pm_brief.md *Interpretation rules for analysts* (verbatim):",
+        "Quoting the interpretation rules for analysts verbatim from pm_brief.md:",
+        "Quoting the Interpretation rules for analysts from pm_brief.md verbatim:",
+    ]
+    blocks = [
+        '\n\n> *"Rule one. Rule two."*\n\nKeep this analysis.',
+        '\n- Treat capex as a demand signal\n- Net cash is the floor\n\nKeep this analysis.',
+        '\n1. Azure is the KPI\n2. Capex is a headwind\n\nKeep this analysis.',
+    ]
+    for li in leadins:
+        for blk in blocks:
+            out = strip(li + blk)
+            assert "interpretation rules" not in out.lower(), f"leaked: {li!r}"
+            assert "Rule one" not in out and "Azure is the KPI" not in out and "Treat capex" not in out, f"rules leaked under {li!r}"
+            assert "Keep this analysis." in out
+
+
+def test_full_scrub_v2_strips_provenance_footnote_and_neutralises_pm_brief():
+    """The ONDS-style trailing italic sourcing footnote (anti-hallucination
+    narration + raw-file list) must be removed; scattered pm_brief / PM
+    Pre-flight Brief references must read as neutral methodology language,
+    never as an internal document."""
+    from cli.research_pdf import _strip_llm_directives, _clean_agentic_vocabulary
+
+    footnote = (
+        "Headline analysis here.\n\n"
+        "*All numerical claims in this report trace to the following sources: "
+        "financials.json (income statement); raw/pm_brief.md (peer ratios table, "
+        "interpretation rules); raw/reference.json (reference price $9.06). "
+        "No figures were invented or sourced from memory.*\n"
+    )
+    out = _clean_agentic_vocabulary(_strip_llm_directives(footnote))
+    assert "trace to the following sources" not in out
+    assert "No figures were invented" not in out
+    assert "interpretation rules" not in out.lower()
+    assert "Headline analysis here." in out
+
+    for src in (
+        "Per pm_brief.md, NII on float is a key driver.",
+        "per the pm_brief framing, margin compresses.",
+        "The PM Pre-flight Brief specifies the peer set.",
+    ):
+        scrubbed = _clean_agentic_vocabulary(_strip_llm_directives(src))
+        assert "pm_brief" not in scrubbed
+        assert "the setup brief" not in scrubbed
+        assert "PM Pre-flight" not in scrubbed
+
+
 def test_residual_raw_paths_fully_scrubbed():
     from cli.research_pdf import _clean_agentic_vocabulary as scrub
     # no-extension, unmapped-name, and trailing forms all leave no "raw/"

@@ -102,3 +102,35 @@ def test_strip_is_noop_for_readable_filing():
     text = "Per Note 2 revenue rose."
     out, n = strip_fabricated_note_citations(text, _READABLE)
     assert out == text and n == 0
+
+
+def test_substantiated_note_quote_not_flagged_under_xbrl_warning():
+    """RKLB 2026-05-28: the fetched 10-Q carried the XBRL-warning header yet
+    its body DID contain the cited note prose. A Note citation whose verbatim
+    quote is present in the filing is substantiated, not fabricated, and must
+    not be flagged — even though filing_is_xbrl_stub() is True."""
+    from tradingagents.validators.filing_attribution_validator import (
+        validate_filing_attribution,
+    )
+    # Stub warning header AND real note prose (the filing renders "$ 2,219,756").
+    sec = (
+        "> ⚠️ **XBRL ENCODING WARNING**: prose footnotes are NOT readable.\n\n"
+        "3. REVENUES\nRemaining backlog totaled $ 2,219,756 as of March 31, 2026, "
+        "of which approximately 36% is expected to be recognized within 12 months.\n"
+    )
+    text = (
+        'Backlog $2,219,756K verified verbatim from 10-Q Note 3 '
+        '("Remaining backlog totaled $2,219,756K").\n'
+    )
+    assert validate_filing_attribution(text, "decision.md", sec) == []
+
+
+def test_fabricated_note_quote_still_flagged():
+    """A Note citation whose quoted text is ABSENT from the filing remains a
+    fabricated citation (AAPL-class protection preserved)."""
+    from tradingagents.validators.filing_attribution_validator import (
+        validate_filing_attribution,
+    )
+    text = 'Per Note 5 ("a long fabricated quote not in the filing at all here").\n'
+    v = validate_filing_attribution(text, "decision.md", _STUB)
+    assert len(v) == 1 and v[0].type == "fabricated_note_citation"
