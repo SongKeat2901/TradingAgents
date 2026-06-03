@@ -78,11 +78,11 @@ body {
 .cover {
     page-break-after: always;
     text-align: center;
-    padding-top: 3cm;
+    padding-top: 2cm;
 }
 
 .cover-brand {
-    margin-bottom: 2.8cm;
+    margin-bottom: 1.8cm;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -134,7 +134,7 @@ body {
 .cover .subtitle {
     font-size: 16pt;
     color: #4f525d;
-    margin-bottom: 3em;
+    margin-bottom: 2em;
     font-weight: 400;
 }
 
@@ -147,7 +147,7 @@ body {
     font-weight: 700;
     border-radius: 4px;
     letter-spacing: 0.08em;
-    margin-bottom: 3.5em;
+    margin-bottom: 2.2em;
 }
 
 .cover .meta {
@@ -158,7 +158,7 @@ body {
 }
 
 .cover .disclaimer {
-    margin-top: 4em;
+    margin-top: 2.2em;
     color: #a9abb0;
     font-size: 8pt;
     font-style: italic;
