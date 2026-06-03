@@ -482,6 +482,22 @@ _DECISION_PATTERNS = (
 )
 
 
+def _headline_clip(text: str, hard_cap: int = 160) -> str:
+    """Clip a headline at a SENTENCE boundary (never mid-word).
+
+    The cover badge previously used a blind ``[:80]`` slice which chopped the
+    first sentence mid-phrase (e.g. "...UPTREND regime but at"). Take the first
+    full sentence instead; if that sentence is longer than ``hard_cap``, cut at
+    the last word boundary and add an ellipsis so it never dangles.
+    """
+    text = text.strip()
+    m = re.match(r"(.+?[.!?])(?:\s|$)", text)
+    sentence = m.group(1).strip() if m else text
+    if len(sentence) > hard_cap:
+        sentence = sentence[:hard_cap].rsplit(" ", 1)[0].rstrip(",;:·-—") + "…"
+    return sentence
+
+
 def _summarize_decision(decision_text: str, fallback: str = "See full report") -> str:
     """Pull a short headline from the decision.md or raw decision string."""
     if not decision_text:
@@ -495,12 +511,12 @@ def _summarize_decision(decision_text: str, fallback: str = "See full report") -
                 if idx >= 0:
                     cleaned = cleaned[idx + len(pat) - 2 * pat.count("*"):].strip(": ").strip()
                 if cleaned:
-                    return cleaned[:80]
+                    return _headline_clip(cleaned)
     # Fallback: first non-empty non-heading line
     for line in decision_text.splitlines():
         s = line.strip()
         if s and not s.startswith("#"):
-            return re.sub(r"[*`]", "", s)[:80]
+            return _headline_clip(re.sub(r"[*`]", "", s))
     return fallback
 
 

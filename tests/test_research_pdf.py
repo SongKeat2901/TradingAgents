@@ -465,3 +465,32 @@ def test_strip_llm_directives_removes_unavailable_warning_blocks():
     cleaned_nd = _strip_llm_directives(net_debt_warning)
     assert "Do not cite net-debt arithmetic" not in cleaned_nd
     assert "do not invent figures from memory" not in cleaned_nd
+
+
+def test_cover_headline_keeps_full_first_sentence():
+    """Regression: the cover badge used a blind [:80] slice that chopped the
+    first sentence mid-phrase (e.g. AAPL '...UPTREND regime but at'). It must now
+    return the FULL first sentence, not cut at the internal '$315.20' period."""
+    from cli.research_pdf import _summarize_decision
+
+    exec_md = (
+        "## Executive Summary\n\n"
+        "AAPL trades at $315.20 (2026-06-02 close) inside an intact UPTREND "
+        "regime but at a location offering 0.0:1 reward/risk into a six-session "
+        "binary window. The thesis is constructive on a 12-month view."
+    )
+    out = _summarize_decision(exec_md)
+    assert out.endswith("window.")          # complete sentence
+    assert "but at" in out and "binary window" in out
+    assert "$315.20" in out                  # internal decimal not treated as a sentence end
+    assert not out.endswith("but at")        # the old bug
+
+
+def test_cover_headline_clips_overlong_sentence_at_word_boundary():
+    from cli.research_pdf import _headline_clip
+
+    long_sentence = "word " * 120 + "tail."
+    out = _headline_clip(long_sentence, hard_cap=160)
+    assert len(out) <= 161
+    assert out.endswith("…")
+    assert not out[:-1].endswith(" ")        # no dangling space before the ellipsis
