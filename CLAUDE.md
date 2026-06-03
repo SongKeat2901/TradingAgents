@@ -97,6 +97,15 @@ can't paraphrase. See memory: `project_phase6_deterministic_blocks_pattern.md`.
 - **yfinance data anomalies.** ORCL Q1 capex/revenue can come back as 108% (capex >
   revenue). The deterministic block reports it faithfully; analyst flags as "anomalous"
   and excludes from peer comparison. Don't auto-clamp.
+- **Intraday-bar capture on same-day-close runs.** yfinance returns an *in-progress*
+  bar for `trade_date` while the US session is open, whose Close is the last trade, not
+  the settlement close. `drop_incomplete_session()` (`dataflows/stockstats_utils.py`,
+  wired into both `get_YFin_data_online` + `load_ohlcv`) drops it until 16:00 ET so the
+  reference price is the settled close. The mini runs **SGT (UTC+8)** → US close 16:00 ET
+  = **04:00 SGT next day**; a same-day cadence started before that hits the bug (it
+  silently corrupted 8 of 21 refs in the 2026-06-02 batch, e.g. AAPL $308.85 intraday vs
+  $315.20 close). Audit a run: compare `decision.md` "Reference price:" against a fresh
+  yfinance close; `validation_report.json` carries `total_violations`/`blocking_violations`.
 - **CLI subprocess doesn't support `with_structured_output`.** Judges fall back to
   free-text via `agents/utils/structured.py:invoke_structured_or_freetext`. Expected
   log line: `"... provider does not support with_structured_output (...); falling back
