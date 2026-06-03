@@ -30,7 +30,10 @@ historical). If only tickers are given, ask for the trade date or use today's la
    ssh macmini-trueknot 'cd ~ && TRADINGRESEARCH_NO_TELEGRAM=1 ~/local/bin/tradingresearch --ticker <T> --date <D>'
    ```
    It prints `started pid=<N>` and returns in ~1s. Output lands in
-   `~/Documents/TK Research/preaudit/<D>-<T>/` (the `--output-dir` default).
+   `<TK>/preaudit/<D>-<T>/` (the `--output-dir` default), where `<TK>` is the
+   trueknotsg Google Drive folder
+   `~/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research`
+   (override base via `TK_RESEARCH_BASE`).
    Gotchas: do NOT add `nohup`, `&`, or `--output-dir`. macOS has no `timeout` binary.
 2. **Wait for completion** — run this as a background Bash command (it re-invokes
    you when the run exits, ~30 min):
@@ -41,11 +44,11 @@ historical). If only tickers are given, ask for the trade date or use today's la
    exist; check `raw/peer_corrections.json` total, `validation_report.json`
    `blocking_violations`, and that the PDF extracts 0 leak markers.
 4. **Audit** with the `report-auditor` subagent (RUN_DIR = the preaudit path).
-5. **If A+**: promote.
+5. **If A+**: promote **into the ISO-week folder** (`final/wk NN YYYY/`; create it if absent).
    ```bash
-   ssh macmini-trueknot 'TK=~/Documents/"TK Research"; mv "$TK/preaudit/<D>-<T>" "$TK/final/<D>-<T>"; rm -rf ~/.openclaw/data/research/<D>-<T>'
+   ssh macmini-trueknot 'TK="$HOME/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research"; WK="wk <NN> <YYYY>"; mkdir -p "$TK/final/$WK"; mv "$TK/preaudit/<D>-<T>" "$TK/final/$WK/<D>-<T>"; rm -rf ~/.openclaw/data/research/<D>-<T>'
    ```
-   Then add a row to `~/Documents/TK Research/REGISTER.md` (date, ticker, rating,
+   Then add a row to `<TK>/REGISTER.md` (date, ticker, rating,
    A+, ref price, EV, EV-vs-spot, QC, PDF) and rebuild the summary:
    `ssh macmini-trueknot 'cd ~/tradingagents && .venv/bin/python -m cli.update_research_summary'`
    (consolidates the PDF into `final/pdf/` and refreshes prices/moves).

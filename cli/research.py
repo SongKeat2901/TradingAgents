@@ -90,10 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Directory to write report files into. Optional — when omitted, "
             "the run is written to its working-copy (preaudit) location under "
-            "TK Research: ~/Documents/TK Research/preaudit/<date>-<ticker>. "
-            "The 'final' folder is populated only by manually promoting a run "
-            "(moving preaudit/<run> → final/<run>); the pipeline never writes "
-            "to final. Pass an explicit dir to override entirely."
+            "TK Research in the trueknotsg Google Drive: "
+            "~/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/"
+            "TK Research/preaudit/<date>-<ticker> (override base via "
+            "TK_RESEARCH_BASE). The 'final' folder is populated only by manually "
+            "promoting a run (preaudit/<run> → final/wk NN YYYY/<run>); the "
+            "pipeline never writes to final. Pass an explicit dir to override."
         ),
     )
 
@@ -211,10 +213,21 @@ _FOREGROUND_ENV = "TRADINGRESEARCH_FOREGROUND"
 
 def _tk_research_base() -> Path:
     """Base directory for TK Research runs, resolved on the host that runs
-    the binary. On macmini-trueknot this is
-    /Users/trueknot/Documents/TK Research. Working copies go under
-    `preaudit/`; promoted A+ reports live under `final/`."""
-    return Path.home() / "Documents" / "TK Research"
+    the binary. On macmini-trueknot the operation lives in the trueknotsg
+    Google Drive (My Drive), so reports + the native summary Sheet co-locate
+    and the summary can sit inside `final/`:
+    ~/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research.
+    Override with the `TK_RESEARCH_BASE` env var (used on dev hosts that don't
+    have the Drive mount). Working copies go under `preaudit/`; promoted A+
+    reports live under `final/` (by week, `final/wk NN YYYY/`)."""
+    override = os.environ.get("TK_RESEARCH_BASE")
+    if override:
+        return Path(override).expanduser()
+    return (
+        Path.home()
+        / "Library" / "CloudStorage"
+        / "GoogleDrive-trueknotsg@gmail.com" / "My Drive" / "TK Research"
+    )
 
 
 def _default_output_dir(ticker: str, date: str) -> str:

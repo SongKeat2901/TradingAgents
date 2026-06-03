@@ -15,7 +15,9 @@ PDFs to Telegram chat `-1003753140043`.
 
 # Local e2e (don't — too slow; use macmini)
 # --output-dir is optional; when omitted the run lands in its working-copy
-# (preaudit) location: ~/Documents/TK Research/preaudit/<date>-<ticker>.
+# (preaudit) location under TK Research in the trueknotsg Google Drive (My Drive):
+# ~/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research/preaudit/<date>-<ticker>
+# (override the base with the TK_RESEARCH_BASE env var on dev hosts).
 ~/local/bin/tradingresearch --ticker MSFT --date 2026-05-05 \
   --telegram-notify=-1003753140043
 ```
@@ -30,12 +32,14 @@ ssh macmini-trueknot 'cd ~/tradingagents && git pull origin main --quiet && .ven
 # 2. Refresh OAuth (8h TTL)
 ssh macmini-trueknot '~/.nvm/versions/node/v24.14.1/bin/claude -p hi'
 
-# 3. Archive prior run + kick fresh
-# Default output is the working copy: ~/Documents/TK Research/preaudit/<DATE>-<TICKER>.
+# 3. Archive prior run + kick fresh. TK Research lives in the trueknotsg Google
+# Drive (My Drive); set a shell var for the long path:
+#   TK="$HOME/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research"
+# Default output is the working copy: $TK/preaudit/<DATE>-<TICKER> (override base via TK_RESEARCH_BASE).
 # Omit --output-dir to use it; pass an explicit dir only to override.
-# A run is "finalized" by manually promoting it (preaudit → final), never by
-# the pipeline:  mv "~/Documents/TK Research/preaudit/<DATE>-<TICKER>" "~/Documents/TK Research/final/"
-ssh macmini-trueknot 'mv "~/Documents/TK Research/preaudit/<DATE>-<TICKER>" "...run-<SHA>" 2>/dev/null'
+# A run is "finalized" by manually promoting it BY WEEK (preaudit → final/wk NN YYYY/),
+# never by the pipeline:  mv "$TK/preaudit/<DATE>-<TICKER>" "$TK/final/wk NN YYYY/"
+ssh macmini-trueknot 'TK="$HOME/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research"; mv "$TK/preaudit/<DATE>-<TICKER>" "...run-<SHA>" 2>/dev/null'
 ssh macmini-trueknot '~/local/bin/tradingresearch --ticker <T> --date <D> \
   --telegram-notify=-1003753140043'
 # Daemon detaches; takes ~22-35 min.
@@ -128,9 +132,11 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
 - Memory: `~/.claude/projects/-Users-songkeat-Documents-Python-Trading-Agent/memory/`
 - Specs: `docs/superpowers/specs/`
 - Plans: `docs/superpowers/plans/`
-- Research output on macmini: working copies in `~/Documents/TK Research/preaudit/<date>-<ticker>/`
-  (the default when `--output-dir` is omitted); promoted A+ reports moved by hand to
-  `~/Documents/TK Research/final/<date>-<ticker>/`. The pipeline only ever writes preaudit.
+- Research output on macmini: TK Research lives in the **trueknotsg Google Drive (My Drive)** at
+  `~/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research/` (override base via
+  `TK_RESEARCH_BASE`; native summary Sheet lives inside `final/`). Working copies in
+  `…/TK Research/preaudit/<date>-<ticker>/` (default when `--output-dir` omitted); promoted A+ reports
+  moved by hand, **by week**, to `…/TK Research/final/wk NN YYYY/<date>-<ticker>/`. Pipeline only writes preaudit.
   Older runs (pre-default) live under `~/.openclaw/data/research/<date>-<ticker>.run-<sha>/`.
 - Telegram delivery: `cli/research_telegram.py` (auto-discovers bot token from
   `~/.openclaw/openclaw.json` on the OpenClaw host)

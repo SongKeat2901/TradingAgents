@@ -68,13 +68,34 @@ def test_output_dir_optional_parses_to_none():
 
 def test_default_output_dir_is_tk_research_preaudit(monkeypatch, tmp_path):
     """No --output-dir → working copy lands in <base>/preaudit/<date>-<ticker>.
-    On macmini-trueknot <base> resolves to /Users/trueknot/Documents/TK Research.
-    'final/' is populated only by manual promotion; the pipeline never writes it."""
+    On macmini-trueknot <base> resolves to the TK Research folder in the
+    trueknotsg Google Drive (My Drive). 'final/' is populated only by manual
+    promotion (by week); the pipeline never writes it."""
     import cli.research as research
 
     monkeypatch.setattr(research, "_tk_research_base", lambda: tmp_path / "TK Research")
     got = research._default_output_dir("NVDA", "2024-05-10")
     assert got == str(tmp_path / "TK Research" / "preaudit" / "2024-05-10-NVDA")
+
+
+def test_tk_research_base_defaults_to_my_drive(monkeypatch):
+    """Default base is the trueknotsg My Drive TK Research folder (so the native
+    summary Sheet can live inside final/), overridable via TK_RESEARCH_BASE."""
+    import cli.research as research
+
+    monkeypatch.delenv("TK_RESEARCH_BASE", raising=False)
+    base = research._tk_research_base()
+    assert base.name == "TK Research"
+    assert "CloudStorage" in str(base) and "My Drive" in str(base)
+    assert "GoogleDrive-trueknotsg@gmail.com" in str(base)
+
+
+def test_tk_research_base_env_override(monkeypatch, tmp_path):
+    """TK_RESEARCH_BASE overrides the default (dev hosts without the Drive mount)."""
+    import cli.research as research
+
+    monkeypatch.setenv("TK_RESEARCH_BASE", str(tmp_path / "alt"))
+    assert research._tk_research_base() == (tmp_path / "alt")
 
 
 def test_main_writes_to_tk_research_preaudit_when_no_output_dir(tmp_path, monkeypatch, capsys):

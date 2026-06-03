@@ -1,7 +1,10 @@
 """Maintain the TrueKnot research summary workbook (Phase 9).
 
 Single reusable entry point the OpenClaw `research-summary` skill calls to keep
-`~/Documents/TK Research/final/TrueKnot-Research-Summary.xlsx` current:
+`<TK Research>/final/TrueKnot-Research-Summary.xlsx` current, where <TK Research>
+is the trueknotsg Google Drive My Drive folder (see _tk_base / TK_RESEARCH_BASE).
+NOTE: superseded going forward by the native Google Sheet maintained via the
+`update-summary` skill (gog); kept for the xlsx artifact.
 
   1. consolidate every report PDF into final/pdf/research-<date>-<ticker>.pdf
   2. sync the A+ rows from REGISTER.md (authoritative rating / price / EV)
@@ -217,8 +220,21 @@ def update_summary(base_path: Path, register_path: Path, final_dir: Path,
     return {"out": str(out_path), "rows": ws.max_row - hrow, "aplus": len(aplus)}
 
 
+def _tk_base() -> Path:
+    """TK Research base — mirrors cli.research._tk_research_base (kept in sync):
+    the trueknotsg Google Drive My Drive folder, overridable via TK_RESEARCH_BASE."""
+    override = os.environ.get("TK_RESEARCH_BASE")
+    if override:
+        return Path(override).expanduser()
+    return (
+        Path.home()
+        / "Library" / "CloudStorage"
+        / "GoogleDrive-trueknotsg@gmail.com" / "My Drive" / "TK Research"
+    )
+
+
 def main(argv=None) -> int:
-    tk = Path(os.path.expanduser("~/Documents/TK Research"))
+    tk = _tk_base()
     p = argparse.ArgumentParser(prog="update_research_summary")
     p.add_argument("--tk-dir", default=str(tk))
     p.add_argument("--register", default=None)
