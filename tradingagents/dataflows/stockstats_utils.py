@@ -1,5 +1,7 @@
 import time
 import logging
+from datetime import datetime, time as dtime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
@@ -11,6 +13,42 @@ from .config import get_config
 from .utils import safe_ticker_component
 
 logger = logging.getLogger(__name__)
+
+_NY_TZ = ZoneInfo("America/New_York")
+_US_MARKET_CLOSE = dtime(16, 0)  # 4:00pm ET regular-session close
+
+
+def drop_incomplete_session(data: pd.DataFrame, now: datetime | None = None) -> pd.DataFrame:
+    """Drop the most recent bar when it is an in-progress (intraday) US session.
+
+    yfinance returns a bar dated *today* while the regular session is still
+    open; its Close is the last trade at fetch time, not the official
+    settlement close. Treating that as the trade_date close corrupts the
+    reference price — e.g. AAPL 2026-06-02 captured $308.85 at 10:09am ET vs
+    the real $315.20 settlement close. We drop that bar so callers fall back
+    to the last *settled* close, which researcher.py then labels as "latest
+    available on/before trade_date; session has not closed/indexed".
+
+    A bar is incomplete iff its calendar date equals the current
+    America/New_York date and the current ET time is before 16:00. Bars for
+    any prior (already-settled) session are always kept, so historical/
+    backtest fetches are unaffected.
+    """
+    if data is None or len(data) == 0:
+        return data
+    now_ny = (now or datetime.now(_NY_TZ)).astimezone(_NY_TZ)
+    if "Date" in getattr(data, "columns", []):
+        last_date = pd.to_datetime(data["Date"].iloc[-1]).date()
+    else:
+        last_date = pd.to_datetime(data.index[-1]).date()
+    session_in_progress = last_date == now_ny.date() and now_ny.time() < _US_MARKET_CLOSE
+    if session_in_progress:
+        logger.warning(
+            "Dropping in-progress %s session bar (US market not yet closed at %s ET)",
+            last_date, now_ny.strftime("%H:%M"),
+        )
+        data = data.iloc[:-1]
+    return data
 
 
 def yf_retry(func, max_retries=3, base_delay=2.0):
@@ -83,6 +121,9 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
             auto_adjust=True,
         ))
         data = data.reset_index()
+        # Never persist an in-progress intraday bar to the cache — otherwise a
+        # same-day rerun replays the unsettled close.
+        data = drop_incomplete_session(data)
         data.to_csv(data_file, index=False, encoding="utf-8")
 
     data = _clean_dataframe(data)

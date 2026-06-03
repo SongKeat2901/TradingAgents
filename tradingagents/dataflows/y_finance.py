@@ -4,7 +4,7 @@ from dateutil.relativedelta import relativedelta
 import pandas as pd
 import yfinance as yf
 import os
-from .stockstats_utils import StockstatsUtils, _clean_dataframe, yf_retry, load_ohlcv, filter_financials_by_date
+from .stockstats_utils import StockstatsUtils, _clean_dataframe, yf_retry, load_ohlcv, filter_financials_by_date, drop_incomplete_session
 
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
@@ -28,6 +28,14 @@ def get_YFin_data_online(
         datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
     ).strftime("%Y-%m-%d")
     data = yf_retry(lambda: ticker.history(start=start_date, end=_end_inclusive))
+
+    # Drop the trade_date bar if its US session has not closed yet: yfinance
+    # serves an in-progress intraday bar whose Close is the last trade, not the
+    # settlement close. Without this, the reference-price picker treats an
+    # intraday quote as the official close (e.g. AAPL 2026-06-02 $308.85 @10am
+    # ET vs the $315.20 close). Once dropped, researcher.py correctly falls back
+    # to the last settled close and labels it "session has not closed/indexed".
+    data = drop_incomplete_session(data)
 
     # Check if data is empty
     if data.empty:
