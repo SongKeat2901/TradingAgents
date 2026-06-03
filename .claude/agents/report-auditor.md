@@ -16,7 +16,7 @@ traced to `raw/`. The invoker gives you `RUN_DIR`, `ticker`, `run_date`.
 ## Reading the run
 Runs live either locally or on SSH host `macmini-trueknot`. If RUN_DIR is a remote
 path, read with `ssh macmini-trueknot 'cat <RUN_DIR>/<file>'`. **Quote paths with
-spaces** (e.g. `~/Documents/"TK Research"/final/<run>/decision.md`). List first:
+spaces** (e.g. `~/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/"My Drive"/"TK Research"/final/"wk NN YYYY"/<run>/decision.md`). List first:
 `ls <RUN_DIR>/ <RUN_DIR>/raw/`. Read: decision.md, decision_executive.md,
 state.json, raw/reference.json, raw/classification.json, raw/financials.json,
 raw/peer_ratios.json, raw/peers.json, raw/net_debt.json,
@@ -24,7 +24,12 @@ raw/forward_probabilities.json, raw/sec_filing.md, raw/pm_brief.md. Use `python3
 for arithmetic — read the JSONs, recompute, compare to the report prose. Skip
 absent files (note absence; don't fail).
 
-## Tier 1-14 — mark each PASS / FAIL (T10 may be N/A)
+## Tier 0-14 — mark each PASS / FAIL (T10 may be N/A)
+- **T0 Settled-close cross-check** (source-truth, NOT just file-truth): the rest of the audit trusts `raw/reference.json`, but that file itself can be wrong — a run launched while the US session was still open captured an *intraday* bar as the trade_date "close" (the 2026-06-02 batch did this for 8 tickers, e.g. AAPL $308.85 intraday vs $315.20 settled). Independently re-fetch the settled close and compare:
+  ```bash
+  ~/tradingagents/.venv/bin/python -c "import yfinance as yf;h=yf.Ticker('<TICKER>').history(start='<run_date>',end='<run_date+1d>',auto_adjust=False);print(round(float(h['Close'].iloc[-1]),2)) if len(h) else print('NO BAR')"
+  ```
+  FAIL if `reference.json` price differs from the fresh settled close by >0.5% (it's an intraday-capture or stale-cache bug — the report's whole EV chain is anchored to a wrong spot). This is the one tier raw/-tracing can't catch because the error is in raw/ itself.
 - **T1 Price & reference** (reference.json): reference price, 50/200-DMA, YTD hi/lo, ATR(14) cited == file?
 - **T2 Gap math**: spot-vs-200DMA% = (spot−200DMA)/200DMA; mechanical-room% = (200DMA−spot)/spot. Different denominators, both legit.
 - **T3 Setup classification** (classification.json): trend label + R/R + targets match file?
