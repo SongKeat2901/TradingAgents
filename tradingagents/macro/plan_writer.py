@@ -98,12 +98,12 @@ def to_grid(payload: dict) -> list[list]:
     for row in payload["rows"]:
         grid.append([
             row["ticker"], row["rating"], row["driver"], row["macro_bias"],
-            _pct(row["research_ev_pct"]), _pct(row["macro_delta_pct"]),
-            _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
+            _n(row["research_ev_pct"]), _n(row["macro_delta_pct"]),
+            _n(row["adjusted_ev_pct"]), _n(row["conviction"]), row["action"],
             _gfinance(row["ticker"]),
-            _money(row["intrinsic_fv"]), _pct(row["mos_pct"]),
-            _money(row["bear"]), _money(row["target"]),
-            _money(row["bull"]), _money(row["hard_stop"]), row["pdf_link"],
+            _n(row["intrinsic_fv"]), _n(row["mos_pct"]),
+            _n(row["bear"]), _n(row["target"]),
+            _n(row["bull"]), _n(row["hard_stop"]), row["pdf_link"],
         ])
     width = len(header)
     grid = [grow + [""] * (width - len(grow)) for grow in grid]
@@ -112,12 +112,13 @@ def to_grid(payload: dict) -> list[list]:
     return grid
 
 
-def _pct(v) -> str:
-    return "" if v is None else f"{v*100:+.1f}%"
-
-
-def _money(v) -> str:
-    return "" if v is None else f"${v:,.2f}"
+def _n(v):
+    """Raw numeric cell (or "" for None). Numbers are written un-formatted so
+    Sheets stores them as true numbers — display % / $ comes from the column
+    number-formats (beautify), and the EV +/- conditional colouring keys off the
+    numeric sign. (Writing pre-formatted strings like "+9.7%" made Sheets parse
+    inconsistently and broke the colour rules.)"""
+    return "" if v is None else v
 
 
 def _gfinance(ticker: str) -> str:

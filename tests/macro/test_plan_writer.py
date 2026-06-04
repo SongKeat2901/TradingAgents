@@ -74,11 +74,11 @@ def test_to_grid_pads_to_constant_height_with_header_and_data():
     assert header[10] == "Intrinsic FV" and header[11] == "Margin of Safety %"
     data_row = grid[5]
     assert data_row[0] == "AAPL"
-    assert data_row[6] == "+15.0%"                    # adjusted_ev_pct
+    assert data_row[6] == 0.15                         # adjusted_ev_pct (raw number; % via col format)
     assert data_row[9] == '=GOOGLEFINANCE("AAPL","price")'  # live px, no fallback (errors visibly)
-    assert data_row[10] == "$280.00"                  # intrinsic fair value
-    assert data_row[11] == "+12.0%"                   # margin of safety
-    assert data_row[15] == "$170.00"                  # hard_stop (shifted)
+    assert data_row[10] == 280.0                       # intrinsic fair value (raw; $ via col format)
+    assert data_row[11] == 0.12                        # margin of safety (raw number)
+    assert data_row[15] == 170.0                       # hard_stop (raw number)
     assert grid[-1] == [""] * 17
 
 
