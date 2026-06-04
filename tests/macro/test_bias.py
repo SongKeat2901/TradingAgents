@@ -46,9 +46,9 @@ def test_tilt_capped_at_ev_tilt_cap():
 
 def test_gate_stand_down_zeroes_conviction_and_flags_action():
     r = _regime({n: -0.6 for n in _ALL})          # all red → STAND_DOWN
-    b = Betas("X", {f: 0.0 for f in
-              ["d_10y", "d_dxy", "d_hy_spread", "oil_ret", "mkt", "growth_value"]},
-              0.5, "high", 300)
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 1.5, "growth_value": 0.0},
+              0.8, "high", 300)                     # non-zero beta would normally give conviction
     sb = bias.bias_stock("X", "BUY", r, b, research_ev_pct=0.20)
     assert sb.conviction == 0.0
     assert "STAND DOWN" in sb.action.upper() or "NO NEW RISK" in sb.action.upper()
@@ -59,3 +59,28 @@ def test_driver_names_top_two_betas_by_abs():
                     "oil_ret": 0.0, "mkt": 0.2, "growth_value": 0.0}, 0.7, "high", 300)
     drv = bias.describe_driver(b)
     assert "d_dxy" in drv and "d_hy_spread" in drv
+
+
+def test_caution_path_haircuts_conviction_and_labels_action():
+    r = _regime({"growth": -0.5, "financial_conditions": -0.5})   # → CAUTION
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 0.0, "growth_value": 0.0}, 0.7, "high", 300)
+    sb = bias.bias_stock("X", "HOLD", r, b, research_ev_pct=0.05)
+    assert r.gate == "CAUTION"
+    assert "Caution" in sb.action
+    assert 0.0 < sb.conviction <= 0.5
+
+
+def test_none_research_ev_yields_none_adjusted_and_bare_rating():
+    r = _regime({n: 0.5 for n in _ALL})            # GO
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 0.0, "growth_value": 0.0}, 0.8, "high", 300)
+    sb = bias.bias_stock("X", "HOLD", r, b, research_ev_pct=None)
+    assert sb.adjusted_ev_pct is None
+    assert sb.action == "HOLD"
+
+
+def test_driver_dash_when_all_betas_zero():
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 0.0, "growth_value": 0.0}, 0.0, "low", 0)
+    assert bias.describe_driver(b) == "—"

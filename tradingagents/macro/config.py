@@ -88,6 +88,15 @@ GATE_CAUTION_AT = -0.1   # regime score below this (but above floor / breadth) �
 EV_TILT_CAP = 0.15       # adjusted EV may move at most ±15% from research EV
 MACRO_RETURN_SCALE = 0.10  # converts (Σ beta·expected_move) into a 12-mo return delta
 
+# Bias / action thresholds (bias.py) — tunable post-v1 backtest.
+BIAS_GREEN_AT = 0.02              # macro_delta_pct at/above which macro_bias = "G"
+BIAS_RED_AT = -0.02              # at/below which macro_bias = "R"
+ACTION_ADD_AT = 0.05             # adjusted_ev_pct above which action = add/hold
+ACTION_TRIM_AT = -0.05          # adjusted_ev_pct below which action = trim/avoid
+CONVICTION_HEADWIND_MULT = 0.5  # conviction penalty when macro tilt is a headwind (delta < 0)
+CONVICTION_LOW_CONF_MULT = 0.5  # conviction penalty for "low"-confidence betas
+CONVICTION_CAUTION_MULT = 0.5   # conviction haircut under the CAUTION gate
+
 # Maps each factor to the pillars that drive its expected move, with signs.
 # expected_move[factor] = clip(Σ weight · pillar_score, -1, +1).
 # Sign convention: positive expected_move = factor RISES.

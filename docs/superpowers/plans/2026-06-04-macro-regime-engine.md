@@ -214,6 +214,15 @@ GATE_CAUTION_AT = -0.1   # regime score below this (but above floor / breadth) �
 EV_TILT_CAP = 0.15       # adjusted EV may move at most ±15% from research EV
 MACRO_RETURN_SCALE = 0.10  # converts (Σ beta·expected_move) into a 12-mo return delta
 
+# Bias / action thresholds (bias.py) — tunable post-v1 backtest.
+BIAS_GREEN_AT = 0.02              # macro_delta_pct at/above which macro_bias = "G"
+BIAS_RED_AT = -0.02              # at/below which macro_bias = "R"
+ACTION_ADD_AT = 0.05             # adjusted_ev_pct above which action = add/hold
+ACTION_TRIM_AT = -0.05          # adjusted_ev_pct below which action = trim/avoid
+CONVICTION_HEADWIND_MULT = 0.5  # conviction penalty when macro tilt is a headwind (delta < 0)
+CONVICTION_LOW_CONF_MULT = 0.5  # conviction penalty for "low"-confidence betas
+CONVICTION_CAUTION_MULT = 0.5   # conviction haircut under the CAUTION gate
+
 # Maps each factor to the pillars that drive its expected move, with signs.
 # expected_move[factor] = clip(Σ weight · pillar_score, -1, +1).
 # Sign convention: positive expected_move = factor RISES.
@@ -1339,9 +1348,9 @@ def test_tilt_capped_at_ev_tilt_cap():
 
 def test_gate_stand_down_zeroes_conviction_and_flags_action():
     r = _regime({n: -0.6 for n in _ALL})          # all red → STAND_DOWN
-    b = Betas("X", {f: 0.0 for f in
-              ["d_10y", "d_dxy", "d_hy_spread", "oil_ret", "mkt", "growth_value"]},
-              0.5, "high", 300)
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 1.5, "growth_value": 0.0},
+              0.8, "high", 300)                     # non-zero beta would normally give conviction
     sb = bias.bias_stock("X", "BUY", r, b, research_ev_pct=0.20)
     assert sb.conviction == 0.0
     assert "STAND DOWN" in sb.action.upper() or "NO NEW RISK" in sb.action.upper()
@@ -1352,6 +1361,31 @@ def test_driver_names_top_two_betas_by_abs():
                     "oil_ret": 0.0, "mkt": 0.2, "growth_value": 0.0}, 0.7, "high", 300)
     drv = bias.describe_driver(b)
     assert "d_dxy" in drv and "d_hy_spread" in drv
+
+
+def test_caution_path_haircuts_conviction_and_labels_action():
+    r = _regime({"growth": -0.5, "financial_conditions": -0.5})   # → CAUTION
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 0.0, "growth_value": 0.0}, 0.7, "high", 300)
+    sb = bias.bias_stock("X", "HOLD", r, b, research_ev_pct=0.05)
+    assert r.gate == "CAUTION"
+    assert "Caution" in sb.action
+    assert 0.0 < sb.conviction <= 0.5
+
+
+def test_none_research_ev_yields_none_adjusted_and_bare_rating():
+    r = _regime({n: 0.5 for n in _ALL})            # GO
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 0.0, "growth_value": 0.0}, 0.8, "high", 300)
+    sb = bias.bias_stock("X", "HOLD", r, b, research_ev_pct=None)
+    assert sb.adjusted_ev_pct is None
+    assert sb.action == "HOLD"
+
+
+def test_driver_dash_when_all_betas_zero():
+    b = Betas("X", {"d_10y": 0.0, "d_dxy": 0.0, "d_hy_spread": 0.0,
+                    "oil_ret": 0.0, "mkt": 0.0, "growth_value": 0.0}, 0.0, "low", 0)
+    assert bias.describe_driver(b) == "—"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1376,6 +1410,8 @@ from dataclasses import dataclass
 
 from .config import (
     FACTORS, FACTOR_REGIME_MAP, EV_TILT_CAP, MACRO_RETURN_SCALE,
+    BIAS_GREEN_AT, BIAS_RED_AT, ACTION_ADD_AT, ACTION_TRIM_AT,
+    CONVICTION_HEADWIND_MULT, CONVICTION_LOW_CONF_MULT, CONVICTION_CAUTION_MULT,
 )
 from .betas import Betas
 from .regime import Regime
@@ -1411,9 +1447,9 @@ def _macro_contribution(betas: Betas, moves: dict[str, float]) -> float:
 
 
 def _bias_status(delta: float) -> str:
-    if delta >= 0.02:
+    if delta >= BIAS_GREEN_AT:
         return "G"
-    if delta <= -0.02:
+    if delta <= BIAS_RED_AT:
         return "R"
     return "A"
 
@@ -1428,9 +1464,9 @@ def _conviction(regime: Regime, delta: float, betas: Betas) -> float:
     if regime.gate == "STAND_DOWN":
         return 0.0
     base = 0.5 + 0.5 * max(0.0, regime.score)      # regime quality
-    align = 1.0 if delta >= 0 else 0.5             # tailwind vs headwind
-    conf = 1.0 if betas.confidence == "high" else 0.5
-    haircut = 0.5 if regime.gate == "CAUTION" else 1.0
+    align = 1.0 if delta >= 0 else CONVICTION_HEADWIND_MULT
+    conf = 1.0 if betas.confidence == "high" else CONVICTION_LOW_CONF_MULT
+    haircut = CONVICTION_CAUTION_MULT if regime.gate == "CAUTION" else 1.0
     return round(max(0.0, min(1.0, base * align * conf * haircut)), 3)
 
 
@@ -1441,9 +1477,9 @@ def _action(regime: Regime, rating: str, adjusted_ev_pct: float | None) -> str:
         return f"Caution — half size; {rating}"
     if adjusted_ev_pct is None:
         return rating
-    if adjusted_ev_pct > 0.05:
+    if adjusted_ev_pct > ACTION_ADD_AT:
         return f"{rating} — add/hold"
-    if adjusted_ev_pct < -0.05:
+    if adjusted_ev_pct < ACTION_TRIM_AT:
         return f"{rating} — trim/avoid"
     return f"{rating} — hold"
 

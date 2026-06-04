@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from .config import (
     FACTORS, FACTOR_REGIME_MAP, EV_TILT_CAP, MACRO_RETURN_SCALE,
+    BIAS_GREEN_AT, BIAS_RED_AT, ACTION_ADD_AT, ACTION_TRIM_AT,
+    CONVICTION_HEADWIND_MULT, CONVICTION_LOW_CONF_MULT, CONVICTION_CAUTION_MULT,
 )
 from .betas import Betas
 from .regime import Regime
@@ -45,9 +47,9 @@ def _macro_contribution(betas: Betas, moves: dict[str, float]) -> float:
 
 
 def _bias_status(delta: float) -> str:
-    if delta >= 0.02:
+    if delta >= BIAS_GREEN_AT:
         return "G"
-    if delta <= -0.02:
+    if delta <= BIAS_RED_AT:
         return "R"
     return "A"
 
@@ -62,9 +64,9 @@ def _conviction(regime: Regime, delta: float, betas: Betas) -> float:
     if regime.gate == "STAND_DOWN":
         return 0.0
     base = 0.5 + 0.5 * max(0.0, regime.score)      # regime quality
-    align = 1.0 if delta >= 0 else 0.5             # tailwind vs headwind
-    conf = 1.0 if betas.confidence == "high" else 0.5
-    haircut = 0.5 if regime.gate == "CAUTION" else 1.0
+    align = 1.0 if delta >= 0 else CONVICTION_HEADWIND_MULT
+    conf = 1.0 if betas.confidence == "high" else CONVICTION_LOW_CONF_MULT
+    haircut = CONVICTION_CAUTION_MULT if regime.gate == "CAUTION" else 1.0
     return round(max(0.0, min(1.0, base * align * conf * haircut)), 3)
 
 
@@ -75,9 +77,9 @@ def _action(regime: Regime, rating: str, adjusted_ev_pct: float | None) -> str:
         return f"Caution — half size; {rating}"
     if adjusted_ev_pct is None:
         return rating
-    if adjusted_ev_pct > 0.05:
+    if adjusted_ev_pct > ACTION_ADD_AT:
         return f"{rating} — add/hold"
-    if adjusted_ev_pct < -0.05:
+    if adjusted_ev_pct < ACTION_TRIM_AT:
         return f"{rating} — trim/avoid"
     return f"{rating} — hold"
 
