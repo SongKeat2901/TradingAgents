@@ -6,7 +6,7 @@
   <key>Label</key><string>com.trueknot.macrodaily</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/trueknot/local/bin/tradingmacro</string>
+    <string>/Users/trueknot/tradingagents/.venv/bin/tradingmacro</string>
     <string>--reports-dir</string>
     <string>/Users/trueknot/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research/final</string>
     <string>--sheet-id</string>
@@ -16,7 +16,12 @@
   </array>
   <key>EnvironmentVariables</key>
   <dict>
+    <!-- PATH must include /opt/homebrew/bin so the gog CLI resolves under launchd. -->
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>FRED_API_KEY</key><string>REPLACE_WITH_FRED_KEY</string>
+    <!-- gog Sheets write: account + keyring password (gog reads both natively). -->
+    <key>GOG_ACCOUNT</key><string>trueknotsg@gmail.com</string>
+    <key>GOG_KEYRING_PASSWORD</key><string>REPLACE_WITH_GOG_KEYRING_PASSWORD</string>
     <key>MACRO_CACHE_DIR</key><string>/Users/trueknot/.cache/tradingagents-macro</string>
   </dict>
   <key>StartCalendarInterval</key>

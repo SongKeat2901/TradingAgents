@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from tradingagents.macro import plan_writer
@@ -72,3 +74,27 @@ def test_to_grid_pads_to_constant_height_with_header_and_data():
     assert data_row[9] == "$250.00"                   # last_px (money fmt)
     assert data_row[13] == "$170.00"                  # hard_stop
     assert grid[-1] == [""] * 15
+
+
+def test_write_to_sheet_invokes_gog_with_values_json(monkeypatch):
+    monkeypatch.setenv("GOG_ACCOUNT", "trueknotsg@gmail.com")
+    calls = []
+    plan_writer.write_to_sheet([["a", "b"], ["c", "d"]], "SHEET1",
+                               runner=lambda cmd, check: calls.append((cmd, check)))
+    cmd, check = calls[0]
+    assert cmd[:4] == ["gog", "sheets", "update", "SHEET1"]
+    assert cmd[4] == "A1"                       # no tab → first sheet
+    vj = cmd[cmd.index("--values-json") + 1]
+    assert json.loads(vj) == [["a", "b"], ["c", "d"]]
+    assert "USER_ENTERED" in cmd
+    assert "-a" in cmd and "trueknotsg@gmail.com" in cmd
+    assert check is True
+
+
+def test_write_to_sheet_tab_prefixes_range_and_omits_account(monkeypatch):
+    monkeypatch.delenv("GOG_ACCOUNT", raising=False)
+    calls = []
+    plan_writer.write_to_sheet([["x"]], "S", tab="Macro",
+                               runner=lambda cmd, check: calls.append(cmd))
+    assert calls[0][4] == "Macro!A1"
+    assert "-a" not in calls[0]                 # no account → no -a flag

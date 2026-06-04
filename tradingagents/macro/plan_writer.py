@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 from .bias import StockBias
@@ -115,20 +114,21 @@ def _money(v) -> str:
     return "" if v is None else f"${v:,.2f}"
 
 
-def write_to_sheet(grid: list[list], sheet_id: str, tab: str = "Macro",
-                   runner=subprocess.run) -> None:
-    """Overwrite the tab's range with `grid` via gog (replace-in-place →
-    idempotent). `runner` is injectable for tests. Requires the mini's gog
-    auth (7-day token; re-auth per the update-summary skill on invalid_grant).
+def write_to_sheet(grid: list[list], sheet_id: str, tab: str | None = None,
+                   account: str | None = None, runner=subprocess.run) -> None:
+    """Overwrite the sheet's range with `grid` via gog (replace-in-place →
+    idempotent: the fixed-height grid always covers the prior write's footprint).
 
-    Note for the implementer: the exact `gog sheets update` flags must be
-    verified against the installed `gog` version on the mini
-    (`gog sheets update --help`)."""
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
-        json.dump(grid, fh)
-        payload_path = fh.name
-    try:
-        runner(["gog", "sheets", "update", sheet_id, "--tab", tab,
-                "--range", "A1", "--values-json", payload_path], check=True)
-    finally:
-        os.unlink(payload_path)
+    Verified against gog v0.11.0: `gog sheets update <id> <range> --values-json
+    '<json 2D array>' --input USER_ENTERED`. `tab` None targets the first sheet
+    (range "A1"); pass a name for "Tab!A1". `account` defaults to the GOG_ACCOUNT
+    env var; gog reads the keyring password from GOG_KEYRING_PASSWORD itself.
+    `runner` is injectable for tests. Needs the mini's gog auth (7-day token;
+    re-auth per the update-summary skill on invalid_grant)."""
+    rng = f"{tab}!A1" if tab else "A1"
+    account = account or os.environ.get("GOG_ACCOUNT")
+    cmd = ["gog", "sheets", "update", sheet_id, rng,
+           "--values-json", json.dumps(grid), "--input", "USER_ENTERED", "--no-input"]
+    if account:
+        cmd += ["-a", account]
+    runner(cmd, check=True)

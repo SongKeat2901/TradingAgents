@@ -1727,24 +1727,30 @@ def _pct(v) -> str:
     return "" if v is None else f"{v*100:+.1f}%"
 
 
-def write_to_sheet(grid: list[list], sheet_id: str, tab: str = "Macro",
-                   runner=subprocess.run) -> None:
-    """Overwrite the tab's range with `grid` via gog (replace-in-place →
-    idempotent). `runner` is injectable for tests. Requires the mini's gog
-    auth (7-day token; re-auth per the update-summary skill on invalid_grant).
+def write_to_sheet(grid: list[list], sheet_id: str, tab: str | None = None,
+                   account: str | None = None, runner=subprocess.run) -> None:
+    """Overwrite the sheet's range with `grid` via gog (replace-in-place →
+    idempotent: the fixed-height grid always covers the prior write's footprint).
 
-    Note for the implementer: the exact `gog sheets update` flags must be
-    verified against the installed `gog` version on the mini
-    (`gog sheets update --help`)."""
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
-        json.dump(grid, fh)
-        payload_path = fh.name
-    try:
-        runner(["gog", "sheets", "update", sheet_id, "--tab", tab,
-                "--range", "A1", "--values-json", payload_path], check=True)
-    finally:
-        os.unlink(payload_path)
+    Verified against gog v0.11.0: `gog sheets update <id> <range> --values-json
+    '<json 2D array>' --input USER_ENTERED`. `tab` None targets the first sheet
+    (range "A1"); pass a name for "Tab!A1". `account` defaults to the GOG_ACCOUNT
+    env var; gog reads the keyring password from GOG_KEYRING_PASSWORD itself.
+    `runner` is injectable for tests. Needs the mini's gog auth (7-day token;
+    re-auth per the update-summary skill on invalid_grant)."""
+    rng = f"{tab}!A1" if tab else "A1"
+    account = account or os.environ.get("GOG_ACCOUNT")
+    cmd = ["gog", "sheets", "update", sheet_id, rng,
+           "--values-json", json.dumps(grid), "--input", "USER_ENTERED", "--no-input"]
+    if account:
+        cmd += ["-a", account]
+    runner(cmd, check=True)
 ```
+
+> Verified live on the mini (gog v0.11.0): the earlier `--tab/--range/--values-json
+> <file>` guess was wrong — the range carries the tab (`Tab!A1`), `--values-json`
+> takes the JSON string directly (no tempfile), and `-a <account>` +
+> `GOG_KEYRING_PASSWORD` env are required for headless auth.
 
 > The `write_to_sheet` I/O path is exercised in the Task 9 smoke test with an
 > injected `runner`; only the pure `build_payload`/`to_grid`/manifest functions
@@ -1996,7 +2002,7 @@ Create `ops/com.trueknot.macrodaily.plist` (loaded on `macmini-trueknot`; runs d
   <key>Label</key><string>com.trueknot.macrodaily</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/trueknot/local/bin/tradingmacro</string>
+    <string>/Users/trueknot/tradingagents/.venv/bin/tradingmacro</string>
     <string>--reports-dir</string>
     <string>/Users/trueknot/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research/final</string>
     <string>--sheet-id</string>
@@ -2006,7 +2012,11 @@ Create `ops/com.trueknot.macrodaily.plist` (loaded on `macmini-trueknot`; runs d
   </array>
   <key>EnvironmentVariables</key>
   <dict>
+    <!-- PATH must include /opt/homebrew/bin so the gog CLI resolves under launchd. -->
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>FRED_API_KEY</key><string>REPLACE_WITH_FRED_KEY</string>
+    <key>GOG_ACCOUNT</key><string>trueknotsg@gmail.com</string>
+    <key>GOG_KEYRING_PASSWORD</key><string>REPLACE_WITH_GOG_KEYRING_PASSWORD</string>
     <key>MACRO_CACHE_DIR</key><string>/Users/trueknot/.cache/tradingagents-macro</string>
   </dict>
   <key>StartCalendarInterval</key>

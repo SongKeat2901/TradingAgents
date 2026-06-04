@@ -145,12 +145,21 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
 
 - Package: `tradingagents/macro/` — standalone daily engine; CLI `tradingmacro`.
   Spec: `docs/superpowers/specs/2026-06-04-macro-regime-engine-design.md`.
-- Manual run on the mini:
-  `FRED_API_KEY=… tradingmacro --reports-dir "$TK/final" --sheet-id <id> --manifest ~/gsheet-tool/pdf_ids.tsv`
-  (add `--no-write` to compute without touching the sheet).
+- Entry point on the mini: `~/tradingagents/.venv/bin/tradingmacro` (console script
+  from `pip install -e .`; there is **no** `~/local/bin/tradingmacro` wrapper).
+- Manual run on the mini (gog needs account + keyring password in env; `-a` is added
+  by the engine from `GOG_ACCOUNT`):
+  `FRED_API_KEY=… GOG_ACCOUNT=trueknotsg@gmail.com GOG_KEYRING_PASSWORD=… ~/tradingagents/.venv/bin/tradingmacro --reports-dir "$TK/final" --sheet-id <id> --manifest ~/gsheet-tool/pdf_ids.tsv`
+  (add `--no-write` to compute without touching the sheet; `--as-of` defaults to the
+  mini's local SGT date).
+- Sheet write goes through `gog` v0.11.0 at `/opt/homebrew/bin/gog`:
+  `gog sheets update <id> <range> --values-json '<2D array>' --input USER_ENTERED -a <acct>`.
+  `write_to_sheet` builds this; `tab=None` → first sheet (range `A1`), fixed-height
+  100-row grid so a shorter run can't leave stale rows. gog keyring unlocks from
+  `GOG_KEYRING_PASSWORD`; 7-day token — re-auth per the update-summary skill on invalid_grant.
 - Scheduled via `ops/com.trueknot.macrodaily.plist` →
   `cp ops/com.trueknot.macrodaily.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.trueknot.macrodaily.plist`
-  (fill in the FRED key + Trading Plan sheet ID first). Runs 05:10 SGT (post US close).
+  (fill the three `REPLACE_WITH_…` placeholders — FRED key, sheet ID, gog keyring
+  password — first; plist sets `PATH` so launchd finds gog). Runs 05:10 SGT (post US close).
 - Needs a free FRED API key (Growth/Inflation/Liquidity hard data); yfinance covers
-  the market-priced pillars. Sheet write uses `gog` (7-day token; re-auth per the
-  update-summary skill on invalid_grant).
+  the market-priced pillars.
