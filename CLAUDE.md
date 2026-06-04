@@ -145,13 +145,18 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
 
 - Package: `tradingagents/macro/` — standalone daily engine; CLI `tradingmacro`.
   Spec: `docs/superpowers/specs/2026-06-04-macro-regime-engine-design.md`.
+- Trading Plan sheet (native GSheet) ID `1ZLq9HuyU0AAzREECpBGpamDBVpbbjq9V8joHqQHp-cw`,
+  in the shared `True Knot/TK Research/pdf/` folder (writes to its first tab, `Sheet1`).
 - Entry point on the mini: `~/tradingagents/.venv/bin/tradingmacro` (console script
   from `pip install -e .`; there is **no** `~/local/bin/tradingmacro` wrapper).
 - Manual run on the mini (gog needs account + keyring password in env; `-a` is added
   by the engine from `GOG_ACCOUNT`):
-  `FRED_API_KEY=… GOG_ACCOUNT=trueknotsg@gmail.com GOG_KEYRING_PASSWORD=… ~/tradingagents/.venv/bin/tradingmacro --reports-dir "$TK/final" --sheet-id <id> --manifest ~/gsheet-tool/pdf_ids.tsv`
+  `FRED_API_KEY=… GOG_ACCOUNT=trueknotsg@gmail.com GOG_KEYRING_PASSWORD=… ~/tradingagents/.venv/bin/tradingmacro --reports-dir ~/.openclaw/data/research --sheet-id <id> --manifest ~/gsheet-tool/pdf_ids.tsv`
   (add `--no-write` to compute without touching the sheet; `--as-of` defaults to the
   mini's local SGT date).
+- **Reports source = `~/.openclaw/data/research`** (the actual run dirs with
+  state.json+decision.md; latest run per ticker). The My Drive `TK Research/final/`
+  holds only published PDFs, not run dirs — don't point `--reports-dir` there.
 - Sheet write goes through `gog` v0.11.0 at `/opt/homebrew/bin/gog`:
   `gog sheets update <id> <range> --values-json '<2D array>' --input USER_ENTERED -a <acct>`.
   `write_to_sheet` builds this; `tab=None` → first sheet (range `A1`), fixed-height

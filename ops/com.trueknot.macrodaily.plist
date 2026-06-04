@@ -8,7 +8,7 @@
   <array>
     <string>/Users/trueknot/tradingagents/.venv/bin/tradingmacro</string>
     <string>--reports-dir</string>
-    <string>/Users/trueknot/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research/final</string>
+    <string>/Users/trueknot/.openclaw/data/research</string>
     <string>--sheet-id</string>
     <string>REPLACE_WITH_TRADING_PLAN_SHEET_ID</string>
     <string>--manifest</string>
