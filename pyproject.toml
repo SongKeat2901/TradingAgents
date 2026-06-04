@@ -40,6 +40,7 @@ dependencies = [
 [project.scripts]
 tradingagents = "cli.main:app"
 tradingresearch = "cli.research:main"
+tradingmacro = "tradingagents.macro.macro_daily:main"
 
 [tool.setuptools.packages.find]
 include = ["tradingagents*", "cli*"]
