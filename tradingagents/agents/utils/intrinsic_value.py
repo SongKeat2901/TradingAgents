@@ -234,16 +234,23 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
     methods: dict[str, Any] = {}
     fx_caveat = None
 
-    # Foreign issuer: financials in a non-USD currency while price is a USD ADR.
-    # A correct USD per-share IV needs both the FX rate AND the ADR-to-ordinary
-    # ratio (e.g. 1 TSM ADR = 5 ordinary shares); getting that wrong is worse than
-    # an honest gap, so v1 skips with a caveat rather than fabricate a figure.
+    # Foreign issuer: statements are in the reporting currency (e.g. TWD) while
+    # eps and price are USD per ADR. Derive the FX rate from the data's own
+    # internal consistency — fx = eps_USD × ADR_count / net_income_reporting — so
+    # the reporting-ccy flows (EPV/DCF) convert to USD per ADR with NO external FX
+    # feed and NO separate ADR-ratio lookup (both are already implicit in eps vs
+    # the reporting-ccy NI). If that anchor is missing (no eps, or NI <= 0) we
+    # skip rather than guess. eps-based methods (multiples) are already USD per
+    # ADR and must NOT be re-converted — see the multiples lines below.
     if fund["currency"] != "USD" and fx_rate is None:
-        fx_caveat = (f"Foreign issuer — financials reported in {fund['currency']} "
-                     f"while price is a USD ADR; USD-comparable per-share intrinsic "
-                     f"value requires FX + ADR-ratio adjustment (out of scope for v1). "
-                     f"Rely on the scenario EV.")
-        skipped.append({"method": "all", "reason": fx_caveat})
+        ni_rep, eps_usd, shr = fund.get("net_income"), fund.get("eps"), fund.get("diluted_shares")
+        if ni_rep and ni_rep > 0 and eps_usd and shr and shr > 0:
+            fx_rate = eps_usd * shr / ni_rep
+        else:
+            fx_caveat = (f"Foreign issuer — financials in {fund['currency']} vs a USD "
+                         f"ADR price, with no USD EPS anchor to derive FX; intrinsic "
+                         f"value not computable. Rely on the scenario EV.")
+            skipped.append({"method": "all", "reason": fx_caveat})
 
     def conv(v):  # convert reporting-currency per-share to price currency
         if v is None:
@@ -255,7 +262,7 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
     if fx_caveat is None and profile == "STANDARD":
         # Stable earnings anchors (consistent TTM): EPV floor + peer-multiple.
         epv = conv(epv_value(fund, coe))
-        mult = conv(multiples_value(fund, peer_ratios, net_debt).get("pe_implied"))
+        mult = multiples_value(fund, peer_ratios, net_debt).get("pe_implied")  # eps already price-ccy — no conv
         methods["epv"] = {"value": epv}
         methods["multiples"] = {"pe_implied": mult, "ev_ebitda_implied": None}
 
@@ -289,13 +296,13 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
     elif fx_caveat is None and profile == "UNPROFITABLE":
         skipped += [{"method": "dcf", "reason": "no positive FCF/earnings base"},
                     {"method": "epv", "reason": "no positive operating earnings"}]
-        methods["multiples"] = {k: conv(v) for k, v in multiples_value(fund, peer_ratios, net_debt).items()}
+        methods["multiples"] = dict(multiples_value(fund, peer_ratios, net_debt).items())  # eps-based, already price-ccy
         methods["reverse_dcf"] = {"implied_growth": None}
         methods["note"] = "path-to-profitability dependent; fair value not anchored to current cash flows"
     elif fx_caveat is None and profile == "FINANCIAL":
         skipped += [{"method": "dcf", "reason": "FCF-DCF not the right model for financials"},
                     {"method": "epv", "reason": "use P/B / P/E / dividend-discount for financials"}]
-        methods["multiples"] = {k: conv(v) for k, v in multiples_value(fund, peer_ratios, net_debt).items()}
+        methods["multiples"] = dict(multiples_value(fund, peer_ratios, net_debt).items())  # eps-based, already price-ccy
         if methods["multiples"].get("pe_implied") is not None:
             fair_value = {"bear": None, "base": methods["multiples"]["pe_implied"], "bull": None}
     elif fx_caveat is None and profile == "NAV_PROXY":

@@ -104,11 +104,29 @@ def test_unprofitable_skips_dcf_with_reason():
     assert any(s["method"] == "dcf" for s in iv["skipped_methods"])
 
 
-def test_currency_mismatch_no_fx_caveat():
+def test_foreign_adr_computes_via_derived_fx():
+    # Foreign ADR (TWD statements, USD eps/price): fx is derived from the data
+    # (eps * shares / net_income) so the IV is computed in USD per ADR, no skip.
     from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
     iv = compute_intrinsic_value(_fin(ccy="TWD"), {"net_debt": 0}, {"reference_price": 100.0},
+                                 {"PEERA": {"ttm_pe": 18}}, risk_free=0.04, ticker="X", fx_rate=None)
+    assert iv["currency"] == "TWD"
+    assert iv.get("fx_caveat") is None                      # no longer skipped
+    assert abs(iv["fx_rate"] - (5.0 * 50000000 / 100000000)) < 1e-9   # = 2.5
+    # EPV (USD/ADR) == eps/coe; coe = max(0.04 + 1.2*0.05, floor 0.08) = 0.10
+    assert abs(iv["methods"]["epv"]["value"] - 5.0 / 0.10) < 1.0       # ~$50
+    # peer-multiple uses USD eps directly (NOT re-converted by fx): 18 * 5.0 = $90
+    assert abs(iv["methods"]["multiples"]["pe_implied"] - 90.0) < 1e-6
+    assert iv["fair_value"]["base"] is not None
+
+
+def test_foreign_adr_skips_without_eps_anchor():
+    # No USD EPS to anchor the FX derivation → honest skip, no fabricated value.
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    no_eps = _FUND_TXT.replace("EPS (TTM): 5.0", "EPS (TTM): ")
+    iv = compute_intrinsic_value(_fin(no_eps, ccy="TWD"), {"net_debt": 0}, {"reference_price": 100.0},
                                  {}, risk_free=0.04, ticker="X", fx_rate=None)
-    assert iv["currency"] == "TWD" and iv.get("fx_caveat")
+    assert iv.get("fx_caveat") and iv["fair_value"]["base"] is None
 
 
 # ---- Task 5: formatter ----
