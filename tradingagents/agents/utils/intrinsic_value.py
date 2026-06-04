@@ -244,12 +244,22 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
     # ADR and must NOT be re-converted — see the multiples lines below.
     if fund["currency"] != "USD" and fx_rate is None:
         ni_rep, eps_usd, shr = fund.get("net_income"), fund.get("eps"), fund.get("diluted_shares")
-        if ni_rep and ni_rep > 0 and eps_usd and shr and shr > 0:
+        # Plausibility gate: the eps-anchored derivation is only valid when the
+        # USD eps and the USD ADR price are on the SAME ADR basis. yfinance is
+        # inconsistent here across ADRs — when eps is mis-scaled vs the price the
+        # implied no-growth P/E (price/eps) comes out absurd (e.g. >60). TSM is
+        # clean (~38x); IFNNY/STM/NOK are not. Compute only when the basis is
+        # self-consistent; otherwise skip honestly rather than emit a wrong number.
+        implied_pe = (price / eps_usd) if (price and eps_usd and eps_usd > 0) else None
+        anchored = bool(ni_rep and ni_rep > 0 and eps_usd and shr and shr > 0)
+        if anchored and implied_pe is not None and 3.0 <= implied_pe <= 60.0:
             fx_rate = eps_usd * shr / ni_rep
         else:
-            fx_caveat = (f"Foreign issuer — financials in {fund['currency']} vs a USD "
-                         f"ADR price, with no USD EPS anchor to derive FX; intrinsic "
-                         f"value not computable. Rely on the scenario EV.")
+            why = ("no USD EPS anchor" if not anchored else
+                   f"USD eps vs price implies P/E≈{implied_pe:.0f} — the ADR/FX basis "
+                   f"is inconsistent, so a USD fair value can't be trusted")
+            fx_caveat = (f"Foreign issuer ({fund['currency']} statements vs USD ADR price): "
+                         f"{why}. Intrinsic value not computable — rely on the scenario EV.")
             skipped.append({"method": "all", "reason": fx_caveat})
 
     def conv(v):  # convert reporting-currency per-share to price currency

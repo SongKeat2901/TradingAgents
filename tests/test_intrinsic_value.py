@@ -129,6 +129,15 @@ def test_foreign_adr_skips_without_eps_anchor():
     assert iv.get("fx_caveat") and iv["fair_value"]["base"] is None
 
 
+def test_foreign_adr_skips_on_implausible_pe():
+    # eps mis-scaled vs price → implied P/E absurd (1000/5 = 200) → skip, no wrong number.
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    iv = compute_intrinsic_value(_fin(ccy="TWD"), {"net_debt": 0}, {"reference_price": 1000.0},
+                                 {}, risk_free=0.04, ticker="X", fx_rate=None)
+    assert iv.get("fx_caveat") and iv["fair_value"]["base"] is None
+    assert "P/E" in iv["fx_caveat"]
+
+
 # ---- Task 5: formatter ----
 def test_format_block_standard():
     from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value, format_intrinsic_value_block
