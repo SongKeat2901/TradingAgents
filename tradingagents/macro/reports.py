@@ -56,6 +56,16 @@ def _scenario_weighted_target(be: BaseEV) -> float | None:
     return (num / den) if den else None
 
 
+def scenario_ladder(be: BaseEV) -> dict[str, float | None]:
+    """Bull/base/bear scenario targets keyed by lowercase scenario name."""
+    out: dict[str, float | None] = {"bull": None, "base": None, "bear": None}
+    for sc in be.scenarios:
+        key = (sc.name or "").lower()
+        if key in out and sc.target is not None:
+            out[key] = sc.target
+    return out
+
+
 def ev_pct(be: BaseEV) -> float | None:
     """12-mo EV as a fraction of reference price. Uses the explicit EV line if
     present, else the scenario-probability-weighted target."""

@@ -2079,6 +2079,174 @@ Expected: one cache file per indicator + factor source for today's date (≈29).
 
 ---
 
+## Task 12: extend grid with research price levels
+
+**Goal:** Add five columns to the Trading Plan sheet — **Last Px, Bear, Target (Base), Bull, Hard Stop** — sourced from each report's scenario ladder + hard stop (via `reports.py`) and the latest yfinance close. The grid grows from 10 to 15 columns. Price cells use `$#,##0.00` formatting.
+
+**Files modified:**
+- `tradingagents/macro/reports.py` — add `scenario_ladder` accessor
+- `tradingagents/macro/plan_writer.py` — thread `levels` into `build_payload` + `to_grid`, add `_money` formatter
+- `tradingagents/macro/macro_daily.py` — capture `last_px`, build `levels` dict, pass to `build_payload`
+- `tests/macro/test_reports.py` — add `test_scenario_ladder_extracts_bull_base_bear`
+- `tests/macro/test_plan_writer.py` — update both `test_build_payload_has_regime_board_and_rows` and `test_to_grid_pads_to_constant_height_with_header_and_data` for 15 columns
+
+- [x] **Step 1 — `reports.py`: add a scenario-ladder accessor**
+
+Add after `ev_pct`:
+
+```python
+def scenario_ladder(be: BaseEV) -> dict[str, float | None]:
+    """Bull/base/bear scenario targets keyed by lowercase scenario name."""
+    out: dict[str, float | None] = {"bull": None, "base": None, "bear": None}
+    for sc in be.scenarios:
+        key = (sc.name or "").lower()
+        if key in out and sc.target is not None:
+            out[key] = sc.target
+    return out
+```
+
+Add to `tests/macro/test_reports.py`:
+
+```python
+def test_scenario_ladder_extracts_bull_base_bear(tmp_path):
+    be = reports.load_base_ev(_run_dir(tmp_path))
+    ladder = reports.scenario_ladder(be)
+    assert ladder == {"bull": 140.0, "base": 120.0, "bear": 80.0}
+```
+
+- [x] **Step 2 — `plan_writer.py`: thread levels into the payload + grid**
+
+Change `build_payload` to accept an optional `levels` dict and include the level fields per row:
+
+```python
+def build_payload(regime: Regime, biases: list[StockBias],
+                  pdf_links: dict[str, str], levels: dict | None = None) -> dict:
+    """Pure: assemble the regime board + per-ticker rows, rows sorted by
+    adjusted EV descending (best-positioned first). `levels` maps ticker ->
+    {last_px, bear, target, bull, hard_stop} (all optional)."""
+    levels = levels or {}
+    rows = []
+    for sb in sorted(biases,
+                     key=lambda b: (b.adjusted_ev_pct is None, -(b.adjusted_ev_pct or 0))):
+        lv = levels.get(sb.ticker, {})
+        rows.append({
+            "ticker": sb.ticker,
+            "rating": sb.rating,
+            "driver": sb.driver,
+            "macro_bias": sb.macro_bias,
+            "research_ev_pct": sb.research_ev_pct,
+            "macro_delta_pct": sb.macro_delta_pct,
+            "adjusted_ev_pct": sb.adjusted_ev_pct,
+            "conviction": sb.conviction,
+            "action": sb.action,
+            "last_px": lv.get("last_px"),
+            "bear": lv.get("bear"),
+            "target": lv.get("target"),
+            "bull": lv.get("bull"),
+            "hard_stop": lv.get("hard_stop"),
+            "pdf_link": pdf_links.get(sb.ticker, ""),
+        })
+    return {
+        "regime": {
+            "score": regime.score, "label": regime.label,
+            "quadrant": regime.quadrant, "gate": regime.gate,
+            "red_count": regime.red_count,
+        },
+        "pillars": [{"name": p.name, "score": p.score, "status": p.status}
+                    for p in regime.pillars],
+        "rows": rows,
+    }
+```
+
+Add `_money` formatter next to `_pct`:
+
+```python
+def _money(v) -> str:
+    return "" if v is None else f"${v:,.2f}"
+```
+
+Rewrite `to_grid` with 15-column header and dynamic width (no hardcoded 10):
+
+```python
+def to_grid(payload: dict) -> list[list]:
+    """Flatten the payload into a 2-D cell grid for a full-range overwrite
+    (idempotent: same range, replaced in place — no appends, no dupes)."""
+    grid: list[list] = []
+    r = payload["regime"]
+    grid.append(["MACRO REGIME", r["label"], "Gate:", r["gate"],
+                 "Score:", r["score"], "Red pillars:", r["red_count"]])
+    grid.append(["Pillar"] + [p["name"] for p in payload["pillars"]])
+    grid.append(["Status"] + [f'{p["status"]} ({p["score"]:+.2f})'
+                              for p in payload["pillars"]])
+    grid.append([])
+    header = ["Ticker", "Rating", "Macro Driver", "Bias", "Research EV%",
+              "Macro Δ%", "Adjusted EV%", "Conviction", "Action",
+              "Last Px", "Bear", "Target", "Bull", "Hard Stop", "Research"]
+    grid.append(header)
+    for row in payload["rows"]:
+        grid.append([
+            row["ticker"], row["rating"], row["driver"], row["macro_bias"],
+            _pct(row["research_ev_pct"]), _pct(row["macro_delta_pct"]),
+            _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
+            _money(row["last_px"]), _money(row["bear"]), _money(row["target"]),
+            _money(row["bull"]), _money(row["hard_stop"]), row["pdf_link"],
+        ])
+    width = len(header)
+    grid = [grow + [""] * (width - len(grow)) for grow in grid]
+    while len(grid) < SHEET_MAX_ROWS:
+        grid.append([""] * width)
+    return grid
+```
+
+- [x] **Step 3 — `macro_daily.py`: build the levels dict and pass it**
+
+In `run()`, extend the per-ticker loop to capture `last_px` and build a `levels` dict:
+
+```python
+    base_evs = reports_mod.latest_runs(Path(reports_dir))
+    biases = []
+    levels = {}
+    for ticker, be in base_evs.items():
+        last_px = None
+        try:
+            px = macro_data.load_prices(ticker, as_of)
+            last_px = float(px.iloc[-1])
+            stock_ret = px.pct_change().dropna()
+            b = betas_mod.compute_betas(ticker, stock_ret, factor_returns)
+        except Exception as exc:  # noqa: BLE001 — one bad ticker shouldn't sink the run
+            logger.warning("betas failed for %s: %s", ticker, exc)
+            b = betas_mod.Betas(ticker, {f: 0.0 for f in betas_mod.FACTORS}, 0.0, "low", 0)
+        biases.append(bias_mod.bias_stock(
+            ticker, be.rating, regime, b, reports_mod.ev_pct(be)))
+        ladder = reports_mod.scenario_ladder(be)
+        levels[ticker] = {
+            "last_px": last_px, "bear": ladder["bear"], "target": ladder["base"],
+            "bull": ladder["bull"], "hard_stop": be.hard_stop,
+        }
+
+    # 3. Payload + write
+    pdf_links = plan_writer.pdf_links_from_manifest(manifest_path) if manifest_path else {}
+    payload = plan_writer.build_payload(regime, biases, pdf_links, levels)
+```
+
+- [x] **Step 4 — Run tests**
+
+```bash
+.venv/bin/python -m pytest tests/macro -q -m unit --tb=short   # 53 passed
+.venv/bin/python -m pytest -q -m unit --tb=line                 # 575 passed
+```
+
+- [x] **Step 5 — Commit**
+
+```bash
+git add tradingagents/macro tests/macro docs/superpowers/plans/2026-06-04-macro-regime-engine.md
+git commit -m "feat(macro): add Last Px + scenario-ladder + hard-stop columns to Trading Plan grid
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-Review notes
 
 - **Spec coverage:** Architecture/units (Tasks 1–9), six pillars + sources (Task 1 config + Task 3), scoring methodology z-score+trend (Task 3), regime/quadrant/gate (Task 4), statistical betas + shrinkage (Task 5), base-EV source reuse (Task 6), three-layer bias incl. ±15% cap + gate override (Task 7), idempotent sheet write + manifest hyperlinks (Task 8), daily schedule (Task 10), FRED prerequisite + positioning-pillar-thin (Task 1 config comment + Task 10 docs). All spec sections map to a task.

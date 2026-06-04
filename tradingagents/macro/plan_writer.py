@@ -39,12 +39,15 @@ def pdf_links_from_manifest(path: Path) -> dict[str, str]:
 
 
 def build_payload(regime: Regime, biases: list[StockBias],
-                  pdf_links: dict[str, str]) -> dict:
+                  pdf_links: dict[str, str], levels: dict | None = None) -> dict:
     """Pure: assemble the regime board + per-ticker rows, rows sorted by
-    adjusted EV descending (best-positioned first)."""
+    adjusted EV descending (best-positioned first). `levels` maps ticker ->
+    {last_px, bear, target, bull, hard_stop} (all optional)."""
+    levels = levels or {}
     rows = []
     for sb in sorted(biases,
                      key=lambda b: (b.adjusted_ev_pct is None, -(b.adjusted_ev_pct or 0))):
+        lv = levels.get(sb.ticker, {})
         rows.append({
             "ticker": sb.ticker,
             "rating": sb.rating,
@@ -55,6 +58,11 @@ def build_payload(regime: Regime, biases: list[StockBias],
             "adjusted_ev_pct": sb.adjusted_ev_pct,
             "conviction": sb.conviction,
             "action": sb.action,
+            "last_px": lv.get("last_px"),
+            "bear": lv.get("bear"),
+            "target": lv.get("target"),
+            "bull": lv.get("bull"),
+            "hard_stop": lv.get("hard_stop"),
             "pdf_link": pdf_links.get(sb.ticker, ""),
         })
     return {
@@ -80,17 +88,20 @@ def to_grid(payload: dict) -> list[list]:
     grid.append(["Status"] + [f'{p["status"]} ({p["score"]:+.2f})'
                               for p in payload["pillars"]])
     grid.append([])
-    grid.append(["Ticker", "Rating", "Macro Driver", "Bias", "Research EV%",
-                 "Macro Δ%", "Adjusted EV%", "Conviction", "Action", "Research"])
+    header = ["Ticker", "Rating", "Macro Driver", "Bias", "Research EV%",
+              "Macro Δ%", "Adjusted EV%", "Conviction", "Action",
+              "Last Px", "Bear", "Target", "Bull", "Hard Stop", "Research"]
+    grid.append(header)
     for row in payload["rows"]:
         grid.append([
             row["ticker"], row["rating"], row["driver"], row["macro_bias"],
             _pct(row["research_ev_pct"]), _pct(row["macro_delta_pct"]),
             _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
-            row["pdf_link"],
+            _money(row["last_px"]), _money(row["bear"]), _money(row["target"]),
+            _money(row["bull"]), _money(row["hard_stop"]), row["pdf_link"],
         ])
-    width = 10
-    grid = [row + [""] * (width - len(row)) for row in grid]
+    width = len(header)
+    grid = [grow + [""] * (width - len(grow)) for grow in grid]
     while len(grid) < SHEET_MAX_ROWS:
         grid.append([""] * width)
     return grid
@@ -98,6 +109,10 @@ def to_grid(payload: dict) -> list[list]:
 
 def _pct(v) -> str:
     return "" if v is None else f"{v*100:+.1f}%"
+
+
+def _money(v) -> str:
+    return "" if v is None else f"${v:,.2f}"
 
 
 def write_to_sheet(grid: list[list], sheet_id: str, tab: str = "Macro",

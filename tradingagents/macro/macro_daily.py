@@ -47,9 +47,12 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True) -> dict:
     factor_returns = _load_factor_returns(as_of)
     base_evs = reports_mod.latest_runs(Path(reports_dir))
     biases = []
+    levels = {}
     for ticker, be in base_evs.items():
+        last_px = None
         try:
             px = macro_data.load_prices(ticker, as_of)
+            last_px = float(px.iloc[-1])
             stock_ret = px.pct_change().dropna()
             b = betas_mod.compute_betas(ticker, stock_ret, factor_returns)
         except Exception as exc:  # noqa: BLE001 — one bad ticker shouldn't sink the run
@@ -57,10 +60,15 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True) -> dict:
             b = betas_mod.Betas(ticker, {f: 0.0 for f in betas_mod.FACTORS}, 0.0, "low", 0)
         biases.append(bias_mod.bias_stock(
             ticker, be.rating, regime, b, reports_mod.ev_pct(be)))
+        ladder = reports_mod.scenario_ladder(be)
+        levels[ticker] = {
+            "last_px": last_px, "bear": ladder["bear"], "target": ladder["base"],
+            "bull": ladder["bull"], "hard_stop": be.hard_stop,
+        }
 
     # 3. Payload + write
     pdf_links = plan_writer.pdf_links_from_manifest(manifest_path) if manifest_path else {}
-    payload = plan_writer.build_payload(regime, biases, pdf_links)
+    payload = plan_writer.build_payload(regime, biases, pdf_links, levels)
     if write:
         plan_writer.write_to_sheet(plan_writer.to_grid(payload), sheet_id)
     return payload

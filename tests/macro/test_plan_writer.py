@@ -20,14 +20,17 @@ def _bias(ticker="AAPL"):
 
 
 def test_build_payload_has_regime_board_and_rows():
-    payload = plan_writer.build_payload(_regime(), [_bias()],
-                                        pdf_links={"AAPL": "http://x/AAPL.pdf"})
+    payload = plan_writer.build_payload(
+        _regime(), [_bias()], pdf_links={"AAPL": "http://x/AAPL.pdf"},
+        levels={"AAPL": {"last_px": 250.0, "bear": 180.0, "target": 300.0,
+                         "bull": 340.0, "hard_stop": 170.0}})
     assert payload["regime"]["gate"] == "GO"
     assert payload["regime"]["quadrant"] == "Goldilocks"
     assert any(p["name"] == "growth" for p in payload["pillars"])
     row = payload["rows"][0]
     assert row["ticker"] == "AAPL"
     assert row["adjusted_ev_pct"] == 0.15
+    assert row["last_px"] == 250.0 and row["hard_stop"] == 170.0
     assert row["pdf_link"] == "http://x/AAPL.pdf"
 
 
@@ -54,14 +57,18 @@ def test_pdf_links_from_manifest_build_drive_urls(tmp_path):
 
 def test_to_grid_pads_to_constant_height_with_header_and_data():
     from tradingagents.macro.config import SHEET_MAX_ROWS
-    payload = plan_writer.build_payload(_regime(), [_bias()],
-                                        pdf_links={"AAPL": "http://x/AAPL.pdf"})
+    payload = plan_writer.build_payload(
+        _regime(), [_bias()], pdf_links={"AAPL": "http://x/AAPL.pdf"},
+        levels={"AAPL": {"last_px": 250.0, "bear": 180.0, "target": 300.0,
+                         "bull": 340.0, "hard_stop": 170.0}})
     grid = plan_writer.to_grid(payload)
-    assert len(grid) == SHEET_MAX_ROWS            # constant height → overwrite covers prior runs
+    assert len(grid) == SHEET_MAX_ROWS
+    assert all(len(row) == 15 for row in grid)        # rectangular, 15 cols
     header = grid[4]
     assert header[0] == "Ticker" and header[-1] == "Research"
     data_row = grid[5]
     assert data_row[0] == "AAPL"
-    assert data_row[6] == "+15.0%"                # adjusted_ev_pct 0.15 formatted
-    assert grid[-1] == [""] * 10                  # trailing padding row
-    assert all(len(row) == 10 for row in grid)   # fully rectangular
+    assert data_row[6] == "+15.0%"                    # adjusted_ev_pct
+    assert data_row[9] == "$250.00"                   # last_px (money fmt)
+    assert data_row[13] == "$170.00"                  # hard_stop
+    assert grid[-1] == [""] * 15

@@ -74,6 +74,12 @@ def test_latest_runs_descends_into_week_subdirs(tmp_path):
     assert latest["AAPL"].research_date == "2026-06-01"
 
 
+def test_scenario_ladder_extracts_bull_base_bear(tmp_path):
+    be = reports.load_base_ev(_run_dir(tmp_path))
+    ladder = reports.scenario_ladder(be)
+    assert ladder == {"bull": 140.0, "base": 120.0, "bear": 80.0}
+
+
 def test_load_base_ev_survives_unreadable_decision(tmp_path):
     import json
     d = tmp_path / "2026-06-01-ERR"
