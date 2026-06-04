@@ -62,3 +62,13 @@ def test_latest_run_per_ticker_picks_newest_date(tmp_path):
     latest = reports.latest_runs(tmp_path)
     assert latest["AAA"].research_date == "2026-06-01"
     assert set(latest) == {"AAA", "BBB"}
+
+
+def test_load_base_ev_survives_unreadable_decision(tmp_path):
+    import json
+    d = tmp_path / "2026-06-01-ERR"
+    d.mkdir()
+    (d / "state.json").write_text(json.dumps(
+        {"company_of_interest": "ERR", "trade_date": "2026-06-01"}))
+    (d / "decision.md").mkdir()   # a dir where a file is expected → OSError on read_text
+    assert reports.load_base_ev(d) is None

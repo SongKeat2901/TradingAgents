@@ -10,7 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from cli.daily_followup import parse_research
+import logging
+
+from cli.daily_followup import parse_research, Scenario
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,12 +24,15 @@ class BaseEV:
     rating: str
     reference_price: float
     ev: float | None
-    scenarios: list            # list[Scenario] from cli.daily_followup
+    scenarios: list[Scenario]
     hard_stop: float | None
 
 
 def load_base_ev(run_dir: Path) -> BaseEV | None:
-    parsed = parse_research(Path(run_dir))
+    try:
+        parsed = parse_research(Path(run_dir))
+    except OSError:
+        return None
     if not parsed:
         return None
     return BaseEV(
@@ -53,7 +60,11 @@ def ev_pct(be: BaseEV) -> float | None:
     """12-mo EV as a fraction of reference price. Uses the explicit EV line if
     present, else the scenario-probability-weighted target."""
     ev_abs = be.ev if be.ev is not None else _scenario_weighted_target(be)
-    if ev_abs is None or not be.reference_price:
+    if ev_abs is None:
+        logger.warning("ev_pct: no EV or usable scenarios for %s (%s)",
+                       be.ticker, be.research_date)
+        return None
+    if not be.reference_price:
         return None
     return (ev_abs - be.reference_price) / be.reference_price
 

@@ -1156,6 +1156,16 @@ def test_latest_run_per_ticker_picks_newest_date(tmp_path):
     latest = reports.latest_runs(tmp_path)
     assert latest["AAA"].research_date == "2026-06-01"
     assert set(latest) == {"AAA", "BBB"}
+
+
+def test_load_base_ev_survives_unreadable_decision(tmp_path):
+    import json
+    d = tmp_path / "2026-06-01-ERR"
+    d.mkdir()
+    (d / "state.json").write_text(json.dumps(
+        {"company_of_interest": "ERR", "trade_date": "2026-06-01"}))
+    (d / "decision.md").mkdir()   # a dir where a file is expected → OSError on read_text
+    assert reports.load_base_ev(d) is None
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1180,7 +1190,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from cli.daily_followup import parse_research
+import logging
+
+from cli.daily_followup import parse_research, Scenario
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -1190,12 +1204,15 @@ class BaseEV:
     rating: str
     reference_price: float
     ev: float | None
-    scenarios: list            # list[Scenario] from cli.daily_followup
+    scenarios: list[Scenario]
     hard_stop: float | None
 
 
 def load_base_ev(run_dir: Path) -> BaseEV | None:
-    parsed = parse_research(Path(run_dir))
+    try:
+        parsed = parse_research(Path(run_dir))
+    except OSError:
+        return None
     if not parsed:
         return None
     return BaseEV(
@@ -1223,7 +1240,11 @@ def ev_pct(be: BaseEV) -> float | None:
     """12-mo EV as a fraction of reference price. Uses the explicit EV line if
     present, else the scenario-probability-weighted target."""
     ev_abs = be.ev if be.ev is not None else _scenario_weighted_target(be)
-    if ev_abs is None or not be.reference_price:
+    if ev_abs is None:
+        logger.warning("ev_pct: no EV or usable scenarios for %s (%s)",
+                       be.ticker, be.research_date)
+        return None
+    if not be.reference_price:
         return None
     return (ev_abs - be.reference_price) / be.reference_price
 
@@ -1246,13 +1267,13 @@ def latest_runs(base_dir: Path) -> dict[str, BaseEV]:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/macro/test_reports.py -v`
-Expected: PASS (4 passed)
+Expected: PASS (5 passed)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tradingagents/macro/reports.py tests/macro/test_reports.py
-git commit -m "feat(macro): base-EV reader reusing daily_followup parser
+git add tradingagents/macro/reports.py tests/macro/test_reports.py docs/superpowers/plans/2026-06-04-macro-regime-engine.md
+git commit -m "fix(macro): anchor Scenario type, guard reports against unreadable decision.md, log missing EV
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
