@@ -37,7 +37,7 @@ def _parse_fred(payload: dict) -> pd.Series:
         except ValueError:
             continue
         dates.append(obs["date"])
-    return pd.Series(vals, index=pd.to_datetime(dates), name="value")
+    return pd.Series(vals, index=pd.to_datetime(dates), name="value").sort_index()
 
 
 def _fetch_fred(spec: IndicatorSpec) -> pd.Series:
@@ -53,7 +53,7 @@ def _fetch_fred(spec: IndicatorSpec) -> pd.Series:
 
 def _fetch_yfinance(spec: IndicatorSpec) -> pd.Series:
     import yfinance as yf
-    df = yf.Ticker(spec.code).history(period="3y", auto_adjust=False)
+    df = yf.Ticker(spec.code).history(period="3y", auto_adjust=True)  # adjusted Close (consistent w/ load_prices)
     if df is None or df.empty:
         raise RuntimeError(f"yfinance returned no data for {spec.code}")
     s = df["Close"].copy()
@@ -99,7 +99,7 @@ def load_prices(ticker: str, as_of: str, period: str = "2y") -> pd.Series:
     df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
     if df is None or df.empty:
         raise RuntimeError(f"no price history for {ticker}")
-    df = df.reset_index().rename(columns={"index": "Date"})
+    df = df.reset_index()  # yfinance names the daily index "Date"
     df = drop_incomplete_session(df)          # drop the in-progress US bar
     s = pd.Series(df["Close"].values,
                   index=pd.to_datetime(df["Date"]).dt.tz_localize(None), name="value")
