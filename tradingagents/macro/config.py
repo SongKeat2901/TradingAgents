@@ -7,7 +7,7 @@ backtest items per the spec).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Canonical factor order — used by betas.py, bias.py, and tests. Do not reorder.
 FACTORS: list[str] = ["d_10y", "d_dxy", "d_hy_spread", "oil_ret", "mkt", "growth_value"]
@@ -33,7 +33,7 @@ class IndicatorSpec:
 # intentionally thin (weak free data) — low weight, upgrade post-v1.
 INDICATORS: list[IndicatorSpec] = [
     # Growth
-    IndicatorSpec("ism_mfg", "fred", "MANEMP", "growth", 1.0),
+    IndicatorSpec("indpro", "fred", "INDPRO", "growth", 1.0),  # Industrial Production (ISM PMI not free on FRED)
     IndicatorSpec("jobless_claims", "fred", "ICSA", "growth", 1.0, invert=True),
     IndicatorSpec("curve_10y2y", "fred", "T10Y2Y", "growth", 1.0),
     IndicatorSpec("curve_10y3m", "fred", "T10Y3M", "growth", 1.0),

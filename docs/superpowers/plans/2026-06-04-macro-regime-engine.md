@@ -88,11 +88,18 @@ def test_factor_regime_map_uses_known_factors_and_pillars():
         assert factor in config.FACTORS
         for pillar in weights:
             assert pillar in config.PILLARS
+    assert set(config.FACTOR_REGIME_MAP) == set(config.FACTORS)
 
 
 def test_gate_thresholds_present():
     assert config.GATE_RED_BREADTH == 4
     assert 0.0 < config.EV_TILT_CAP <= 1.0
+    assert -1.0 <= config.GATE_SCORE_FLOOR < 0.0
+    assert -1.0 <= config.GATE_CAUTION_AT < 0.0
+    assert config.GATE_CAUTION_AT > config.GATE_SCORE_FLOOR        # ordering sanity
+    assert -1.0 <= config.PILLAR_RED_AT < config.PILLAR_GREEN_AT <= 1.0
+    assert 0.0 < config.MACRO_RETURN_SCALE <= 1.0
+    assert config.BETA_SHRINK_FLOOR < config.BETA_MIN_OBS
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -126,7 +133,7 @@ backtest items per the spec).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Canonical factor order — used by betas.py, bias.py, and tests. Do not reorder.
 FACTORS: list[str] = ["d_10y", "d_dxy", "d_hy_spread", "oil_ret", "mkt", "growth_value"]
@@ -152,7 +159,7 @@ class IndicatorSpec:
 # intentionally thin (weak free data) — low weight, upgrade post-v1.
 INDICATORS: list[IndicatorSpec] = [
     # Growth
-    IndicatorSpec("ism_mfg", "fred", "MANEMP", "growth", 1.0),
+    IndicatorSpec("indpro", "fred", "INDPRO", "growth", 1.0),  # Industrial Production (ISM PMI not free on FRED)
     IndicatorSpec("jobless_claims", "fred", "ICSA", "growth", 1.0, invert=True),
     IndicatorSpec("curve_10y2y", "fred", "T10Y2Y", "growth", 1.0),
     IndicatorSpec("curve_10y3m", "fred", "T10Y3M", "growth", 1.0),

@@ -22,8 +22,15 @@ def test_factor_regime_map_uses_known_factors_and_pillars():
         assert factor in config.FACTORS
         for pillar in weights:
             assert pillar in config.PILLARS
+    assert set(config.FACTOR_REGIME_MAP) == set(config.FACTORS)
 
 
 def test_gate_thresholds_present():
     assert config.GATE_RED_BREADTH == 4
     assert 0.0 < config.EV_TILT_CAP <= 1.0
+    assert -1.0 <= config.GATE_SCORE_FLOOR < 0.0
+    assert -1.0 <= config.GATE_CAUTION_AT < 0.0
+    assert config.GATE_CAUTION_AT > config.GATE_SCORE_FLOOR        # ordering sanity
+    assert -1.0 <= config.PILLAR_RED_AT < config.PILLAR_GREEN_AT <= 1.0
+    assert 0.0 < config.MACRO_RETURN_SCALE <= 1.0
+    assert config.BETA_SHRINK_FLOOR < config.BETA_MIN_OBS
