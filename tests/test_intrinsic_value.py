@@ -138,6 +138,16 @@ def test_foreign_adr_skips_on_implausible_pe():
     assert "P/E" in iv["fx_caveat"]
 
 
+def test_usd_eps_mis_scale_suppresses_fair_value():
+    # USD profile, but price/eps absurd (1000/5 = 200) → eps feed mis-scaled →
+    # fair value suppressed rather than a wrong number (covers the STM case).
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    iv = compute_intrinsic_value(_fin(), {"net_debt": 0}, {"reference_price": 1000.0},
+                                 {"PEERA": {"ttm_pe": 18}}, risk_free=0.04, ticker="ACME")
+    assert iv["fair_value"]["base"] is None
+    assert any("mis-scaled" in s["reason"] for s in iv["skipped_methods"])
+
+
 # ---- Task 5: formatter ----
 def test_format_block_standard():
     from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value, format_intrinsic_value_block

@@ -318,6 +318,20 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
     elif fx_caveat is None and profile == "NAV_PROXY":
         skipped.append({"method": "all", "reason": "asset/NAV-driven proxy — DCF/EPS intrinsic value not meaningful"})
 
+    # eps sanity (all profiles): EPV and peer-multiples both rest on TTM eps. If
+    # price/eps is absurd the eps feed is mis-scaled (a per-ticker data glitch —
+    # e.g. STM showed P/E ~117 from a 20x-off eps), so the fair value can't be
+    # trusted. Suppress rather than emit a wrong number (user rule).
+    eps_chk = fund.get("eps")
+    if fair_value.get("base") is not None and price and eps_chk and eps_chk > 0:
+        implied_pe_final = price / eps_chk
+        if not (3.0 <= implied_pe_final <= 60.0):
+            skipped.append({"method": "all", "reason":
+                f"price/eps implies P/E≈{implied_pe_final:.0f} — eps feed looks mis-scaled; "
+                f"fair value suppressed. Rely on the scenario EV."})
+            fair_value = {"bear": None, "base": None, "bull": None}
+            methods = {}
+
     iv_base = fair_value.get("base")
     margin = ((iv_base - price) / price) if (iv_base is not None and price) else None
 
