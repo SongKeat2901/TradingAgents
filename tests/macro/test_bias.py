@@ -77,7 +77,7 @@ def test_none_research_ev_yields_none_adjusted_and_bare_rating():
                     "oil_ret": 0.0, "mkt": 0.0, "growth_value": 0.0}, 0.8, "high", 300)
     sb = bias.bias_stock("X", "HOLD", r, b, research_ev_pct=None)
     assert sb.adjusted_ev_pct is None
-    assert sb.action == "HOLD"
+    assert sb.action == "Hold"          # Action = EV/macro bias only (rating is its own column)
 
 
 def test_driver_dash_when_all_betas_zero():

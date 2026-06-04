@@ -70,18 +70,22 @@ def _conviction(regime: Regime, delta: float, betas: Betas) -> float:
     return round(max(0.0, min(1.0, base * align * conf * haircut)), 3)
 
 
-def _action(regime: Regime, rating: str, adjusted_ev_pct: float | None) -> str:
+def _action(regime: Regime, adjusted_ev_pct: float | None) -> str:
+    """EV/macro action bias ONLY — the analyst Rating is its own column, so the
+    two signals stay separate and never read as a contradiction (e.g. an
+    Underweight name with a mildly positive EV shows Rating=UNDERWEIGHT and
+    Action=Add/Hold side by side; the divergence is the signal)."""
     if regime.gate == "STAND_DOWN":
-        return "STAND DOWN — no new risk (macro red)"
+        return "Stand down — no new risk"
     if regime.gate == "CAUTION":
-        return f"Caution — half size; {rating}"
+        return "Caution — half size"
     if adjusted_ev_pct is None:
-        return rating
+        return "Hold"
     if adjusted_ev_pct > ACTION_ADD_AT:
-        return f"{rating} — add/hold"
+        return "Add/Hold"
     if adjusted_ev_pct < ACTION_TRIM_AT:
-        return f"{rating} — trim/avoid"
-    return f"{rating} — hold"
+        return "Trim/Avoid"
+    return "Hold"
 
 
 def bias_stock(ticker: str, rating: str, regime: Regime, betas: Betas,
@@ -94,5 +98,5 @@ def bias_stock(ticker: str, rating: str, regime: Regime, betas: Betas,
         ticker=ticker, rating=rating, driver=describe_driver(betas),
         macro_bias=_bias_status(delta), research_ev_pct=research_ev_pct,
         macro_delta_pct=round(delta, 4), adjusted_ev_pct=adjusted,
-        conviction=conviction, action=_action(regime, rating, adjusted),
+        conviction=conviction, action=_action(regime, adjusted),
     )
