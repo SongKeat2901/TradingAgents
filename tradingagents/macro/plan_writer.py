@@ -7,18 +7,25 @@ from the existing pdf_ids.tsv manifest (ticker<TAB>driveFileId).
 """
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .bias import StockBias
+from .config import SHEET_MAX_ROWS
 from .regime import Regime
 
 
 def load_manifest(path: Path) -> dict[str, str]:
     """Parse ticker<TAB>fileId rows. Parsed in Python (never `IFS=$"\\t"` /
     `grep -P`, which are broken on macOS)."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"pdf_ids manifest not found: {p}")
     out: dict[str, str] = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for line in p.read_text(encoding="utf-8").splitlines():
         if not line.strip() or "\t" not in line:
             continue
         ticker, file_id = line.split("\t", 1)
@@ -82,6 +89,8 @@ def to_grid(payload: dict) -> list[list]:
             _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
             row["pdf_link"],
         ])
+    while len(grid) < SHEET_MAX_ROWS:
+        grid.append([""] * 10)
     return grid
 
 
@@ -93,11 +102,16 @@ def write_to_sheet(grid: list[list], sheet_id: str, tab: str = "Macro",
                    runner=subprocess.run) -> None:
     """Overwrite the tab's range with `grid` via gog (replace-in-place →
     idempotent). `runner` is injectable for tests. Requires the mini's gog
-    auth (7-day token; re-auth per the update-summary skill on invalid_grant)."""
-    import json
-    import tempfile
+    auth (7-day token; re-auth per the update-summary skill on invalid_grant).
+
+    Note for the implementer: the exact `gog sheets update` flags must be
+    verified against the installed `gog` version on the mini
+    (`gog sheets update --help`)."""
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
         json.dump(grid, fh)
         payload_path = fh.name
-    runner(["gog", "sheets", "update", sheet_id, "--tab", tab,
-            "--range", "A1", "--values-json", payload_path], check=True)
+    try:
+        runner(["gog", "sheets", "update", sheet_id, "--tab", tab,
+                "--range", "A1", "--values-json", payload_path], check=True)
+    finally:
+        os.unlink(payload_path)

@@ -250,6 +250,8 @@ FACTOR_REGIME_MAP: dict[str, dict[str, float]] = {
 # Shrinkage for short-history betas: blend toward 0 below this many observations.
 BETA_MIN_OBS = 252       # full-confidence window
 BETA_SHRINK_FLOOR = 60   # below this, beta is heavily shrunk; flagged "low"
+
+SHEET_MAX_ROWS = 100  # to_grid pads to this height so a shorter run can't leave stale trailing rows (no-dupes rule)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1577,6 +1579,20 @@ def test_pdf_links_from_manifest_build_drive_urls(tmp_path):
     m.write_text("AAPL\tabc123\n")
     links = plan_writer.pdf_links_from_manifest(m)
     assert links["AAPL"] == "https://drive.google.com/file/d/abc123/view"
+
+
+def test_to_grid_pads_to_constant_height_with_header_and_data():
+    from tradingagents.macro.config import SHEET_MAX_ROWS
+    payload = plan_writer.build_payload(_regime(), [_bias()],
+                                        pdf_links={"AAPL": "http://x/AAPL.pdf"})
+    grid = plan_writer.to_grid(payload)
+    assert len(grid) == SHEET_MAX_ROWS            # constant height → overwrite covers prior runs
+    header = grid[4]
+    assert header[0] == "Ticker" and header[-1] == "Research"
+    data_row = grid[5]
+    assert data_row[0] == "AAPL"
+    assert data_row[6] == "+15.0%"                # adjusted_ev_pct 0.15 formatted
+    assert grid[-1] == [""] * 10                  # trailing padding row
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1598,18 +1614,25 @@ from the existing pdf_ids.tsv manifest (ticker<TAB>driveFileId).
 """
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .bias import StockBias
+from .config import SHEET_MAX_ROWS
 from .regime import Regime
 
 
 def load_manifest(path: Path) -> dict[str, str]:
     """Parse ticker<TAB>fileId rows. Parsed in Python (never `IFS=$"\\t"` /
     `grep -P`, which are broken on macOS)."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"pdf_ids manifest not found: {p}")
     out: dict[str, str] = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for line in p.read_text(encoding="utf-8").splitlines():
         if not line.strip() or "\t" not in line:
             continue
         ticker, file_id = line.split("\t", 1)
@@ -1673,6 +1696,8 @@ def to_grid(payload: dict) -> list[list]:
             _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
             row["pdf_link"],
         ])
+    while len(grid) < SHEET_MAX_ROWS:
+        grid.append([""] * 10)
     return grid
 
 
@@ -1684,18 +1709,21 @@ def write_to_sheet(grid: list[list], sheet_id: str, tab: str = "Macro",
                    runner=subprocess.run) -> None:
     """Overwrite the tab's range with `grid` via gog (replace-in-place →
     idempotent). `runner` is injectable for tests. Requires the mini's gog
-    auth (7-day token; re-auth per the update-summary skill on invalid_grant)."""
-    import json
-    import tempfile
+    auth (7-day token; re-auth per the update-summary skill on invalid_grant).
+
+    Note for the implementer: the exact `gog sheets update` flags must be
+    verified against the installed `gog` version on the mini
+    (`gog sheets update --help`)."""
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
         json.dump(grid, fh)
         payload_path = fh.name
-    runner(["gog", "sheets", "update", sheet_id, "--tab", tab,
-            "--range", "A1", "--values-json", payload_path], check=True)
+    try:
+        runner(["gog", "sheets", "update", sheet_id, "--tab", tab,
+                "--range", "A1", "--values-json", payload_path], check=True)
+    finally:
+        os.unlink(payload_path)
 ```
 
-> Note for the implementer: the exact `gog sheets update` flags must be verified
-> against the installed `gog` version on the mini (`gog sheets update --help`).
 > The `write_to_sheet` I/O path is exercised in the Task 9 smoke test with an
 > injected `runner`; only the pure `build_payload`/`to_grid`/manifest functions
 > are unit-tested here.
@@ -1703,7 +1731,7 @@ def write_to_sheet(grid: list[list], sheet_id: str, tab: str = "Macro",
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/macro/test_plan_writer.py -v`
-Expected: PASS (4 passed)
+Expected: PASS (5 passed)
 
 - [ ] **Step 5: Commit**
 

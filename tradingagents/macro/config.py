@@ -124,3 +124,5 @@ FACTOR_REGIME_MAP: dict[str, dict[str, float]] = {
 # Shrinkage for short-history betas: blend toward 0 below this many observations.
 BETA_MIN_OBS = 252       # full-confidence window
 BETA_SHRINK_FLOOR = 60   # below this, beta is heavily shrunk; flagged "low"
+
+SHEET_MAX_ROWS = 100  # to_grid pads to this height so a shorter run can't leave stale trailing rows (no-dupes rule)

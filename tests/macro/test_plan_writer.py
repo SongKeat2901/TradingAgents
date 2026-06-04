@@ -50,3 +50,17 @@ def test_pdf_links_from_manifest_build_drive_urls(tmp_path):
     m.write_text("AAPL\tabc123\n")
     links = plan_writer.pdf_links_from_manifest(m)
     assert links["AAPL"] == "https://drive.google.com/file/d/abc123/view"
+
+
+def test_to_grid_pads_to_constant_height_with_header_and_data():
+    from tradingagents.macro.config import SHEET_MAX_ROWS
+    payload = plan_writer.build_payload(_regime(), [_bias()],
+                                        pdf_links={"AAPL": "http://x/AAPL.pdf"})
+    grid = plan_writer.to_grid(payload)
+    assert len(grid) == SHEET_MAX_ROWS            # constant height → overwrite covers prior runs
+    header = grid[4]
+    assert header[0] == "Ticker" and header[-1] == "Research"
+    data_row = grid[5]
+    assert data_row[0] == "AAPL"
+    assert data_row[6] == "+15.0%"                # adjusted_ev_pct 0.15 formatted
+    assert grid[-1] == [""] * 10                  # trailing padding row
