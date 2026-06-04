@@ -104,3 +104,31 @@ def test_latest_runs_mtime_tiebreak_on_same_date(tmp_path):
     os.utime(new / "state.json", (2_000_000, 2_000_000))   # newer write
     latest = reports.latest_runs([b1, b2])
     assert latest["ASX"].rating == "HOLD"                  # newest-written wins on same date
+
+
+def test_load_intrinsic_reads_base_fair_value(tmp_path):
+    import json as _json
+    d = _run_dir(tmp_path)
+    raw = d / "raw"
+    raw.mkdir()
+    (raw / "intrinsic_value.json").write_text(_json.dumps(
+        {"profile": "STANDARD", "fair_value": {"bear": 100, "base": 150, "bull": 200},
+         "margin_of_safety_pct": 0.2}))
+    out = reports.load_intrinsic(d)
+    assert out == {"fair_value": 150, "margin_of_safety_pct": 0.2, "profile": "STANDARD"}
+
+
+def test_load_intrinsic_missing_file_returns_none(tmp_path):
+    assert reports.load_intrinsic(_run_dir(tmp_path)) is None   # no raw/intrinsic_value.json
+
+
+def test_load_intrinsic_null_fair_value(tmp_path):
+    import json as _json
+    d = _run_dir(tmp_path)
+    raw = d / "raw"
+    raw.mkdir()
+    (raw / "intrinsic_value.json").write_text(_json.dumps(
+        {"profile": "UNPROFITABLE", "fair_value": {"bear": None, "base": None, "bull": None},
+         "margin_of_safety_pct": None}))
+    out = reports.load_intrinsic(d)
+    assert out["fair_value"] is None and out["profile"] == "UNPROFITABLE"

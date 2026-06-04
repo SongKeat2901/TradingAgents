@@ -41,7 +41,7 @@ def build_payload(regime: Regime, biases: list[StockBias],
                   pdf_links: dict[str, str], levels: dict | None = None) -> dict:
     """Pure: assemble the regime board + per-ticker rows, rows sorted by
     adjusted EV descending (best-positioned first). `levels` maps ticker ->
-    {last_px, bear, target, bull, hard_stop} (all optional)."""
+    {last_px, intrinsic_fv, mos_pct, bear, target, bull, hard_stop} (all optional)."""
     levels = levels or {}
     rows = []
     for sb in sorted(biases,
@@ -58,6 +58,8 @@ def build_payload(regime: Regime, biases: list[StockBias],
             "conviction": sb.conviction,
             "action": sb.action,
             "last_px": lv.get("last_px"),
+            "intrinsic_fv": lv.get("intrinsic_fv"),
+            "mos_pct": lv.get("mos_pct"),
             "bear": lv.get("bear"),
             "target": lv.get("target"),
             "bull": lv.get("bull"),
@@ -89,14 +91,17 @@ def to_grid(payload: dict) -> list[list]:
     grid.append([])
     header = ["Ticker", "Rating", "Macro Driver", "Bias", "Research EV%",
               "Macro Δ%", "Adjusted EV%", "Conviction", "Action",
-              "Last Px", "Bear", "Target", "Bull", "Hard Stop", "Research"]
+              "Last Px", "Intrinsic FV", "Margin of Safety %",
+              "Bear", "Target", "Bull", "Hard Stop", "Research"]
     grid.append(header)
     for row in payload["rows"]:
         grid.append([
             row["ticker"], row["rating"], row["driver"], row["macro_bias"],
             _pct(row["research_ev_pct"]), _pct(row["macro_delta_pct"]),
             _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
-            _money(row["last_px"]), _money(row["bear"]), _money(row["target"]),
+            _gfinance(row["ticker"], row["last_px"]),
+            _money(row["intrinsic_fv"]), _pct(row["mos_pct"]),
+            _money(row["bear"]), _money(row["target"]),
             _money(row["bull"]), _money(row["hard_stop"]), row["pdf_link"],
         ])
     width = len(header)
@@ -112,6 +117,16 @@ def _pct(v) -> str:
 
 def _money(v) -> str:
     return "" if v is None else f"${v:,.2f}"
+
+
+def _gfinance(ticker: str, fallback) -> str:
+    """Live-updating price cell: GOOGLEFINANCE wrapped in IFERROR so symbols it
+    can't resolve (some foreign/OTC ADRs) fall back to the engine's daily settled
+    close. Written with USER_ENTERED so Sheets evaluates the formula. ~20-min
+    delayed during US hours; last close after hours."""
+    if fallback is None:
+        return f'=GOOGLEFINANCE("{ticker}","price")'
+    return f'=IFERROR(GOOGLEFINANCE("{ticker}","price"),{fallback})'
 
 
 def write_to_sheet(grid: list[list], sheet_id: str, tab: str | None = None,

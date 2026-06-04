@@ -7,6 +7,7 @@ exists.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ class BaseEV:
     ev: float | None
     scenarios: list[Scenario]
     hard_stop: float | None
+    run_dir: str = ""          # the run dir this was parsed from (for raw/ lookups)
 
 
 def load_base_ev(run_dir: Path) -> BaseEV | None:
@@ -43,7 +45,33 @@ def load_base_ev(run_dir: Path) -> BaseEV | None:
         ev=parsed["ev"],
         scenarios=parsed["scenarios"],
         hard_stop=parsed["hard_stop"],
+        run_dir=str(run_dir),
     )
+
+
+def load_intrinsic(run_dir: str | Path) -> dict | None:
+    """Read raw/intrinsic_value.json → {fair_value, margin_of_safety_pct, profile}.
+
+    `fair_value` is the base-case per-share intrinsic value; it is None for
+    foreign ADRs and unprofitable names where the DCF/EPV model is skipped
+    (the report then relies on the scenario EV). Returns None if the file is
+    absent or unreadable.
+    """
+    if not run_dir:
+        return None
+    p = Path(run_dir) / "raw" / "intrinsic_value.json"
+    if not p.exists():
+        return None
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    fv = d.get("fair_value") or {}
+    return {
+        "fair_value": fv.get("base"),
+        "margin_of_safety_pct": d.get("margin_of_safety_pct"),
+        "profile": d.get("profile"),
+    }
 
 
 def _scenario_weighted_target(be: BaseEV) -> float | None:
