@@ -53,8 +53,10 @@ def _gate(score: float, red_count: int) -> str:
 
 
 def _label(score: float, quadrant: str, gate: str) -> str:
-    tone = "Risk-On" if score > 0.1 else "Risk-Off" if score < -0.1 else "Neutral"
-    return f"{tone} · {quadrant}"
+    tone = ("Risk-On" if score > abs(GATE_CAUTION_AT)
+            else "Risk-Off" if score < GATE_CAUTION_AT else "Neutral")
+    gate_tag = f" [{gate}]" if gate != "GO" else ""
+    return f"{tone} · {quadrant}{gate_tag}"
 
 
 def build(pillars: list[PillarScore]) -> Regime:
