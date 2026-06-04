@@ -58,10 +58,8 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True,
     biases = []
     levels = {}
     for ticker, be in base_evs.items():
-        last_px = None
         try:
             px = macro_data.load_prices(ticker, as_of)
-            last_px = float(px.iloc[-1])
             stock_ret = px.pct_change().dropna()
             b = betas_mod.compute_betas(ticker, stock_ret, factor_returns)
         except Exception as exc:  # noqa: BLE001 — one bad ticker shouldn't sink the run
@@ -72,7 +70,7 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True,
         ladder = reports_mod.scenario_ladder(be)
         intr = reports_mod.load_intrinsic(be.run_dir) or {}
         levels[ticker] = {
-            "last_px": last_px, "bear": ladder["bear"], "target": ladder["base"],
+            "bear": ladder["bear"], "target": ladder["base"],
             "bull": ladder["bull"], "hard_stop": be.hard_stop,
             "intrinsic_fv": intr.get("fair_value"),
             "mos_pct": intr.get("margin_of_safety_pct"),

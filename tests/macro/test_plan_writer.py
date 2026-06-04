@@ -24,7 +24,7 @@ def _bias(ticker="AAPL"):
 def test_build_payload_has_regime_board_and_rows():
     payload = plan_writer.build_payload(
         _regime(), [_bias()], pdf_links={"AAPL": "http://x/AAPL.pdf"},
-        levels={"AAPL": {"last_px": 250.0, "intrinsic_fv": 280.0, "mos_pct": 0.12,
+        levels={"AAPL": {"intrinsic_fv": 280.0, "mos_pct": 0.12,
                          "bear": 180.0, "target": 300.0, "bull": 340.0,
                          "hard_stop": 170.0}})
     assert payload["regime"]["gate"] == "GO"
@@ -33,7 +33,7 @@ def test_build_payload_has_regime_board_and_rows():
     row = payload["rows"][0]
     assert row["ticker"] == "AAPL"
     assert row["adjusted_ev_pct"] == 0.15
-    assert row["last_px"] == 250.0 and row["hard_stop"] == 170.0
+    assert row["hard_stop"] == 170.0
     assert row["intrinsic_fv"] == 280.0 and row["mos_pct"] == 0.12
     assert row["pdf_link"] == "http://x/AAPL.pdf"
 
@@ -63,7 +63,7 @@ def test_to_grid_pads_to_constant_height_with_header_and_data():
     from tradingagents.macro.config import SHEET_MAX_ROWS
     payload = plan_writer.build_payload(
         _regime(), [_bias()], pdf_links={"AAPL": "http://x/AAPL.pdf"},
-        levels={"AAPL": {"last_px": 250.0, "intrinsic_fv": 280.0, "mos_pct": 0.12,
+        levels={"AAPL": {"intrinsic_fv": 280.0, "mos_pct": 0.12,
                          "bear": 180.0, "target": 300.0, "bull": 340.0,
                          "hard_stop": 170.0}})
     grid = plan_writer.to_grid(payload)
@@ -75,7 +75,7 @@ def test_to_grid_pads_to_constant_height_with_header_and_data():
     data_row = grid[5]
     assert data_row[0] == "AAPL"
     assert data_row[6] == "+15.0%"                    # adjusted_ev_pct
-    assert data_row[9] == '=IFERROR(GOOGLEFINANCE("AAPL","price"),250.0)'  # live px + fallback
+    assert data_row[9] == '=GOOGLEFINANCE("AAPL","price")'  # live px, no fallback (errors visibly)
     assert data_row[10] == "$280.00"                  # intrinsic fair value
     assert data_row[11] == "+12.0%"                   # margin of safety
     assert data_row[15] == "$170.00"                  # hard_stop (shifted)

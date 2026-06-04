@@ -41,7 +41,9 @@ def build_payload(regime: Regime, biases: list[StockBias],
                   pdf_links: dict[str, str], levels: dict | None = None) -> dict:
     """Pure: assemble the regime board + per-ticker rows, rows sorted by
     adjusted EV descending (best-positioned first). `levels` maps ticker ->
-    {last_px, intrinsic_fv, mos_pct, bear, target, bull, hard_stop} (all optional)."""
+    {intrinsic_fv, mos_pct, bear, target, bull, hard_stop} (all optional).
+    Last Px is a live GOOGLEFINANCE formula keyed off the ticker, so no static
+    price is threaded through here."""
     levels = levels or {}
     rows = []
     for sb in sorted(biases,
@@ -57,7 +59,6 @@ def build_payload(regime: Regime, biases: list[StockBias],
             "adjusted_ev_pct": sb.adjusted_ev_pct,
             "conviction": sb.conviction,
             "action": sb.action,
-            "last_px": lv.get("last_px"),
             "intrinsic_fv": lv.get("intrinsic_fv"),
             "mos_pct": lv.get("mos_pct"),
             "bear": lv.get("bear"),
@@ -99,7 +100,7 @@ def to_grid(payload: dict) -> list[list]:
             row["ticker"], row["rating"], row["driver"], row["macro_bias"],
             _pct(row["research_ev_pct"]), _pct(row["macro_delta_pct"]),
             _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
-            _gfinance(row["ticker"], row["last_px"]),
+            _gfinance(row["ticker"]),
             _money(row["intrinsic_fv"]), _pct(row["mos_pct"]),
             _money(row["bear"]), _money(row["target"]),
             _money(row["bull"]), _money(row["hard_stop"]), row["pdf_link"],
@@ -119,14 +120,12 @@ def _money(v) -> str:
     return "" if v is None else f"${v:,.2f}"
 
 
-def _gfinance(ticker: str, fallback) -> str:
-    """Live-updating price cell: GOOGLEFINANCE wrapped in IFERROR so symbols it
-    can't resolve (some foreign/OTC ADRs) fall back to the engine's daily settled
-    close. Written with USER_ENTERED so Sheets evaluates the formula. ~20-min
-    delayed during US hours; last close after hours."""
-    if fallback is None:
-        return f'=GOOGLEFINANCE("{ticker}","price")'
-    return f'=IFERROR(GOOGLEFINANCE("{ticker}","price"),{fallback})'
+def _gfinance(ticker: str) -> str:
+    """Live-updating price cell. Written with USER_ENTERED so Sheets evaluates
+    the formula. NO fallback by design: if GOOGLEFINANCE can't resolve the
+    symbol the cell shows an explicit error (#N/A) rather than a stale/misleading
+    static price. ~20-min delayed during US hours; last close after hours."""
+    return f'=GOOGLEFINANCE("{ticker}","price")'
 
 
 def write_to_sheet(grid: list[list], sheet_id: str, tab: str | None = None,
