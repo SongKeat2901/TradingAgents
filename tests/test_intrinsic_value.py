@@ -148,6 +148,17 @@ def test_usd_eps_mis_scale_suppresses_fair_value():
     assert any("mis-scaled" in s["reason"] for s in iv["skipped_methods"])
 
 
+def test_implausible_fair_value_vs_price_suppressed():
+    # eps P/E is sane (20/5=4) but peer multiple blows the fair value far above
+    # price (FINANCIAL → base = 30*5 = 150 vs price 20) → output-sanity suppress.
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    fin = _FUND_TXT.replace("Sector: Technology", "Sector: Financial Services")
+    iv = compute_intrinsic_value(_fin(fin), {"net_debt": 0}, {"reference_price": 20.0},
+                                 {"P": {"ttm_pe": 30}}, risk_free=0.04, ticker="BANK")
+    assert iv["fair_value"]["base"] is None
+    assert any("diverges" in s["reason"] for s in iv["skipped_methods"])
+
+
 # ---- Task 5: formatter ----
 def test_format_block_standard():
     from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value, format_intrinsic_value_block

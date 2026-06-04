@@ -332,6 +332,18 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
             fair_value = {"bear": None, "base": None, "bull": None}
             methods = {}
 
+    # Output sanity (all profiles): even with clean eps, a fair value that diverges
+    # wildly from the market price is a peer-multiple/model blow-up, not a credible
+    # point estimate (e.g. TIGR's peer-implied $37.6 vs a $4.79 price = +650%).
+    # Suppress beyond [0.2x, 3x] of price rather than emit a misleading number.
+    fvb = fair_value.get("base")
+    if fvb is not None and price and not (0.2 * price <= fvb <= 3.0 * price):
+        skipped.append({"method": "all", "reason":
+            f"fair value {fvb:.2f} diverges implausibly from price {price:.2f} "
+            f"(outside 0.2x-3x) — not a credible estimate; suppressed. Rely on the scenario EV."})
+        fair_value = {"bear": None, "base": None, "bull": None}
+        methods = {}
+
     iv_base = fair_value.get("base")
     margin = ((iv_base - price) / price) if (iv_base is not None and price) else None
 
