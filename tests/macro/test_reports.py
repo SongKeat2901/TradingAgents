@@ -88,3 +88,19 @@ def test_load_base_ev_survives_unreadable_decision(tmp_path):
         {"company_of_interest": "ERR", "trade_date": "2026-06-01"}))
     (d / "decision.md").mkdir()   # a dir where a file is expected → OSError on read_text
     assert reports.load_base_ev(d) is None
+
+
+def test_latest_runs_mtime_tiebreak_on_same_date(tmp_path):
+    import os
+    b1 = tmp_path / "staging"
+    b1.mkdir()
+    b2 = tmp_path / "rerun"
+    b2.mkdir()
+    old = _run_dir(b1, "ASX", "2026-06-02",
+                   body="Reference price: **$40.00**\n**Rating: UNDERWEIGHT**\nEV = **$42.00**\n")
+    new = _run_dir(b2, "ASX", "2026-06-02",
+                   body="Reference price: **$40.00**\n**Rating: HOLD**\nEV = **$42.00**\n")
+    os.utime(old / "state.json", (1_000_000, 1_000_000))   # older write
+    os.utime(new / "state.json", (2_000_000, 2_000_000))   # newer write
+    latest = reports.latest_runs([b1, b2])
+    assert latest["ASX"].rating == "HOLD"                  # newest-written wins on same date

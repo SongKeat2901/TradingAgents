@@ -7,10 +7,10 @@ exists.
 """
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
-
-import logging
 
 from cli.daily_followup import parse_research, Scenario
 
@@ -79,19 +79,32 @@ def ev_pct(be: BaseEV) -> float | None:
     return (ev_abs - be.reference_price) / be.reference_price
 
 
-def latest_runs(base_dir: Path) -> dict[str, BaseEV]:
-    """Newest BaseEV per ticker across all run dirs under base_dir.
+def latest_runs(base_dirs) -> dict[str, BaseEV]:
+    """Newest BaseEV per ticker across one or more run-dir base trees.
 
-    Run dirs may sit directly under base_dir (preaudit) or nested one level
-    deeper under week buckets (final/wk NN YYYY/<date>-<ticker>/). We locate
-    them by finding every state.json at any depth and taking its parent.
+    `base_dirs` is a single path or a list of paths. Run dirs may sit directly
+    under a base (preaudit) or nested deeper (final/wk NN YYYY/<date>-<ticker>/);
+    we locate them by finding every state.json at any depth and taking its parent.
+
+    Tie-break: per ticker we keep the run with the latest (research_date, then
+    state.json mtime). The mtime tie-break matters when the same trade_date was
+    written into more than one base — the most recently written copy (e.g. a
+    corrected rerun) wins over an earlier same-date original.
     """
-    out: dict[str, BaseEV] = {}
-    for state_file in Path(base_dir).rglob("state.json"):
-        be = load_base_ev(state_file.parent)
-        if not be:
-            continue
-        prev = out.get(be.ticker)
-        if prev is None or be.research_date > prev.research_date:
-            out[be.ticker] = be
-    return out
+    if isinstance(base_dirs, (str, os.PathLike)):
+        base_dirs = [base_dirs]
+    best: dict[str, tuple] = {}   # ticker -> ((date, mtime), BaseEV)
+    for base in base_dirs:
+        for state_file in Path(base).rglob("state.json"):
+            be = load_base_ev(state_file.parent)
+            if not be:
+                continue
+            try:
+                mtime = state_file.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            key = (be.research_date, mtime)
+            prev = best.get(be.ticker)
+            if prev is None or key > prev[0]:
+                best[be.ticker] = (key, be)
+    return {ticker: payload[1] for ticker, payload in best.items()}

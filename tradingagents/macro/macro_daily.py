@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import logging
 from datetime import datetime
-from pathlib import Path
 
 from . import macro_data, pillars, regime as regime_mod, betas as betas_mod
 from . import reports as reports_mod, bias as bias_mod, plan_writer
@@ -34,7 +33,8 @@ def _load_factor_returns(as_of: str):
     return betas_mod.build_factor_returns(raw)
 
 
-def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True) -> dict:
+def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True,
+        manifest_scope=False) -> dict:
     as_of = as_of or datetime.now().strftime("%Y-%m-%d")
 
     # 1. Regime (stock-independent)
@@ -43,9 +43,18 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True) -> dict:
     regime = regime_mod.build(pillar_scores)
     logger.info("regime: %s gate=%s score=%.3f", regime.label, regime.gate, regime.score)
 
-    # 2. Per-stock overlay
+    # 2. Per-stock overlay (reports_dir may be a single base or a list of bases)
     factor_returns = _load_factor_returns(as_of)
-    base_evs = reports_mod.latest_runs(Path(reports_dir))
+    base_evs = reports_mod.latest_runs(reports_dir)
+    if manifest_scope and manifest_path:
+        # Plan universe = the published set: only tickers with a Drive-published
+        # PDF in the manifest (so every row gets a link by construction).
+        universe = set(plan_writer.load_manifest(manifest_path))
+        dropped = [t for t in base_evs if t not in universe]
+        base_evs = {t: be for t, be in base_evs.items() if t in universe}
+        if dropped:
+            logger.info("manifest-scope: kept %d, dropped %d non-published (%s)",
+                        len(base_evs), len(dropped), ",".join(sorted(dropped)))
     biases = []
     levels = {}
     for ticker, be in base_evs.items():
@@ -77,15 +86,19 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True) -> dict:
 def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     p = argparse.ArgumentParser(description="Daily macro regime engine → Trading Plan sheet")
-    p.add_argument("--reports-dir", required=True, help="dir of research run dirs")
+    p.add_argument("--reports-dir", required=True, action="append",
+                   help="research run-dir base (repeatable; newest-written wins on same date)")
     p.add_argument("--sheet-id", required=True, help="Trading Plan Google Sheet ID")
     p.add_argument("--manifest", default=None, help="pdf_ids.tsv for PDF hyperlinks")
+    p.add_argument("--manifest-scope", action="store_true",
+                   help="restrict the plan to manifest (published) tickers so every row links")
     p.add_argument("--as-of", default=None, help="YYYY-MM-DD (default: today, host local date)")
     p.add_argument("--no-write", action="store_true", help="compute only, don't touch the sheet")
     args = p.parse_args(argv)
     try:
         payload = run(args.reports_dir, args.sheet_id, args.manifest,
-                      as_of=args.as_of, write=not args.no_write)
+                      as_of=args.as_of, write=not args.no_write,
+                      manifest_scope=args.manifest_scope)
     except Exception:
         logger.exception("macro daily run failed")
         return 1
