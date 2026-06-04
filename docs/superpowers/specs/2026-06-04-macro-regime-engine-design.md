@@ -115,8 +115,8 @@ date; the regime uses the latest available value of each.
 1. **Expected-return tilt.** The regime implies an expected move per factor (e.g.
    easing liquidity → rates ↓; risk-on → spreads ↓, market ↑). Macro contribution
    for a stock = Σ(βᵢ × expected_moveᵢ), annualized to the EV horizon (12 mo).
-   **Adjusted EV = Research EV + contribution**, capped at ±X% (X set in config,
-   default proposal ±15%).
+   **Adjusted EV = Research EV + contribution**, capped at ±15% (configurable
+   `EV_TILT_CAP`).
 2. **Conviction / size.** A position score scaled by regime quality × beta
    alignment (is the stock's macro exposure tailwind or headwind now?) × beta
    confidence (R²).
