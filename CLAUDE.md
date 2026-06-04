@@ -147,6 +147,9 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
   Spec: `docs/superpowers/specs/2026-06-04-macro-regime-engine-design.md`.
 - Trading Plan sheet (native GSheet) ID `1ZLq9HuyU0AAzREECpBGpamDBVpbbjq9V8joHqQHp-cw`,
   in the shared `True Knot/TK Research/pdf/` folder (writes to its first tab, `Sheet1`).
+  17 cols incl. **Last Px = live `=IFERROR(GOOGLEFINANCE(ticker,price),<settled close>)`**
+  and **Intrinsic FV + Margin-of-Safety %** (from `raw/intrinsic_value.json`; blank for
+  foreign-ADR/unprofitable profiles where the DCF is skipped).
 - Entry point on the mini: `~/tradingagents/.venv/bin/tradingmacro` (console script
   from `pip install -e .`; there is **no** `~/local/bin/tradingmacro` wrapper).
 - Manual run on the mini (gog needs account + keyring password in env; `-a` is added
