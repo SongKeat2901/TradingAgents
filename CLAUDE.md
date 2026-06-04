@@ -140,3 +140,17 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
   Older runs (pre-default) live under `~/.openclaw/data/research/<date>-<ticker>.run-<sha>/`.
 - Telegram delivery: `cli/research_telegram.py` (auto-discovers bot token from
   `~/.openclaw/openclaw.json` on the OpenClaw host)
+
+## Macro regime engine (daily)
+
+- Package: `tradingagents/macro/` — standalone daily engine; CLI `tradingmacro`.
+  Spec: `docs/superpowers/specs/2026-06-04-macro-regime-engine-design.md`.
+- Manual run on the mini:
+  `FRED_API_KEY=… tradingmacro --reports-dir "$TK/final" --sheet-id <id> --manifest ~/gsheet-tool/pdf_ids.tsv`
+  (add `--no-write` to compute without touching the sheet).
+- Scheduled via `ops/com.trueknot.macrodaily.plist` →
+  `cp ops/com.trueknot.macrodaily.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.trueknot.macrodaily.plist`
+  (fill in the FRED key + Trading Plan sheet ID first). Runs 05:10 SGT (post US close).
+- Needs a free FRED API key (Growth/Inflation/Liquidity hard data); yfinance covers
+  the market-priced pillars. Sheet write uses `gog` (7-day token; re-auth per the
+  update-summary skill on invalid_grant).

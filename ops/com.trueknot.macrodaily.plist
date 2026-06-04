@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.trueknot.macrodaily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/trueknot/local/bin/tradingmacro</string>
+    <string>--reports-dir</string>
+    <string>/Users/trueknot/Library/CloudStorage/GoogleDrive-trueknotsg@gmail.com/My Drive/TK Research/final</string>
+    <string>--sheet-id</string>
+    <string>REPLACE_WITH_TRADING_PLAN_SHEET_ID</string>
+    <string>--manifest</string>
+    <string>/Users/trueknot/gsheet-tool/pdf_ids.tsv</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>FRED_API_KEY</key><string>REPLACE_WITH_FRED_KEY</string>
+    <key>MACRO_CACHE_DIR</key><string>/Users/trueknot/.cache/tradingagents-macro</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>10</integer></dict>
+  <key>StandardOutPath</key><string>/Users/trueknot/.macrodaily.log</string>
+  <key>StandardErrorPath</key><string>/Users/trueknot/.macrodaily.err</string>
+</dict>
+</plist>
