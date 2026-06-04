@@ -967,6 +967,17 @@ def test_build_factor_returns_shapes_and_columns():
     fac = betas.build_factor_returns(raw)
     assert list(fac.columns) == FACTORS
     assert len(fac) == 9                          # one row lost to differencing
+
+
+def test_linear_shrink_zone_ramps_between_floor_and_full():
+    # n=156 is mid-ramp: t=(156-60)/192=0.5 → k=0.25+0.75*0.5=0.625
+    fac = _factor_frame(n=156)
+    stock_ret = 2.0 * fac["mkt"] + np.random.default_rng(3).normal(0, 1e-6, len(fac))
+    out = betas.compute_betas("MID", stock_ret, fac)
+    assert out.confidence == "low"
+    assert out.n_obs == 156
+    implied_k = out.betas["mkt"] / 2.0
+    assert 0.55 < implied_k < 0.70   # ~0.625
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -988,7 +999,7 @@ numpy.linalg.lstsq and applies shrinkage for short samples.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -1008,7 +1019,6 @@ class Betas:
 def build_factor_returns(raw: dict[str, pd.Series]) -> pd.DataFrame:
     """raw keys: tnx, dxy, hy, oil, spy, iwf, iwd. Returns a DataFrame whose
     columns are exactly FACTORS, aligned on common dates, NaNs dropped."""
-    f = pd.DataFrame(index=None)
     cols = {
         "d_10y": raw["tnx"].diff(),
         "d_dxy": raw["dxy"].pct_change(),
@@ -1045,7 +1055,9 @@ def compute_betas(ticker: str, stock_ret: pd.Series, factors: pd.DataFrame) -> B
     if n >= BETA_MIN_OBS:
         k, confidence = 1.0, "high"
     elif n >= BETA_SHRINK_FLOOR:
-        k = (n - BETA_SHRINK_FLOOR) / (BETA_MIN_OBS - BETA_SHRINK_FLOOR)
+        # ramp from the 0.25 floor at BETA_SHRINK_FLOOR up to 1.0 at BETA_MIN_OBS
+        t = (n - BETA_SHRINK_FLOOR) / (BETA_MIN_OBS - BETA_SHRINK_FLOOR)
+        k = 0.25 + 0.75 * t
         confidence = "low"
     else:
         k, confidence = 0.25, "low"

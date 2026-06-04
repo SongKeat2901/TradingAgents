@@ -50,3 +50,14 @@ def test_build_factor_returns_shapes_and_columns():
     fac = betas.build_factor_returns(raw)
     assert list(fac.columns) == FACTORS
     assert len(fac) == 9                          # one row lost to differencing
+
+
+def test_linear_shrink_zone_ramps_between_floor_and_full():
+    # n=156 is mid-ramp: t=(156-60)/192=0.5 → k=0.25+0.75*0.5=0.625
+    fac = _factor_frame(n=156)
+    stock_ret = 2.0 * fac["mkt"] + np.random.default_rng(3).normal(0, 1e-6, len(fac))
+    out = betas.compute_betas("MID", stock_ret, fac)
+    assert out.confidence == "low"
+    assert out.n_obs == 156
+    implied_k = out.betas["mkt"] / 2.0
+    assert 0.55 < implied_k < 0.70   # ~0.625

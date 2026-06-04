@@ -7,7 +7,7 @@ numpy.linalg.lstsq and applies shrinkage for short samples.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -27,7 +27,6 @@ class Betas:
 def build_factor_returns(raw: dict[str, pd.Series]) -> pd.DataFrame:
     """raw keys: tnx, dxy, hy, oil, spy, iwf, iwd. Returns a DataFrame whose
     columns are exactly FACTORS, aligned on common dates, NaNs dropped."""
-    f = pd.DataFrame(index=None)
     cols = {
         "d_10y": raw["tnx"].diff(),
         "d_dxy": raw["dxy"].pct_change(),
@@ -64,7 +63,9 @@ def compute_betas(ticker: str, stock_ret: pd.Series, factors: pd.DataFrame) -> B
     if n >= BETA_MIN_OBS:
         k, confidence = 1.0, "high"
     elif n >= BETA_SHRINK_FLOOR:
-        k = (n - BETA_SHRINK_FLOOR) / (BETA_MIN_OBS - BETA_SHRINK_FLOOR)
+        # ramp from the 0.25 floor at BETA_SHRINK_FLOOR up to 1.0 at BETA_MIN_OBS
+        t = (n - BETA_SHRINK_FLOOR) / (BETA_MIN_OBS - BETA_SHRINK_FLOOR)
+        k = 0.25 + 0.75 * t
         confidence = "low"
     else:
         k, confidence = 0.25, "low"
