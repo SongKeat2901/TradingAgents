@@ -41,6 +41,13 @@ def test_run_assembles_payload_and_calls_writer(tmp_path, monkeypatch):
 
 
 def test_run_no_write_skips_writer(tmp_path, monkeypatch):
+    import json
+    d = tmp_path / "2026-06-01-AAPL"
+    d.mkdir()
+    (d / "state.json").write_text(json.dumps(
+        {"company_of_interest": "AAPL", "trade_date": "2026-06-01"}))
+    (d / "decision.md").write_text(
+        "Reference price: **$100.00**\n**Rating: BUY**\nEV = **$112.00**\n")
     monkeypatch.setattr(macro_daily.macro_data, "load_all",
                         lambda specs, as_of: {sp.name: _series() for sp in specs})
     monkeypatch.setattr(macro_daily.macro_data, "load_series",
@@ -50,6 +57,7 @@ def test_run_no_write_skips_writer(tmp_path, monkeypatch):
     called = {"n": 0}
     monkeypatch.setattr(macro_daily.plan_writer, "write_to_sheet",
                         lambda *a, **k: called.__setitem__("n", called["n"] + 1))
-    macro_daily.run(reports_dir=tmp_path, sheet_id="S", manifest_path=None,
-                    as_of="2026-06-02", write=False)
-    assert called["n"] == 0
+    payload = macro_daily.run(reports_dir=tmp_path, sheet_id="S", manifest_path=None,
+                              as_of="2026-06-02", write=False)
+    assert any(r["ticker"] == "AAPL" for r in payload["rows"])   # non-empty run
+    assert called["n"] == 0                                        # writer still skipped

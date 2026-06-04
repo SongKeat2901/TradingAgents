@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from . import macro_data, pillars, regime as regime_mod, betas as betas_mod
 from . import reports as reports_mod, bias as bias_mod, plan_writer
-from .config import INDICATORS
+from .config import INDICATORS, IndicatorSpec
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,6 @@ _FACTOR_SOURCES = {
 
 
 def _load_factor_returns(as_of: str):
-    from .config import IndicatorSpec
     raw = {}
     for key, (src, code) in _FACTOR_SOURCES.items():
         raw[key] = macro_data.load_series(
@@ -36,7 +35,7 @@ def _load_factor_returns(as_of: str):
 
 
 def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True) -> dict:
-    as_of = as_of or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    as_of = as_of or datetime.now().strftime("%Y-%m-%d")
 
     # 1. Regime (stock-independent)
     series = macro_data.load_all(INDICATORS, as_of)
@@ -73,11 +72,15 @@ def main(argv=None) -> int:
     p.add_argument("--reports-dir", required=True, help="dir of research run dirs")
     p.add_argument("--sheet-id", required=True, help="Trading Plan Google Sheet ID")
     p.add_argument("--manifest", default=None, help="pdf_ids.tsv for PDF hyperlinks")
-    p.add_argument("--as-of", default=None, help="YYYY-MM-DD (default: today UTC)")
+    p.add_argument("--as-of", default=None, help="YYYY-MM-DD (default: today, host local date)")
     p.add_argument("--no-write", action="store_true", help="compute only, don't touch the sheet")
     args = p.parse_args(argv)
-    payload = run(args.reports_dir, args.sheet_id, args.manifest,
-                  as_of=args.as_of, write=not args.no_write)
+    try:
+        payload = run(args.reports_dir, args.sheet_id, args.manifest,
+                      as_of=args.as_of, write=not args.no_write)
+    except Exception:
+        logger.exception("macro daily run failed")
+        return 1
     print(f"Regime: {payload['regime']['label']} | gate={payload['regime']['gate']} "
           f"| {len(payload['rows'])} names")
     return 0
