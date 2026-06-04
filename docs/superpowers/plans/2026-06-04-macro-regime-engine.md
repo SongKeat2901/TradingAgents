@@ -185,7 +185,7 @@ INDICATORS: list[IndicatorSpec] = [
     IndicatorSpec("cyc_def", "yfinance", "XLY", "risk_appetite", 0.5),
     IndicatorSpec("btc", "yfinance", "BTC-USD", "risk_appetite", 0.5),
     # Positioning (thin — low weight)
-    IndicatorSpec("aaii_proxy", "fred", "UMCSENT", "positioning", 0.5),
+    IndicatorSpec("sentiment_proxy", "fred", "UMCSENT", "positioning", 0.5),
 ]
 
 # Pillar weights in the regime aggregate.
@@ -436,13 +436,14 @@ def _fetch_fred(spec: IndicatorSpec) -> pd.Series:
 
 def _fetch_yfinance(spec: IndicatorSpec) -> pd.Series:
     import yfinance as yf
+    from tradingagents.dataflows.stockstats_utils import drop_incomplete_session
     df = yf.Ticker(spec.code).history(period="3y", auto_adjust=True)  # adjusted Close (consistent w/ load_prices)
     if df is None or df.empty:
         raise RuntimeError(f"yfinance returned no data for {spec.code}")
     s = df["Close"].copy()
     s.index = pd.to_datetime(s.index).tz_localize(None)
     s.name = "value"
-    return s
+    return drop_incomplete_session(s)   # drop the in-progress US bar (settled closes only)
 
 
 def load_series(spec: IndicatorSpec, as_of: str) -> pd.Series:
@@ -978,6 +979,7 @@ def test_build_factor_returns_shapes_and_columns():
     fac = betas.build_factor_returns(raw)
     assert list(fac.columns) == FACTORS
     assert len(fac) == 9                          # one row lost to differencing
+    assert all(abs(fac[col].std(ddof=0) - 1.0) < 1e-4 for col in FACTORS)  # standardized (float tol)
 
 
 def test_linear_shrink_zone_ramps_between_floor_and_full():
@@ -1039,7 +1041,11 @@ def build_factor_returns(raw: dict[str, pd.Series]) -> pd.DataFrame:
         "growth_value": raw["iwf"].pct_change() - raw["iwd"].pct_change(),
     }
     f = pd.DataFrame(cols)[FACTORS].dropna()
-    return f
+    # Standardize each factor to unit variance (zero std → divide by 1) so betas
+    # are comparable across factors and the dot-product with [-1,1] regime moves
+    # is dimensionally balanced.
+    std = f.std(ddof=0).replace(0, 1.0)
+    return (f - f.mean()) / std
 
 
 def _r2(y: np.ndarray, yhat: np.ndarray) -> float:
@@ -1169,6 +1175,16 @@ def test_latest_run_per_ticker_picks_newest_date(tmp_path):
     assert set(latest) == {"AAA", "BBB"}
 
 
+def test_latest_runs_descends_into_week_subdirs(tmp_path):
+    wk = tmp_path / "wk 23 2026"
+    wk.mkdir()
+    _run_dir(wk, "AAPL", "2026-06-01")        # nested under a week bucket
+    _run_dir(tmp_path, "MSFT", "2026-05-20")  # directly under base
+    latest = reports.latest_runs(tmp_path)
+    assert set(latest) == {"AAPL", "MSFT"}
+    assert latest["AAPL"].research_date == "2026-06-01"
+
+
 def test_load_base_ev_survives_unreadable_decision(tmp_path):
     import json
     d = tmp_path / "2026-06-01-ERR"
@@ -1261,12 +1277,15 @@ def ev_pct(be: BaseEV) -> float | None:
 
 
 def latest_runs(base_dir: Path) -> dict[str, BaseEV]:
-    """Newest BaseEV per ticker across all run dirs under base_dir."""
+    """Newest BaseEV per ticker across all run dirs under base_dir.
+
+    Run dirs may sit directly under base_dir (preaudit) or nested one level
+    deeper under week buckets (final/wk NN YYYY/<date>-<ticker>/). We locate
+    them by finding every state.json at any depth and taking its parent.
+    """
     out: dict[str, BaseEV] = {}
-    for child in Path(base_dir).iterdir():
-        if not child.is_dir():
-            continue
-        be = load_base_ev(child)
+    for state_file in Path(base_dir).rglob("state.json"):
+        be = load_base_ev(state_file.parent)
         if not be:
             continue
         prev = out.get(be.ticker)
@@ -1593,6 +1612,7 @@ def test_to_grid_pads_to_constant_height_with_header_and_data():
     assert data_row[0] == "AAPL"
     assert data_row[6] == "+15.0%"                # adjusted_ev_pct 0.15 formatted
     assert grid[-1] == [""] * 10                  # trailing padding row
+    assert all(len(row) == 10 for row in grid)   # fully rectangular
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1696,8 +1716,10 @@ def to_grid(payload: dict) -> list[list]:
             _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
             row["pdf_link"],
         ])
+    width = 10
+    grid = [row + [""] * (width - len(row)) for row in grid]
     while len(grid) < SHEET_MAX_ROWS:
-        grid.append([""] * 10)
+        grid.append([""] * width)
     return grid
 
 

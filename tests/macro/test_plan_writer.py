@@ -64,3 +64,4 @@ def test_to_grid_pads_to_constant_height_with_header_and_data():
     assert data_row[0] == "AAPL"
     assert data_row[6] == "+15.0%"                # adjusted_ev_pct 0.15 formatted
     assert grid[-1] == [""] * 10                  # trailing padding row
+    assert all(len(row) == 10 for row in grid)   # fully rectangular

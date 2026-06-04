@@ -59,7 +59,7 @@ INDICATORS: list[IndicatorSpec] = [
     IndicatorSpec("cyc_def", "yfinance", "XLY", "risk_appetite", 0.5),
     IndicatorSpec("btc", "yfinance", "BTC-USD", "risk_appetite", 0.5),
     # Positioning (thin — low weight)
-    IndicatorSpec("aaii_proxy", "fred", "UMCSENT", "positioning", 0.5),
+    IndicatorSpec("sentiment_proxy", "fred", "UMCSENT", "positioning", 0.5),
 ]
 
 # Pillar weights in the regime aggregate.

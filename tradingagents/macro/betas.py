@@ -36,7 +36,11 @@ def build_factor_returns(raw: dict[str, pd.Series]) -> pd.DataFrame:
         "growth_value": raw["iwf"].pct_change() - raw["iwd"].pct_change(),
     }
     f = pd.DataFrame(cols)[FACTORS].dropna()
-    return f
+    # Standardize each factor to unit variance (zero std → divide by 1) so betas
+    # are comparable across factors and the dot-product with [-1,1] regime moves
+    # is dimensionally balanced.
+    std = f.std(ddof=0).replace(0, 1.0)
+    return (f - f.mean()) / std
 
 
 def _r2(y: np.ndarray, yhat: np.ndarray) -> float:

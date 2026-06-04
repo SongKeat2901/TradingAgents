@@ -64,6 +64,16 @@ def test_latest_run_per_ticker_picks_newest_date(tmp_path):
     assert set(latest) == {"AAA", "BBB"}
 
 
+def test_latest_runs_descends_into_week_subdirs(tmp_path):
+    wk = tmp_path / "wk 23 2026"
+    wk.mkdir()
+    _run_dir(wk, "AAPL", "2026-06-01")        # nested under a week bucket
+    _run_dir(tmp_path, "MSFT", "2026-05-20")  # directly under base
+    latest = reports.latest_runs(tmp_path)
+    assert set(latest) == {"AAPL", "MSFT"}
+    assert latest["AAPL"].research_date == "2026-06-01"
+
+
 def test_load_base_ev_survives_unreadable_decision(tmp_path):
     import json
     d = tmp_path / "2026-06-01-ERR"

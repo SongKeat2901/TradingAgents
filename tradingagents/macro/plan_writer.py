@@ -89,8 +89,10 @@ def to_grid(payload: dict) -> list[list]:
             _pct(row["adjusted_ev_pct"]), row["conviction"], row["action"],
             row["pdf_link"],
         ])
+    width = 10
+    grid = [row + [""] * (width - len(row)) for row in grid]
     while len(grid) < SHEET_MAX_ROWS:
-        grid.append([""] * 10)
+        grid.append([""] * width)
     return grid
 
 

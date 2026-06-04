@@ -53,13 +53,14 @@ def _fetch_fred(spec: IndicatorSpec) -> pd.Series:
 
 def _fetch_yfinance(spec: IndicatorSpec) -> pd.Series:
     import yfinance as yf
+    from tradingagents.dataflows.stockstats_utils import drop_incomplete_session
     df = yf.Ticker(spec.code).history(period="3y", auto_adjust=True)  # adjusted Close (consistent w/ load_prices)
     if df is None or df.empty:
         raise RuntimeError(f"yfinance returned no data for {spec.code}")
     s = df["Close"].copy()
     s.index = pd.to_datetime(s.index).tz_localize(None)
     s.name = "value"
-    return s
+    return drop_incomplete_session(s)   # drop the in-progress US bar (settled closes only)
 
 
 def load_series(spec: IndicatorSpec, as_of: str) -> pd.Series:

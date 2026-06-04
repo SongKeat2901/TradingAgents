@@ -70,12 +70,15 @@ def ev_pct(be: BaseEV) -> float | None:
 
 
 def latest_runs(base_dir: Path) -> dict[str, BaseEV]:
-    """Newest BaseEV per ticker across all run dirs under base_dir."""
+    """Newest BaseEV per ticker across all run dirs under base_dir.
+
+    Run dirs may sit directly under base_dir (preaudit) or nested one level
+    deeper under week buckets (final/wk NN YYYY/<date>-<ticker>/). We locate
+    them by finding every state.json at any depth and taking its parent.
+    """
     out: dict[str, BaseEV] = {}
-    for child in Path(base_dir).iterdir():
-        if not child.is_dir():
-            continue
-        be = load_base_ev(child)
+    for state_file in Path(base_dir).rglob("state.json"):
+        be = load_base_ev(state_file.parent)
         if not be:
             continue
         prev = out.get(be.ticker)

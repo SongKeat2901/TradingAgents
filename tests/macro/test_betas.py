@@ -50,6 +50,7 @@ def test_build_factor_returns_shapes_and_columns():
     fac = betas.build_factor_returns(raw)
     assert list(fac.columns) == FACTORS
     assert len(fac) == 9                          # one row lost to differencing
+    assert all(abs(fac[col].std(ddof=0) - 1.0) < 1e-4 for col in FACTORS)  # standardized (float tol)
 
 
 def test_linear_shrink_zone_ramps_between_floor_and_full():
