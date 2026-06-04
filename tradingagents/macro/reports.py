@@ -1,0 +1,73 @@
+"""Read each report's base EV from a research run dir.
+
+Reuses cli.daily_followup.parse_research (the existing, battle-tested
+decision.md parser) so we have a single source of truth for the regexes. Adds
+a percentage view and a scenario-weighted fallback when no explicit EV line
+exists.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from cli.daily_followup import parse_research
+
+
+@dataclass
+class BaseEV:
+    ticker: str
+    research_date: str
+    rating: str
+    reference_price: float
+    ev: float | None
+    scenarios: list            # list[Scenario] from cli.daily_followup
+    hard_stop: float | None
+
+
+def load_base_ev(run_dir: Path) -> BaseEV | None:
+    parsed = parse_research(Path(run_dir))
+    if not parsed:
+        return None
+    return BaseEV(
+        ticker=parsed["ticker"],
+        research_date=parsed["research_date"],
+        rating=parsed["rating"],
+        reference_price=parsed["reference_price"],
+        ev=parsed["ev"],
+        scenarios=parsed["scenarios"],
+        hard_stop=parsed["hard_stop"],
+    )
+
+
+def _scenario_weighted_target(be: BaseEV) -> float | None:
+    num = den = 0.0
+    for sc in be.scenarios:
+        if sc.probability is None or sc.target is None:
+            continue
+        num += sc.probability * sc.target
+        den += sc.probability
+    return (num / den) if den else None
+
+
+def ev_pct(be: BaseEV) -> float | None:
+    """12-mo EV as a fraction of reference price. Uses the explicit EV line if
+    present, else the scenario-probability-weighted target."""
+    ev_abs = be.ev if be.ev is not None else _scenario_weighted_target(be)
+    if ev_abs is None or not be.reference_price:
+        return None
+    return (ev_abs - be.reference_price) / be.reference_price
+
+
+def latest_runs(base_dir: Path) -> dict[str, BaseEV]:
+    """Newest BaseEV per ticker across all run dirs under base_dir."""
+    out: dict[str, BaseEV] = {}
+    for child in Path(base_dir).iterdir():
+        if not child.is_dir():
+            continue
+        be = load_base_ev(child)
+        if not be:
+            continue
+        prev = out.get(be.ticker)
+        if prev is None or be.research_date > prev.research_date:
+            out[be.ticker] = be
+    return out
