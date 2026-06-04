@@ -4,11 +4,20 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.trueknot.macrodaily</string>
+  <!-- --reports-dir is repeatable; newest-written run wins per ticker on a same
+       trade_date (corrected reruns beat same-date originals). These dated bases
+       are cadence-specific: when a NEW cadence lands in a new dir, add it here
+       (or consolidate run dirs into one canonical base). --manifest-scope limits
+       the plan to published (manifest) tickers so every row links. -->
   <key>ProgramArguments</key>
   <array>
     <string>/Users/trueknot/tradingagents/.venv/bin/tradingmacro</string>
-    <string>--reports-dir</string>
-    <string>/Users/trueknot/.openclaw/data/research</string>
+    <string>--manifest-scope</string>
+    <string>--reports-dir</string><string>/Users/trueknot/research-staging-2026-06-02</string>
+    <string>--reports-dir</string><string>/Users/trueknot/tkruns-rerun-2026-06-02</string>
+    <string>--reports-dir</string><string>/Users/trueknot/tkruns-fix-2026-06-02</string>
+    <string>--reports-dir</string><string>/Users/trueknot/tkresearch</string>
+    <string>--reports-dir</string><string>/Users/trueknot/.openclaw/data/research</string>
     <string>--sheet-id</string>
     <string>REPLACE_WITH_TRADING_PLAN_SHEET_ID</string>
     <string>--manifest</string>
