@@ -554,6 +554,27 @@ def test_score_all_returns_one_per_pillar():
     series = {sp.name: _rising_series() for sp in INDICATORS}
     out = pillars.score_all(series)
     assert {p.name for p in out} == set(PILLARS)
+
+
+def test_zscore_latest_returns_zero_for_flat_series():
+    flat = pd.Series([5.0] * 300, index=pd.date_range("2025-01-01", periods=300, freq="D"))
+    assert pillars.zscore_latest(flat, window=200) == 0.0
+
+
+def test_zscore_latest_returns_zero_for_short_series():
+    short = pd.Series([1.0, 2.0, 3.0],
+                      index=pd.date_range("2025-01-01", periods=3, freq="D"))
+    assert pillars.zscore_latest(short, window=200) == 0.0
+
+
+def test_score_pillar_skips_too_short_series():
+    from tradingagents.macro.config import IndicatorSpec
+    specs = [IndicatorSpec("a", "fred", "A", "growth")]
+    series = {"a": pd.Series([1.0, 2.0, 3.0],
+                             index=pd.date_range("2025-01-01", periods=3, freq="D"))}
+    ps = pillars.score_pillar("growth", specs, series)   # <5 non-na → skipped
+    assert ps.score == 0.0 and ps.status == "A"
+    assert "a" not in ps.contributors
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -585,6 +606,8 @@ from .config import (
     IndicatorSpec, INDICATORS, PILLARS, PILLAR_GREEN_AT, PILLAR_RED_AT,
 )
 
+_TREND_LOOKBACK = 20  # single short-term trend window across all indicators (v1; per-frequency tuning deferred)
+
 
 @dataclass
 class PillarScore:
@@ -599,6 +622,9 @@ def zscore_latest(s: pd.Series, window: int) -> float:
     s = s.dropna()
     if len(s) < 5:
         return 0.0
+    # NOTE (v1 tech-debt): the latest point is included in the window stats, a
+    # negligible in-sample bias at the 504d default; strict out-of-sample would
+    # use s.iloc[-window:-1]. Tuning deferred per spec.
     tail = s.iloc[-window:]
     mu, sd = float(tail.mean()), float(tail.std(ddof=0))
     if sd == 0:
@@ -606,7 +632,7 @@ def zscore_latest(s: pd.Series, window: int) -> float:
     return (float(s.iloc[-1]) - mu) / sd
 
 
-def _trend_sign(s: pd.Series, lookback: int = 20) -> float:
+def _trend_sign(s: pd.Series, lookback: int = _TREND_LOOKBACK) -> float:
     s = s.dropna()
     if len(s) < lookback + 1:
         return 0.0
