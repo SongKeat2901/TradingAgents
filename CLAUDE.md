@@ -147,9 +147,14 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
   Spec: `docs/superpowers/specs/2026-06-04-macro-regime-engine-design.md`.
 - Trading Plan sheet (native GSheet) ID `1ZLq9HuyU0AAzREECpBGpamDBVpbbjq9V8joHqQHp-cw`,
   in the shared `True Knot/TK Research/pdf/` folder (writes to its first tab, `Sheet1`).
-  17 cols incl. **Last Px = live `=IFERROR(GOOGLEFINANCE(ticker,price),<settled close>)`**
-  and **Intrinsic FV + Margin-of-Safety %** (from `raw/intrinsic_value.json`; blank for
-  foreign-ADR/unprofitable profiles where the DCF is skipped).
+  17 cols incl. **Last Px = live `=GOOGLEFINANCE(ticker,price)`** (no fallback — an
+  unresolvable symbol shows #N/A, never a stale price), **Intrinsic FV + Margin-of-Safety %**
+  (from `raw/intrinsic_value.json`; blank for foreign-ADR / unprofitable / mis-scaled-eps
+  names the plausibility guards suppress), and an **Action** column that is the EV/macro
+  bias ONLY (Add/Hold · Hold · Trim/Avoid · Caution · Stand-down) — Rating is its own
+  column so they never read as a contradiction. Numeric cells are RAW numbers; the % / $
+  display + ± conditional colour come from column formats (pre-formatted strings broke
+  Sheets' parsing and the colour rules).
 - Entry point on the mini: `~/tradingagents/.venv/bin/tradingmacro` (console script
   from `pip install -e .`; there is **no** `~/local/bin/tradingmacro` wrapper).
 - Manual run on the mini (gog needs account + keyring password in env; `-a` is added
@@ -179,3 +184,41 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
   password — first; plist sets `PATH` so launchd finds gog). Runs 05:10 SGT (post US close).
 - Needs a free FRED API key (Growth/Inflation/Liquidity hard data); yfinance covers
   the market-priced pillars.
+- Intrinsic value: `tradingagents/agents/utils/intrinsic_value.py` computes foreign-ADR
+  fair value via a data-derived FX (eps×shares/NI) but has 3 plausibility gates so it
+  never emits a wrong number (skip if implied P/E∉[3,60] or fair value ∉ 0.2–3× price).
+  Most foreign ADRs stay blank — their free-data eps/prices are trough/thin (a data limit,
+  not a math bug; **no paid feed** to fix it). Regenerate per-report JSON without a re-run:
+  `/tmp/regen_intrinsic.py` on the mini, then re-run the engine.
+
+## Google Sheets ops (gog + Sheets API)
+
+- `gog` v0.11.0 (`/opt/homebrew/bin/gog`, account `trueknotsg@gmail.com`, keyring pw via
+  env `GOG_KEYRING_PASSWORD`, on the **mini only**) does values + STATIC `gog sheets format`
+  (CellFormat) only — no batchUpdate.
+- **For freeze panes / conditional formatting / batchUpdate**, reuse gog's OAuth without a
+  new client: `gog auth tokens export <acct> --out <f>` (refresh token) + client id/secret
+  from `~/Library/Application Support/gogcli/credentials.json` → POST oauth2.googleapis.com/token
+  → access token → call `https://sheets.googleapis.com/v4/...`. Run with
+  `~/tradingagents/.venv/bin/python` (has `requests`; system python lacks it). First tab gid = 0.
+- Two sheets live in `pdf/` (now FLAT — all report PDFs moved to pdf/ root, file IDs/links
+  unchanged): Trading Plan `1ZLq9HuyU0AAzREECpBGpamDBVpbbjq9V8joHqQHp-cw` (macro engine) and
+  Research Summary register `1VJowGGdxjCPd0jMpZVHJlC-C6aEspf1iJWOVPH0T7dk` (update-summary skill).
+- Mini ops scripts in `~/gsheet-tool/`: `beautify_trading_plan.py` (static styling + number
+  formats), `beautify_conditional.py` (freeze + conditional colours, idempotent),
+  `update_register.py` (re-digest the register). Formatting persists across value writes —
+  only re-apply after a sheet is recreated.
+- **Register-update gotchas:** read with `valueRenderOption=FORMATTED_VALUE` (UNFORMATTED
+  returns dates as serial numbers → rows invisible), strip $/%/commas to floats; WRITE via
+  `gog sheets update`, NOT the REST values endpoint (values.update is PUT, POST→400 HTML);
+  sanitise NaN→""; fetch closes with `yf_retry`+sleep or yfinance rate-limits blank them.
+
+## Claude Code automation (this repo)
+
+- Hooks (`.claude/settings.json`): PreToolUse `secret-guard.sh` (blocks committing/writing
+  sk-ant / GOCSPX / Google refresh tokens / real FRED key / gog keyring pw — placeholders OK),
+  SessionStart `gog-token-age.sh`, PostToolUse `pycompile.sh`, Stop `unit-tests-on-stop.sh`
+  (green-before-done gate).
+- Skills (`.claude/skills/`, all user-only): `deploy-mini`, `macro-run` (refresh the Trading
+  Plan), `publish-report` (idempotent PDF→Drive→manifest→re-run plan), `update-summary`,
+  `cadence-run`. Agents: `report-auditor`, `validator-reviewer`. MCP: `context7` (`.mcp.json`).
