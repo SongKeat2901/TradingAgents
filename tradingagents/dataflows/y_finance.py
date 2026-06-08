@@ -291,6 +291,7 @@ def get_fundamentals(
             ("50 Day Average", info.get("fiftyDayAverage")),
             ("200 Day Average", info.get("twoHundredDayAverage")),
             ("Revenue (TTM)", info.get("totalRevenue")),
+            ("Revenue Growth", info.get("revenueGrowth")),
             ("Gross Profit", info.get("grossProfits")),
             ("EBITDA", info.get("ebitda")),
             ("Net Income", info.get("netIncomeToCommon")),

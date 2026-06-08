@@ -30,6 +30,21 @@ DISCOUNT_DELTA = 0.01         # bear/bull discount ±
 RECONCILE_TOLERANCE = 0.15    # |IV vs EV| within this → AGREE
 NAV_PROXY_TICKERS = {"MSTR"}
 
+# --- growth-tier methodology (2026-06-08): tier-weighted blend, EPV as stress ---
+FCF_NORM_CONVERSION = 0.80    # through-cycle owner-earnings proxy (FCF ≈ NI × this)
+COMPOUNDER_MIN_GROWTH = 0.12  # revenue-growth threshold for COMPOUNDER
+COMPOUNDER_MIN_GROSS_MARGIN = 0.50
+CYCLICAL_SECTORS = {"Energy", "Basic Materials"}
+CYCLICAL_INDUSTRY_KEYWORDS = ("semiconductor", "oil", "gas", "mining", "steel",
+                              "metals", "coal", "copper", "aluminum")
+# Blend weights per growth tier. EPV is a downside stress test — weighted into the
+# base ONLY for MATURE; for COMPOUNDER/CYCLICAL it is computed and shown but not blended.
+TIER_WEIGHTS = {
+    "COMPOUNDER": {"dcf": 0.65, "multiples": 0.35, "epv": 0.0},
+    "MATURE":     {"dcf": 0.40, "multiples": 0.30, "epv": 0.30},
+    "CYCLICAL":   {"dcf": 0.30, "multiples": 0.70, "epv": 0.0},
+}
+
 
 # ---------------------------------------------------------------- parsing
 def _num(text: str, label: str) -> float | None:
@@ -66,6 +81,9 @@ def parse_fundamentals(financials: dict) -> dict:
     income_statement CSV). Missing values come back as None."""
     fund = financials.get("fundamentals", "") or ""
     inc = financials.get("income_statement", "") or ""
+    revenue = _num(fund, "Revenue (TTM)")
+    gross_profit = _num(fund, "Gross Profit")
+    gross_margin = (gross_profit / revenue) if (gross_profit is not None and revenue) else None
     return {
         "market_cap": _num(fund, "Market Cap"),
         "eps": _num(fund, "EPS (TTM)"),
@@ -74,8 +92,12 @@ def parse_fundamentals(financials: dict) -> dict:
         "ebitda": _num(fund, "EBITDA"),
         "net_income": _num(fund, "Net Income"),
         "fcf": _num(fund, "Free Cash Flow"),
-        "revenue": _num(fund, "Revenue (TTM)"),
+        "revenue": revenue,
+        "gross_profit": gross_profit,
+        "gross_margin": gross_margin,
+        "revenue_growth": _num(fund, "Revenue Growth"),
         "sector": _text(fund, "Sector"),
+        "industry": _text(fund, "Industry"),
         "diluted_shares": _col0(inc, "Diluted Average Shares"),
         "tax": _col0(inc, "Tax Rate For Calcs"),
         "ebit": _col0(inc, "EBIT"),
@@ -92,9 +114,59 @@ def classify_valuation_profile(fund: dict, ticker: str | None) -> str:
     ni = fund.get("net_income")
     if ni is not None and ni <= 0:
         return "UNPROFITABLE"
-    # Profitable but capex-heavy (negative FCF, e.g. AMKR) stays STANDARD: the
-    # FCF-DCF auto-skips on a non-positive base, and EPV/multiples carry the value.
+    # Profitable but capex-heavy (negative FCF, e.g. AMKR) stays STANDARD: its DCF
+    # base FCF is normalized (NI × FCF_NORM_CONVERSION) so the cash-flow leg holds.
     return "STANDARD"
+
+
+def classify_growth_tier(fund: dict) -> str:
+    """Within STANDARD: COMPOUNDER / MATURE / CYCLICAL, from free yfinance metrics.
+    Cyclical (sector/industry) is checked first; then compounder (growth + margin);
+    else mature — including when revenue growth is unknown (conservative fallback,
+    so an unverified name keeps EPV's weight rather than over-crediting growth)."""
+    sector = (fund.get("sector") or "")
+    industry = (fund.get("industry") or "").lower()
+    if sector in CYCLICAL_SECTORS or any(k in industry for k in CYCLICAL_INDUSTRY_KEYWORDS):
+        return "CYCLICAL"
+    g = fund.get("revenue_growth")
+    gm = fund.get("gross_margin")
+    if (g is not None and gm is not None
+            and g >= COMPOUNDER_MIN_GROWTH and gm >= COMPOUNDER_MIN_GROSS_MARGIN):
+        return "COMPOUNDER"
+    return "MATURE"
+
+
+def normalized_fcf_base(fund: dict) -> float | None:
+    """Through-cycle FCF base for the DCF. When current FCF is capex-depressed
+    (FCF/NI < FCF_NORM_CONVERSION, incl. negative) and NI is positive, substitute
+    NI × FCF_NORM_CONVERSION so a capex peak doesn't crater the cash-flow leg.
+    Otherwise use actual FCF (None/negative when NI ≤ 0 → DCF drops out)."""
+    fcf, ni = fund.get("fcf"), fund.get("net_income")
+    if ni is not None and ni > 0:
+        if fcf is None or fcf <= 0 or (fcf / ni) < FCF_NORM_CONVERSION:
+            return ni * FCF_NORM_CONVERSION
+    return fcf
+
+
+def _percentile(vals: list, q: float) -> float | None:
+    if not vals:
+        return None
+    s = sorted(vals)
+    if len(s) == 1:
+        return s[0]
+    pos = q * (len(s) - 1)
+    lo = int(pos)
+    frac = pos - lo
+    return s[lo] + (s[lo + 1] - s[lo]) * frac if lo + 1 < len(s) else s[-1]
+
+
+def _weighted_blend(values: dict, weights: dict) -> float | None:
+    """Weighted mean over available (non-None) methods; weights renormalize across
+    whatever is present. Methods with weight 0 (e.g. EPV for compounders) are excluded."""
+    pairs = [(weights.get(m, 0.0), v) for m, v in values.items()
+             if isinstance(v, (int, float)) and weights.get(m, 0.0) > 0]
+    tw = sum(w for w, _ in pairs)
+    return (sum(w * v for w, v in pairs) / tw) if tw > 0 else None
 
 
 # ------------------------------------------------------- cost of capital
@@ -125,6 +197,33 @@ def dcf_value(fund: dict, wacc: float, near_g: float, term_g: float,
     f = fcf
     for t in range(1, horizon + 1):
         g = near_g + (term_g - near_g) * (t - 1) / (horizon - 1) if horizon > 1 else term_g
+        f = f * (1 + g)
+        pv += f / (1 + wacc) ** t
+    terminal = f * (1 + term_g) / (wacc - term_g)
+    pv += terminal / (1 + wacc) ** horizon
+    equity = pv - ((net_debt or {}).get("net_debt") or 0.0)
+    return equity / shares
+
+
+def dcf_value_phased(fund: dict, wacc: float, near_g: float, term_g: float,
+                     horizon: int, net_debt: dict,
+                     fcf_override: float | None = None) -> float | None:
+    """3-phase DCF: years 1–3 at near_g, years 4–horizon linear-decay near_g → term_g,
+    then terminal perpetuity at term_g. `fcf_override` lets the caller pass a normalized
+    (through-cycle) FCF base instead of the noisy trailing FCF."""
+    fcf = fcf_override if fcf_override is not None else fund.get("fcf")
+    shares = fund.get("diluted_shares")
+    if not fcf or fcf <= 0 or not shares or shares <= 0 or wacc <= term_g:
+        return None
+    high_phase = min(3, horizon)
+    rem = horizon - high_phase
+    pv = 0.0
+    f = fcf
+    for t in range(1, horizon + 1):
+        if t <= high_phase:
+            g = near_g
+        else:
+            g = near_g + (term_g - near_g) * ((t - high_phase) / rem) if rem > 0 else term_g
         f = f * (1 + g)
         pv += f / (1 + wacc) ** t
     terminal = f * (1 + term_g) / (wacc - term_g)
@@ -267,42 +366,62 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
             return None
         return v * fx_rate if (fx_rate and fund["currency"] != "USD") else v
 
+    growth_tier = None
+    scenario_drivers = None
     fair_value = {"bear": None, "base": None, "bull": None}
 
     if fx_caveat is None and profile == "STANDARD":
-        # Stable earnings anchors (consistent TTM): EPV floor + peer-multiple.
-        epv = conv(epv_value(fund, coe))
-        mult = multiples_value(fund, peer_ratios, net_debt).get("pe_implied")  # eps already price-ccy — no conv
-        methods["epv"] = {"value": epv}
-        methods["multiples"] = {"pe_implied": mult, "ev_ebitda_implied": None}
+        growth_tier = classify_growth_tier(fund)
+        weights = TIER_WEIGHTS[growth_tier]
+        eps = fund.get("eps")
 
-        # DCF cash-flow cross-check. FCF is noisy across capex cycles, so it
-        # only feeds the fair-value base when it reasonably tracks earnings
-        # (FCF/NI ≥ 0.5 and > 0); otherwise it's shown but flagged-out.
-        dcf_base = dcf_value(fund, wacc, near_g, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-        ni, fcf = fund.get("net_income"), fund.get("fcf")
-        fcf_quality = (fcf / ni) if (fcf and ni and ni > 0) else None
-        dcf_usable = dcf_base is not None and fcf_quality is not None and fcf_quality >= 0.5
+        # EPV — always computed; surfaced as the no-growth downside-stress floor.
+        # Blended into the base only for MATURE (weight 0 for COMPOUNDER/CYCLICAL).
+        epv = conv(epv_value(fund, coe))
+        methods["epv"] = {"value": epv, "role": "downside-stress floor"}
+
+        # Peer multiples: median for base, 25th/75th pct for the band (eps already price-ccy).
+        pes = [v.get("ttm_pe") for v in (peer_ratios or {}).values()
+               if isinstance(v, dict) and isinstance(v.get("ttm_pe"), (int, float)) and v.get("ttm_pe") > 0]
+        peer_base = (median(pes) * eps) if pes and eps and eps > 0 else None
+        peer_bear = (_percentile(pes, 0.25) * eps) if pes and eps and eps > 0 else None
+        peer_bull = (_percentile(pes, 0.75) * eps) if pes and eps and eps > 0 else None
+        methods["multiples"] = {"pe_implied": peer_base, "ev_ebitda_implied": None}
+
+        # DCF — 3-phase on a normalized (through-cycle) FCF base so a capex peak
+        # doesn't exclude the cash-flow leg (the old FCF/NI<0.5 hard exclusion is gone).
+        fcf_norm = normalized_fcf_base(fund)
+        dcf_base = conv(dcf_value_phased(fund, wacc, near_g, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, fcf_norm))
+        dcf_bear = dcf_bull = None
         if dcf_base is not None:
-            bear = dcf_value(fund, wacc + DISCOUNT_DELTA, near_g - GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-            bull = dcf_value(fund, wacc - DISCOUNT_DELTA, near_g + GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt)
-            methods["dcf"] = {"bear": conv(bear), "base": conv(dcf_base), "bull": conv(bull),
+            dcf_bear = conv(dcf_value_phased(fund, wacc + DISCOUNT_DELTA, near_g - GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, fcf_norm))
+            dcf_bull = conv(dcf_value_phased(fund, wacc - DISCOUNT_DELTA, near_g + GROWTH_DELTA, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, fcf_norm))
+            fcf_act, ni = fund.get("fcf"), fund.get("net_income")
+            fcf_quality = (fcf_act / ni) if (fcf_act and ni and ni > 0) else None
+            methods["dcf"] = {"bear": dcf_bear, "base": dcf_base, "bull": dcf_bull,
                               "fcf_to_ni": round(fcf_quality, 2) if fcf_quality is not None else None,
-                              "in_base": dcf_usable}
-            if not dcf_usable:
-                methods["dcf"]["excluded_reason"] = (
-                    f"FCF/NI={fcf_quality:.2f} (<0.5) — current FCF capex-depressed; "
-                    "shown as cross-check, excluded from fair-value base")
+                              "normalized": fcf_norm != fcf_act}
             methods["reverse_dcf"] = {"implied_growth":
                 reverse_dcf_growth(fund, wacc, TERMINAL_GROWTH, HORIZON_YEARS, net_debt, price) if price else None}
         else:
-            skipped.append({"method": "dcf", "reason": "FCF ≤ 0 — DCF base not meaningful"})
+            skipped.append({"method": "dcf", "reason": "FCF/earnings base not positive — DCF not meaningful"})
 
-        # triangulate the fair-value range from the usable estimates
-        est = [v for v in (epv, mult, (conv(dcf_base) if dcf_usable else None)) if isinstance(v, (int, float))]
-        if est:
-            est_sorted = sorted(est)
-            fair_value = {"bear": est_sorted[0], "base": median(est_sorted), "bull": est_sorted[-1]}
+        # Tier-weighted blend (EPV included only where its weight > 0; weights
+        # renormalize across whatever methods are available).
+        base = _weighted_blend({"dcf": dcf_base, "multiples": peer_base, "epv": epv}, weights)
+        bear = _weighted_blend({"dcf": dcf_bear, "multiples": peer_bear, "epv": epv}, weights)
+        bull = _weighted_blend({"dcf": dcf_bull, "multiples": peer_bull, "epv": epv}, weights)
+        if base is not None and bear is not None and bull is not None:
+            lo, hi = min(bear, bull), max(bear, bull)
+            bear, bull = min(lo, base), max(hi, base)   # guarantee bear ≤ base ≤ bull
+        fair_value = {"bear": bear, "base": base, "bull": bull}
+        if base is not None:
+            epv_note = f"EPV {weights['epv']:.0%}" if weights["epv"] > 0 else "EPV stress-only"
+            scenario_drivers = {
+                "bear": "FCF growth −2pp, WACC +1pp, peer P/E 25th pct",
+                "base": f"{growth_tier}: DCF {weights['dcf']:.0%} / peer {weights['multiples']:.0%} / {epv_note}",
+                "bull": "FCF growth +2pp, WACC −1pp, peer P/E 75th pct",
+            }
     elif fx_caveat is None and profile == "UNPROFITABLE":
         skipped += [{"method": "dcf", "reason": "no positive FCF/earnings base"},
                     {"method": "epv", "reason": "no positive operating earnings"}]
@@ -344,6 +463,9 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
         fair_value = {"bear": None, "base": None, "bull": None}
         methods = {}
 
+    if fair_value.get("base") is None:
+        scenario_drivers = None   # a guard suppressed the value — no drivers to report
+
     iv_base = fair_value.get("base")
     margin = ((iv_base - price) / price) if (iv_base is not None and price) else None
 
@@ -362,6 +484,8 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
         "trade_date": financials.get("trade_date"),
         "ticker": ticker,
         "profile": profile,
+        "growth_tier": growth_tier,
+        "scenario_drivers": scenario_drivers,
         "currency": fund["currency"],
         "fx_rate": fx_rate,
         "fx_caveat": fx_caveat,
@@ -385,7 +509,10 @@ def compute_intrinsic_value(financials: dict, net_debt: dict, reference: dict,
             f"ERP={ERP:.1%}, terminal g={TERMINAL_GROWTH:.1%}, horizon={HORIZON_YEARS}y, "
             f"near-term-growth cap={NEAR_TERM_GROWTH_CAP:.0%}, discount floor={DISCOUNT_RATE_FLOOR:.0%}, "
             f"cost-of-debt spread={COST_OF_DEBT_SPREAD:.1%}, bear/bull = growth ±{GROWTH_DELTA:.0%} / "
-            f"discount ±{DISCOUNT_DELTA:.0%}; risk-free from 10-Y Treasury."
+            f"discount ±{DISCOUNT_DELTA:.0%}; risk-free from 10-Y Treasury. "
+            f"Tier-weighted blend (compounder 65/35 DCF/peer, mature 40/30/30 DCF/peer/EPV, "
+            f"cyclical 30/70 DCF/peer); DCF on 3-phase normalized FCF "
+            f"(NI×{FCF_NORM_CONVERSION:.0%} when capex-depressed); EPV is a downside stress test."
         ),
     }
 
@@ -415,11 +542,17 @@ def format_intrinsic_value_block(iv: dict) -> str:
                 "Do not invent a fair value.\n")
 
     lines = [head]
-    lines.append(f"**Profile:** {iv['profile']} · **Methods:** {', '.join(iv['applicable_methods']) or '(none)'}\n\n")
+    tier = iv.get("growth_tier")
+    tier_str = f" · **Tier:** {tier}" if tier else ""
+    lines.append(f"**Profile:** {iv['profile']}{tier_str} · **Methods:** {', '.join(iv['applicable_methods']) or '(none)'}\n\n")
     lines.append("| Fair value | Bear | Base | Bull |\n|---|---:|---:|---:|\n")
     lines.append(f"| per share | {_money(fv['bear'], cur)} | {_money(fv['base'], cur)} | {_money(fv['bull'], cur)} |\n\n")
     lines.append(f"**Margin of safety** (base vs reference {_money(recon['price'], cur)}): "
                  f"{_pct(iv['margin_of_safety_pct'])}.\n\n")
+    sd = iv.get("scenario_drivers")
+    if sd:
+        lines.append(f"**Swing variables** — bear: {sd.get('bear')}; base: {sd.get('base')}; "
+                     f"bull: {sd.get('bull')}.\n\n")
     lines.append(
         f"**Assumptions:** risk-free {inp['risk_free']:.2%}, beta {inp['beta']}, "
         f"cost of equity {inp['cost_of_equity']:.2%}, **WACC {inp['wacc']:.2%}**, "
@@ -427,7 +560,7 @@ def format_intrinsic_value_block(iv: dict) -> str:
         f"over {inp['horizon_years']}y.\n\n")
     m = iv["methods"]
     if "epv" in m and m["epv"].get("value") is not None:
-        lines.append(f"- EPV (no-growth floor): {_money(m['epv']['value'], cur)}\n")
+        lines.append(f"- EPV (no-growth downside-stress floor): {_money(m['epv']['value'], cur)}\n")
     if "multiples" in m and m["multiples"].get("pe_implied") is not None:
         lines.append(f"- Peer-P/E-implied: {_money(m['multiples']['pe_implied'], cur)}\n")
     if "reverse_dcf" in m and m["reverse_dcf"].get("implied_growth") is not None:

@@ -19,6 +19,19 @@ def _fin(fund=_FUND_TXT, inc=_INC, ccy="USD"):
             "income_statement": inc, "cashflow": "", "balance_sheet": ""}
 
 
+# Compounder fixture: high revenue growth + high gross margin, capex-depressed FCF
+# (FCF/NI = 27/90 = 0.30 < 0.8 → DCF normalized to NI*0.8). MSFT-shaped.
+_FUND_CMP = (
+    "Name: Compoundo\nSector: Technology\nIndustry: Software - Infrastructure\n"
+    "Market Cap: 3000000000000\nPE Ratio (TTM): 36\nForward PE: 30\n"
+    "EPS (TTM): 12.0\nForward EPS: 14.0\nBeta: 1.0\nEBITDA: 150000000000\n"
+    "Net Income: 90000000000\nFree Cash Flow: 27000000000\nRevenue (TTM): 270000000000\n"
+    "Gross Profit: 190000000000\nRevenue Growth: 0.18\n"
+)
+_INC_CMP = ("\nTax Rate For Calcs,0.15,0.15\nDiluted Average Shares,7500000000,7500000000\n"
+            "EBIT,100000000000,95000000000\n")
+
+
 # ---- Task 1: parser + classifier ----
 def test_parse_fundamentals():
     from tradingagents.agents.utils.intrinsic_value import parse_fundamentals
@@ -198,12 +211,122 @@ def test_mc_ev_scenarios_dict():
     assert mc_ev_from_forward(fwd) == pytest.approx(0.5 * 120 + 0.3 * 100 + 0.2 * 80)
 
 
-def test_profitable_negative_fcf_stays_standard_epv_base():
+def test_capex_depressed_fcf_normalized_into_dcf():
     from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
-    # NI > 0 but FCF < 0 (capex-heavy, AMKR-like)
+    # NI > 0 but FCF < 0 (capex-heavy): the DCF is no longer excluded — its base FCF
+    # is normalized to NI*0.8 so the cash-flow leg still contributes (new methodology).
     f = _FUND_TXT.replace("Free Cash Flow: 90000000", "Free Cash Flow: -20000000")
     iv = compute_intrinsic_value(_fin(f), {"net_debt": 100000000}, {"reference_price": 60.0},
                                  {"PEERA": {"ttm_pe": 18}}, risk_free=0.04, ticker="AMKR")
     assert iv["profile"] == "STANDARD"
-    assert any(s["method"] == "dcf" for s in iv["skipped_methods"])
-    assert iv["fair_value"]["base"] is not None  # EPV provided the base
+    assert "dcf" in iv["methods"] and iv["methods"]["dcf"]["base"] is not None
+    assert not any(s["method"] == "dcf" for s in iv["skipped_methods"])
+    assert iv["fair_value"]["base"] is not None
+
+
+# ---- Task 7: growth-tier classification ----
+def test_classify_growth_tier_compounder():
+    from tradingagents.agents.utils.intrinsic_value import parse_fundamentals, classify_growth_tier
+    assert classify_growth_tier(parse_fundamentals(_fin(_FUND_CMP, _INC_CMP))) == "COMPOUNDER"
+
+
+def test_classify_growth_tier_mature_when_growth_unknown():
+    from tradingagents.agents.utils.intrinsic_value import parse_fundamentals, classify_growth_tier
+    # _FUND_TXT has no Revenue Growth / Gross Profit → conservative MATURE fallback
+    assert classify_growth_tier(parse_fundamentals(_fin())) == "MATURE"
+
+
+def test_classify_growth_tier_mature_low_growth():
+    from tradingagents.agents.utils.intrinsic_value import parse_fundamentals, classify_growth_tier
+    slow = _FUND_CMP.replace("Revenue Growth: 0.18", "Revenue Growth: 0.04")
+    assert classify_growth_tier(parse_fundamentals(_fin(slow, _INC_CMP))) == "MATURE"
+
+
+def test_classify_growth_tier_cyclical_semis():
+    from tradingagents.agents.utils.intrinsic_value import parse_fundamentals, classify_growth_tier
+    semi = _FUND_TXT.replace("Sector: Technology", "Sector: Technology\nIndustry: Semiconductors")
+    assert classify_growth_tier(parse_fundamentals(_fin(semi))) == "CYCLICAL"
+
+
+def test_parse_growth_and_gross_margin():
+    from tradingagents.agents.utils.intrinsic_value import parse_fundamentals
+    f = parse_fundamentals(_fin(_FUND_CMP, _INC_CMP))
+    assert f["revenue_growth"] == pytest.approx(0.18)
+    assert f["gross_margin"] == pytest.approx(190000000000 / 270000000000)
+
+
+# ---- Task 8: normalized forward-FCF DCF ----
+def test_normalized_fcf_base():
+    from tradingagents.agents.utils.intrinsic_value import parse_fundamentals, normalized_fcf_base
+    f = parse_fundamentals(_fin(_FUND_CMP, _INC_CMP))  # FCF 27B, NI 90B → 0.30 < 0.8
+    assert normalized_fcf_base(f) == pytest.approx(90000000000 * 0.80)
+    healthy = parse_fundamentals(_fin())  # FCF 90M, NI 100M → 0.90 ≥ 0.8 → actual
+    assert normalized_fcf_base(healthy) == pytest.approx(90000000)
+
+
+# ---- Task 9: tier-weighted blend ----
+def test_compounder_base_dcf_peer_weighted_no_epv():
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    iv = compute_intrinsic_value(_fin(_FUND_CMP, _INC_CMP), {"net_debt": 0},
+                                 {"reference_price": 441.0},
+                                 {"A": {"ttm_pe": 30}, "B": {"ttm_pe": 34}},
+                                 risk_free=0.04, ticker="CMP")
+    assert iv["growth_tier"] == "COMPOUNDER"
+    m = iv["methods"]
+    assert m["epv"]["value"] is not None              # EPV still computed (stress)
+    dcf, peer = m["dcf"]["base"], m["multiples"]["pe_implied"]
+    assert iv["fair_value"]["base"] == pytest.approx(0.65 * dcf + 0.35 * peer, rel=1e-3)
+
+
+def test_mature_base_includes_epv():
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    iv = compute_intrinsic_value(_fin(), {"net_debt": -50000000}, {"reference_price": 100.0},
+                                 {"A": {"ttm_pe": 18}}, risk_free=0.04, ticker="ACME")
+    assert iv["growth_tier"] == "MATURE"
+    m = iv["methods"]
+    dcf, peer, epv = m["dcf"]["base"], m["multiples"]["pe_implied"], m["epv"]["value"]
+    assert iv["fair_value"]["base"] == pytest.approx(0.40 * dcf + 0.30 * peer + 0.30 * epv, rel=1e-3)
+
+
+def test_weights_renormalize_when_method_missing():
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    # Compounder with no peers → peer leg drops → base is the DCF leg alone.
+    iv = compute_intrinsic_value(_fin(_FUND_CMP, _INC_CMP), {"net_debt": 0},
+                                 {"reference_price": 441.0}, {}, risk_free=0.04, ticker="CMP")
+    assert iv["growth_tier"] == "COMPOUNDER"
+    assert iv["fair_value"]["base"] == pytest.approx(iv["methods"]["dcf"]["base"], rel=1e-3)
+
+
+def test_band_ordered_with_scenario_drivers():
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    iv = compute_intrinsic_value(_fin(_FUND_CMP, _INC_CMP), {"net_debt": 0},
+                                 {"reference_price": 441.0},
+                                 {"A": {"ttm_pe": 28}, "B": {"ttm_pe": 30}, "C": {"ttm_pe": 34}},
+                                 risk_free=0.04, ticker="CMP")
+    fv = iv["fair_value"]
+    assert fv["bear"] <= fv["base"] <= fv["bull"]
+    assert set(iv["scenario_drivers"]) >= {"bear", "base", "bull"}
+
+
+def test_compounder_base_above_old_epv_median():
+    # Regression for the MSFT undervaluation: the old median(EPV, peer) blend would sit
+    # at/below the EPV-peer midpoint; the new compounder blend (DCF+peer, EPV excluded)
+    # must land strictly above EPV — i.e. EPV no longer drags the base down.
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value
+    iv = compute_intrinsic_value(_fin(_FUND_CMP, _INC_CMP), {"net_debt": 0},
+                                 {"reference_price": 441.0},
+                                 {"A": {"ttm_pe": 30}, "B": {"ttm_pe": 34}},
+                                 risk_free=0.04, ticker="CMP")
+    epv = iv["methods"]["epv"]["value"]
+    old_median = (epv + iv["methods"]["multiples"]["pe_implied"]) / 2
+    assert iv["fair_value"]["base"] > old_median
+
+
+def test_format_block_shows_tier_and_epv_stress():
+    from tradingagents.agents.utils.intrinsic_value import compute_intrinsic_value, format_intrinsic_value_block
+    iv = compute_intrinsic_value(_fin(_FUND_CMP, _INC_CMP), {"net_debt": 0},
+                                 {"reference_price": 441.0},
+                                 {"A": {"ttm_pe": 30}, "B": {"ttm_pe": 34}},
+                                 risk_free=0.04, ticker="CMP")
+    b = format_intrinsic_value_block(iv)
+    assert "COMPOUNDER" in b and "stress" in b.lower()
