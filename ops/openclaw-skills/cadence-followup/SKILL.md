@@ -55,6 +55,8 @@ latest cadence", "finalize the batch / wk NN", "publish the passes". **DM only.*
    - Per ticker: `<T>: <grade>` + one line (published -> `promoted_to`; HOLD ->
      the defect; error -> the `error` string).
    - Batch summary: N graded A & published, M held, any re-auth / week needed.
+   - If the contract carries `summary_refresh_error`, the gsheet refresh failed
+     AFTER publishing — append it to the summary so SK can re-run the sheet update.
 
 ## Guardrails
 
