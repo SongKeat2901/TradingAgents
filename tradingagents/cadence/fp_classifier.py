@@ -35,12 +35,12 @@ def _dollars_to_tokens(d: float | None) -> list[str]:
 def _is_netdebt_dollar_grab(v: dict) -> bool:
     mt = (v.get("match_text") or "").lower()
     for tok in _dollars_to_tokens(v.get("claimed_dollars")):
-        idx = mt.find(tok.lower())
-        if idx == -1:
-            continue
-        window = mt[max(0, idx - 40): idx + 40]
-        if any(w in window for w in _NON_NETDEBT_NEARBY):
-            return True
+        # Require the figure to appear as an actual dollar amount ($-adjacent),
+        # not a bare digit elsewhere in the prose (avoids '5 times' matching '$5B').
+        for m in re.finditer(r"\$\s*" + re.escape(tok), mt):
+            window = mt[max(0, m.start() - 40): m.end() + 40]
+            if any(w in window for w in _NON_NETDEBT_NEARBY):
+                return True
     return False
 
 

@@ -48,3 +48,13 @@ def test_unknown_definitional_drift_escalates():
         "match_text": "Net debt is $50B per the balance sheet."}]}}
     verdicts = classify_run_flags(_run(v))
     assert verdicts[0].disposition is FlagDisposition.NEEDS_ADJUDICATION
+
+
+def test_bare_digit_billions_does_not_dismiss():
+    # $5B flagged; '5' appears as '5 times' near 'buyback' but NOT as a dollar figure.
+    v = {"phase_7_5_net_debt": {"violations": [{
+        "severity": "MATERIAL", "type": "definitional_drift",
+        "claimed_label": "net debt", "claimed_dollars": 5000000000.0,
+        "match_text": "Net debt has increased 5 times since the buyback program began."}]}}
+    verdicts = classify_run_flags(_run(v))
+    assert verdicts[0].disposition is FlagDisposition.NEEDS_ADJUDICATION
