@@ -35,4 +35,12 @@ production daemon. This ships committed `main` to it.
 5. **Refresh OAuth** (8h TTL; do before any e2e run):
    `ssh macmini-trueknot '~/.nvm/versions/node/v24.14.1/bin/claude -p hi'`
 
+6. **(Only when a bot OpenClaw skill changed)** Sync the skill source into the
+   trader workspace and kickstart the daemon so it loads. The `pip install -e .`
+   in step 3 already registers any new console scripts (e.g. `tradingcadencefollowup`).
+   ```bash
+   ssh macmini-trueknot 'for s in ~/tradingagents/ops/openclaw-skills/*/; do n=$(basename "$s"); mkdir -p ~/.openclaw/workspace/skills/$n && cp "$s/SKILL.md" ~/.openclaw/workspace/skills/$n/SKILL.md; done'
+   ssh macmini-superqsp "sudo launchctl kickstart -k system/com.trueknot.openclaw.gateway"
+   ```
+
 Report the deployed SHA back to the user.
