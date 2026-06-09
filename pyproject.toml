@@ -41,6 +41,7 @@ dependencies = [
 tradingagents = "cli.main:app"
 tradingresearch = "cli.research:main"
 tradingmacro = "tradingagents.macro.macro_daily:main"
+tradingcadencefollowup = "cli.cadence_followup:main"
 
 [tool.setuptools.packages.find]
 include = ["tradingagents*", "cli*"]
