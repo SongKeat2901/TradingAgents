@@ -60,3 +60,41 @@ def test_promote_moves_only_on_call(tmp_path):
     assert dest == final_base / "wk 24 2026" / "2026-06-05-BBB"
     assert (dest / "decision.md").is_file()
     assert not run_dir.exists()
+
+
+# FIX 1: upload-before-trash
+def test_publish_pdf_upload_failure_preserves_old(tmp_path):
+    manifest = tmp_path / "pdf_ids.tsv"
+    manifest.write_text("BBB\tOLD_ID\n")
+    seen = []
+    def runner(args, **kw):
+        seen.append(args[:3])
+        if "upload" in args:
+            return FakeProc(out="ERROR not json")   # upload fails -> bad JSON
+        return FakeProc(out="{}")
+    with pytest.raises(Exception):
+        publish.publish_pdf("BBB", tmp_path / "b.pdf", manifest,
+                            parent="P", account="a", run=runner)
+    # old file NOT trashed, manifest unchanged
+    assert not any("trash" in " ".join(a) for a in seen)
+    rows = dict(l.split("\t") for l in manifest.read_text().splitlines())
+    assert rows["BBB"] == "OLD_ID"
+
+
+# FIX 2: promote guard against existing dest
+def test_promote_refuses_existing_dest(tmp_path):
+    run_dir = tmp_path / "preaudit" / "2026-06-05-BBB"
+    run_dir.mkdir(parents=True)
+    (run_dir / "decision.md").write_text("x")
+    final_base = tmp_path / "final"
+    (final_base / "wk 24 2026" / "2026-06-05-BBB").mkdir(parents=True)
+    import pytest as _pt
+    with _pt.raises(FileExistsError):
+        publish.promote(run_dir, final_base, "wk 24 2026")
+    assert run_dir.exists()   # source untouched
+
+
+# FIX 3: full-account token check
+def test_token_valid_false_when_rc_nonzero(tmp_path):
+    runner = lambda args, **kw: FakeProc(rc=1, out="trueknotsg@gmail.com listed")
+    assert publish.gog_token_valid(run=runner) is False
