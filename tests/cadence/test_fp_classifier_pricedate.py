@@ -28,3 +28,14 @@ def test_genuine_wrong_close_escalates():
         "match_text": "the May 28 close was $34.03 per my notes"}]}}
     verdicts = classify_run_flags(_run(v))
     assert verdicts[0].disposition is FlagDisposition.NEEDS_ADJUDICATION
+
+
+def test_date_on_to_side_escalates():
+    # Date 'may 28' sits next to the 'to' value -> the LLM really claims that
+    # date's close was $34.03 -> genuine error, must escalate.
+    v = {"phase_7_1_price_date": {"violations": [{
+        "severity": "MATERIAL", "type": "wrong_close",
+        "claimed_date": "2026-05-28", "claimed_price": 34.03, "actual_close": 40.6,
+        "match_text": "moved from $40.60 high to $34.03 on may 28"}]}}
+    verdicts = classify_run_flags(_run(v))
+    assert verdicts[0].disposition is FlagDisposition.NEEDS_ADJUDICATION

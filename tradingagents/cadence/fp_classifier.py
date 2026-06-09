@@ -51,16 +51,38 @@ def _fmt_price(p) -> str | None:
     return s
 
 
+_MONTHS = ["january", "february", "march", "april", "may", "june", "july",
+           "august", "september", "october", "november", "december"]
+
+
+def _month_name(date_str) -> str | None:
+    try:
+        return _MONTHS[int(str(date_str).split("-")[1]) - 1]
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
 def _is_from_to_miswire(v: dict) -> bool:
-    """True when match_text reads 'from $<actual_close> ... to $<claimed_price>',
-    i.e. the validator paired the date with the 'to' endpoint, not the 'from'."""
+    """True when match_text reads 'from $<actual_close> ... to $<claimed_price>'
+    AND the cited date sits on the 'from' side, i.e. the validator paired the date
+    with the 'to' endpoint, not the 'from' value."""
     mt = (v.get("match_text") or "").lower()
     frm = _fmt_price(v.get("actual_close"))
     to = _fmt_price(v.get("claimed_price"))
     if not frm or not to:
         return False
     pat = r"from\b[^.]*?\$?" + re.escape(frm) + r"[^.]*?\bto\b[^.]*?\$?" + re.escape(to)
-    return re.search(pat, mt) is not None
+    m = re.search(pat, mt)
+    if not m:
+        return False
+    month = _month_name(v.get("claimed_date") or "")
+    if not month:
+        return True                        # no date to disambiguate; structure is enough
+    seg = m.group(0)
+    to_kw = re.search(r"\bto\b", seg)
+    if not to_kw:
+        return True
+    return month[:3] in seg[:to_kw.start()]   # date must sit on the 'from' side
 
 
 _METRIC_TO_KEY = {
