@@ -55,6 +55,17 @@ historical). If only tickers are given, ask for the trade date or use today's la
    **If NOT A+**: re-run once (non-determinism often clears a transient nit). If a
    defect persists across re-runs, it's a failed run — leave it out of the
    register and report why (per "remove all failed run").
+6. **If you HAND-CORRECT a report** (edit `decision.md`/`decision_executive.md` to
+   fix a real defect instead of re-running): after editing you MUST **re-run the
+   validator to refresh `validation_report.json`** and **regenerate the PDF** —
+   downstream QC and the `cadence-followup` bot read the *pre-computed*
+   `validation_report.json`, NOT the live markdown, so a stale report re-flags the
+   issue you just fixed (wk24 NOW: $6.42B was corrected in the markdown but the
+   stale report kept flagging it). Commands (on the mini, in the run dir):
+   ```bash
+   ~/tradingagents/.venv/bin/python -c "from cli.research_validation import run_phase_7_validators, write_validation_report as w; import sys; d=sys.argv[1]; w(d, run_phase_7_validators(d))" <RUN_DIR>
+   ~/tradingagents/.venv/bin/python -c "from cli.research_pdf import build_research_pdf; from pathlib import Path; d=sys.argv[1]; build_research_pdf(output_dir=d, ticker='<T>', date='<D>', decision=Path(d+'/decision.md').read_text())" <RUN_DIR>
+   ```
 
 ## Rules
 - ONE run at a time; if `pgrep -f tradingresearch` shows an active run, wait.
