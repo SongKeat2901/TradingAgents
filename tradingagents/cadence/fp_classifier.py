@@ -88,7 +88,8 @@ def _is_from_to_miswire(v: dict) -> bool:
 _METRIC_TO_KEY = {
     "nd/ebitda": "nd_ebitda", "net debt/ebitda": "nd_ebitda", "leverage": "nd_ebitda",
     "ttm pe": "ttm_pe", "ttm p/e": "ttm_pe", "forward pe": "forward_pe",
-    "forward p/e": "forward_pe", "ttm ebitda": "ttm_ebitda", "net debt": "net_debt",
+    "forward p/e": "forward_pe", "ttm ebitda": "ttm_ebitda",
+    "ebitda (ttm)": "ttm_ebitda", "net debt": "net_debt",
     "op margin": "op_margin", "operating margin": "op_margin",
     "capex/revenue": "capex_revenue",
 }
@@ -99,7 +100,7 @@ _SUBJECT_METRIC_FIELD = {
 }
 
 _ALT_DEF_MARKERS = (
-    "broadest definition", "broader definition", "would imply",
+    "broadest definition", "broader definition",
     "on the broadest", "including non-current", "including short-term investments",
 )
 _AUTHORITATIVE_MARKERS = (
