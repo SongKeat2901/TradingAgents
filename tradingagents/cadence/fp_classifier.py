@@ -93,6 +93,68 @@ _METRIC_TO_KEY = {
     "capex/revenue": "capex_revenue",
 }
 
+_SUBJECT_METRIC_FIELD = {
+    "ttm ebitda": "ebitda", "ebitda": "ebitda", "ebitda (ttm)": "ebitda",
+    "net debt": "net_debt", "ebit": "ebit", "market cap": "market_cap",
+}
+
+_ALT_DEF_MARKERS = (
+    "broadest definition", "broader definition", "would imply",
+    "on the broadest", "including non-current", "including short-term investments",
+)
+_AUTHORITATIVE_MARKERS = (
+    "is authoritative", "authoritative for this report", "figure is authoritative",
+)
+
+
+def _parse_money(s) -> float | None:
+    """Parse a money string like '−$27M', '$509M', '$1.2B', '163' to dollars.
+    Handles the Unicode minus (U+2212), $/comma, and M/B suffixes."""
+    if s is None:
+        return None
+    t = str(s).replace("−", "-").replace(",", "").strip()
+    m = re.search(r"(-?)\s*\$?\s*(\d+\.?\d*)\s*([BbMm])?", t)
+    if not m:
+        return None
+    num = float(m.group(2)) * (-1 if m.group(1) == "-" else 1)
+    suf = (m.group(3) or "").upper()
+    if suf == "B":
+        num *= 1e9
+    elif suf == "M":
+        num *= 1e6
+    return num
+
+
+def _is_subject_metric_misattributed(v: dict, run: RunData) -> bool:
+    """wrong_peer_metric where the claimed value is actually the SUBJECT's own
+    metric (e.g. AAOI's −$27M EBITDA blamed on peer LITE). Dismiss only when the
+    claimed value matches the subject's input AND not the named peer's cell."""
+    field = _SUBJECT_METRIC_FIELD.get((v.get("metric") or "").strip().lower())
+    claimed = _parse_money(v.get("claimed_value"))
+    if not field or claimed is None:
+        return False
+    subj = ((run.intrinsic_value or {}).get("inputs") or {}).get(field)
+    if not isinstance(subj, (int, float)) or subj == 0:
+        return False
+    if abs(claimed - subj) > abs(subj) * 0.02 + 1.0:
+        return False  # claimed isn't the subject's value
+    # If it ALSO matches the named peer's cell, it's ambiguous -> escalate.
+    peer_key = _METRIC_TO_KEY.get((v.get("metric") or "").strip().lower())
+    cell = ((run.peer_ratios or {}).get((v.get("ticker") or "").upper()) or {}).get(peer_key) if peer_key else None
+    if isinstance(cell, (int, float)) and abs(claimed - cell) <= abs(cell) * 0.02 + 1.0:
+        return False
+    return True
+
+
+def _is_broad_netcash_disclosure(v: dict) -> bool:
+    """definitional_drift that is actually a transparent broad-vs-authoritative
+    net-cash disclosure (AAPL's $61.9B 'broadest definition' while citing the
+    authoritative $39.14B). Requires BOTH an alt-definition marker and an
+    explicit authoritative acknowledgment."""
+    mt = (v.get("match_text") or "").lower()
+    return (any(a in mt for a in _ALT_DEF_MARKERS)
+            and any(b in mt for b in _AUTHORITATIVE_MARKERS))
+
 
 def _parse_metric_value(s) -> float | None:
     if s is None:
@@ -134,6 +196,12 @@ def classify_violation(phase: str, v: dict, run: RunData) -> FlagVerdict:
                            "flagged $ is a non-net-debt quantity (buyback / operating "
                            "cash flow / FCF) sitting near 'net debt/cash' wording", detail)
 
+    if vtype == "definitional_drift" and _is_broad_netcash_disclosure(v):
+        return FlagVerdict(phase, FlagDisposition.DISMISS,
+                           "broad-vs-authoritative net-cash disclosure: text presents an "
+                           "alternative definition while explicitly citing the authoritative "
+                           "figure (not a drift)", detail)
+
     if vtype == "wrong_close" and _is_from_to_miswire(v):
         return FlagVerdict(phase, FlagDisposition.DISMISS,
                            "price-date 'from $A (date) to $B' cross-wire: validator "
@@ -145,6 +213,11 @@ def classify_violation(phase: str, v: dict, run: RunData) -> FlagVerdict:
                            "peer 'X and Y respectively': claimed value matches the OTHER "
                            "peer's cell; validator mapped the metric to the wrong ticker",
                            detail)
+
+    if vtype == "wrong_peer_metric" and _is_subject_metric_misattributed(v, run):
+        return FlagVerdict(phase, FlagDisposition.DISMISS,
+                           "peer-metric flag is the SUBJECT's own metric mis-attributed to "
+                           "a peer (matches subject input, not the peer cell)", detail)
 
     return FlagVerdict(phase, FlagDisposition.NEEDS_ADJUDICATION,
                        f"{vtype or 'unknown'}: no known false-positive pattern matched", detail)
