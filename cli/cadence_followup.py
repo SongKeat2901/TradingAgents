@@ -24,10 +24,28 @@ ACCOUNT = "trueknotsg@gmail.com"
 FINAL_BASE = (Path.home() / "Library/CloudStorage"
               / "GoogleDrive-trueknotsg@gmail.com"
               / "My Drive/True Knot/TK Research/final")
-REGISTER_PY = str(Path.home() / "gsheet-tool" / "update_register.py")
 VENV_PY = str(Path.home() / "tradingagents" / ".venv" / "bin" / "python")
 
 _WEEK_RE = re.compile(r"^wk (\d+) (\d{4})$")
+
+
+def _maybe_revalidate(run_dir: Path) -> bool:
+    """Re-run the phase-7 validators when decision.md is newer than
+    validation_report.json (a hand-correction left the report stale). Returns
+    True if it revalidated. Best-effort: never raises into the batch."""
+    rd = Path(run_dir)
+    rep = rd / "validation_report.json"
+    dec = rd / "decision.md"
+    try:
+        if dec.is_file() and (not rep.is_file()
+                              or dec.stat().st_mtime > rep.stat().st_mtime):
+            from cli.research_validation import (
+                run_phase_7_validators, write_validation_report)
+            write_validation_report(str(rd), run_phase_7_validators(str(rd)))
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _highest_week(final_base: str) -> str | None:
@@ -55,13 +73,16 @@ def main(argv: list[str] | None = None) -> int:
                          "If omitted, the highest existing week folder is used.")
     ap.add_argument("--no-write", action="store_true",
                     help="QC + emit contract without any Drive/sheet writes (no gog call)")
+    ap.add_argument("--no-revalidate", action="store_true",
+                    help="Skip the mtime check that re-runs phase-7 validators when "
+                         "decision.md is newer than validation_report.json")
     args = ap.parse_args(argv)
 
     date, run_dirs = find_latest_batch(Path(args.preaudit_base))
     result = {
         "trade_date": date, "batch_size": len(run_dirs), "completed": len(run_dirs),
         "token_valid": None, "writes_held": False, "week_required": False,
-        "reauth_url": None, "week": args.week, "tickers": [],
+        "reauth_url": None, "week": args.week, "tickers": [], "revalidated": [],
     }
     if not date:
         print(json.dumps(result, indent=2))
@@ -85,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
         result["week_required"] = True
 
     for rd in run_dirs:
+        if not args.no_revalidate:
+            ticker_name = Path(rd).name.split("-", 3)[-1] if "-" in Path(rd).name else Path(rd).name
+            if _maybe_revalidate(rd):
+                result["revalidated"].append(ticker_name)
         run = load_run(rd)
         rv = grade_run(run)
         row = {
@@ -110,11 +135,10 @@ def main(argv: list[str] | None = None) -> int:
                     row["error"] = "%s: %s" % (type(exc).__name__, exc)
         result["tickers"].append(row)
 
-    if any(t["published"] for t in result["tickers"]):
-        try:
-            pub.refresh_summary_sheet(python=VENV_PY, script=REGISTER_PY, account=ACCOUNT)
-        except Exception as exc:
-            result["summary_refresh_error"] = "%s: %s" % (type(exc).__name__, exc)
+    # The Research Summary gsheet digest needs LLM reading (rating/EV extraction is
+    # not reliably deterministic), so it is NOT auto-run here. Flag it for the bot
+    # (SKILL.md step) to digest the published reports and update the sheet.
+    result["summary_update_pending"] = any(t["published"] for t in result["tickers"])
 
     print(json.dumps(result, indent=2))
     return 0

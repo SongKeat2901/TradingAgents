@@ -102,7 +102,7 @@ def test_pdf_missing_degrades(tmp_path, capsys, monkeypatch):
     assert out["tickers"][0]["error"] == "PDF missing"
 
 
-def test_publish_success_promotes_and_refreshes(tmp_path, capsys, monkeypatch):
+def test_publish_success_promotes_and_sets_pending(tmp_path, capsys, monkeypatch):
     pre = tmp_path / "preaudit"
     _mk_run(pre, "2026-06-05-AAA", BUYBACK_FP, with_pdf=True)
     monkeypatch.setattr(cf.pub, "gog_token_valid", lambda *a, **k: True)
@@ -110,15 +110,56 @@ def test_publish_success_promotes_and_refreshes(tmp_path, capsys, monkeypatch):
     def fake_promote(run_dir, final_base, week):
         return Path(final_base) / week / Path(run_dir).name
     monkeypatch.setattr(cf.pub, "promote", fake_promote)
-    refreshed = []
-    monkeypatch.setattr(cf.pub, "refresh_summary_sheet",
-                        lambda **k: refreshed.append(1) or True)
     rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "final"),
                   "--week", "wk 24 2026"])
     out = json.loads(capsys.readouterr().out)
     assert out["tickers"][0]["published"] is True
     assert "wk 24 2026" in out["tickers"][0]["promoted_to"]
-    assert refreshed == [1]
+    assert out["summary_update_pending"] is True
+
+
+def test_revalidate_when_decision_newer(tmp_path, monkeypatch):
+    import time
+    from cli import cadence_followup as cf
+    pre = tmp_path / "preaudit"
+    rd = _mk_run(pre, "2026-06-05-AAA", {"blocking_violations": 0})
+    # make decision.md newer than validation_report.json
+    vr = rd / "validation_report.json"  # noqa: F841 (referenced via mtime only)
+    time.sleep(0.01)
+    (rd / "decision.md").write_text((rd / "decision.md").read_text() + "\nedited\n")
+    called = {}
+    monkeypatch.setattr("cli.research_validation.run_phase_7_validators",
+                        lambda d: called.setdefault("ran", True) or {"total_violations": 0, "blocking_violations": 0})
+    monkeypatch.setattr("cli.research_validation.write_validation_report",
+                        lambda d, r: None)
+    cf.main(["--preaudit-base", str(pre), "--no-write"])
+    assert called.get("ran") is True
+
+
+def test_no_revalidate_flag_skips(tmp_path, monkeypatch):
+    from cli import cadence_followup as cf
+    pre = tmp_path / "preaudit"
+    _mk_run(pre, "2026-06-05-AAA", {"blocking_violations": 0})
+    called = {}
+    monkeypatch.setattr("cli.research_validation.run_phase_7_validators",
+                        lambda d: called.setdefault("ran", True) or {})
+    cf.main(["--preaudit-base", str(pre), "--no-write", "--no-revalidate"])
+    assert "ran" not in called
+
+
+def test_summary_update_pending_flag(tmp_path, capsys, monkeypatch):
+    pre = tmp_path / "preaudit"
+    _mk_run(pre, "2026-06-05-AAA", BUYBACK_FP, with_pdf=True)
+    monkeypatch.setattr(cf.pub, "gog_token_valid", lambda *a, **k: True)
+    monkeypatch.setattr(cf.pub, "publish_pdf", lambda *a, **k: "ID")
+    monkeypatch.setattr(cf.pub, "promote",
+                        lambda run_dir, fb, wk: Path(fb) / wk / Path(run_dir).name)
+    rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "final"),
+                  "--week", "wk 24 2026"])
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert out["summary_update_pending"] is True
+    assert out["tickers"][0]["published"] is True
 
 
 def test_week_inferred_from_highest_existing(tmp_path, capsys, monkeypatch):

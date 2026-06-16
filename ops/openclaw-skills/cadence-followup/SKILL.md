@@ -35,6 +35,10 @@ latest cadence", "finalize the batch / wk NN", "publish the passes". **DM only.*
    - `tickers[]`: each has `grade` ("A"/"HOLD"), `auto_dismissed` (known validator
      false positives the classifier already cleared), `needs_adjudication` (novel
      flags — see step 4), `published`, `promoted_to`, `error`.
+   - `revalidated`: list of tickers whose stale `validation_report.json` was
+     refreshed before grading (decision.md was newer — a hand-correction self-heal).
+   - `summary_update_pending`: `true` when at least one ticker was published — the
+     bot must do the gsheet digest (step 6b).
    - `writes_held` / `reauth_url`: gog token expired (step 5).
    - `week_required`: no week resolved — supply `--week` and re-run.
    - `token_valid`: `null` means a `--no-write` run (not checked).
@@ -55,8 +59,21 @@ latest cadence", "finalize the batch / wk NN", "publish the passes". **DM only.*
    - Per ticker: `<T>: <grade>` + one line (published -> `promoted_to`; HOLD ->
      the defect; error -> the `error` string).
    - Batch summary: N graded A & published, M held, any re-auth / week needed.
-   - If the contract carries `summary_refresh_error`, the gsheet refresh failed
-     AFTER publishing — append it to the summary so SK can re-run the sheet update.
+   - If `revalidated` is non-empty, note which tickers had their validation
+     auto-refreshed (stale report self-healed).
+
+6b. **If `summary_update_pending` is `true`**: digest the just-published reports
+   and update the Research Summary gsheet
+   (ID `1VJowGGdxjCPd0jMpZVHJlC-C6aEspf1iJWOVPH0T7dk`).
+   - For each published ticker, read `decision.md` to extract: **Rating**,
+     **Reference price**, **12-month EV** (both % upside and $ target), and a
+     **1-line thesis note**.
+   - Write to the sheet via the `update-summary` skill / `gog sheets update` method
+     (group rows by rating band; apply colour bands per rating: A+/Buy = green,
+     Hold = amber, Avoid/Sell = red). This LLM-reading step cannot be automated
+     deterministically — the CLI deliberately leaves it to the bot.
+   - The CLI no longer calls `update_register.py` (the script does not exist and
+     the digest requires LLM extraction anyway). The bot owns this step.
 
 ## Guardrails
 
