@@ -103,10 +103,17 @@ _PEER_LINE = re.compile(
     #     whitespace; the prior `:\s` requirement dropped every line → peers.json
     #     wrote `{}` → Phase 6.4 invariant crashed the run).
     # Strategy: capture the first uppercase 1-5 letter token (peers are written
-    # ticker-first), then allow any non-colon label text (parenthetical company
-    # name, bold markers) up to the label colon. No whitespace required after
-    # the colon, so a trailing `**`/`*` no longer defeats the match.
-    r"^-\s+\*{0,2}\s*([A-Z]{1,5})\b[^:\n]*:",
+    # ticker-first), then require it be immediately followed (after optional
+    # bold-close `**`) by a peer-line delimiter — a colon, an opening paren, or
+    # a space + dash. This tolerates ALL observed separators:
+    #   `- TICKER: ...`  `- **TICKER**: ...`  `- **TICKER (Co):** ...`
+    #   `- **TICKER** — ...` (em-dash; TIGR 2026-06-05 — the LLM dropped the
+    #     colon entirely, so the prior `[^:\n]*:` matched nothing → peers.json
+    #     wrote `{}` → Phase 6.4 invariant crashed the run)
+    #   `- **TICKER** - ...` (spaced hyphen) / `- **TICKER** – ...` (en-dash)
+    # The `\s+` before a dash (vs `\s*` before colon/paren) prevents hyphenated
+    # prose like `- US-listed broker` or `- ETF wrapper` from matching as tickers.
+    r"^-\s+\*{0,2}\s*([A-Z]{1,5})\*{0,2}(?:\s*[:(]|\s+[—–-])",
     re.MULTILINE,
 )
 

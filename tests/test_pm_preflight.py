@@ -28,6 +28,30 @@ def _stub_fetch_latest_filing(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("section, expected", [
+    # The TIGR 2026-06-05 failure: em-dash separator, no colon -> regex matched
+    # nothing -> peers.json wrote {} -> Phase 6.4 invariant crashed the run.
+    ("- **FUTU** — Futu Holdings; closest competitor.\n"
+     "- **HOOD** — Robinhood; benchmark.\n"
+     "- **IBKR** — Interactive Brokers; institutional.",
+     ["FUTU", "HOOD", "IBKR"]),
+    # Regression: every previously-supported colon format must still parse.
+    ("- AMKR: OSAT comp\n- TSM: foundry leader", ["AMKR", "TSM"]),
+    ("- **COHR**: AI optics\n- **LITE**: datacom", ["COHR", "LITE"]),
+    ("- **NOW** (ServiceNow): SaaS peer", ["NOW"]),
+    ("- **NOW (ServiceNow):** SaaS peer", ["NOW"]),
+    ("- *FN*: transceiver", ["FN"]),
+    # Spaced plain-hyphen separator also parses.
+    ("- **CRM** - Salesforce; SaaS", ["CRM"]),
+    # Prose bullets (acronyms, hyphenated words) must NOT be read as tickers.
+    ("- US-listed broker with AI exposure\n- ETF wrapper, no earnings", []),
+])
+def test_extract_peers_tolerates_separator_drift(section, expected):
+    from tradingagents.agents.managers.pm_preflight import _extract_peers
+    brief = "# Brief\n\n## Peer set\n" + section + "\n\n## Past-lesson summary\n- x\n"
+    assert _extract_peers(brief) == expected
+
+
 _VALID_BRIEF = """\
 # PM Pre-flight Brief: MSFT 2026-05-01
 
