@@ -272,7 +272,7 @@ def format_net_debt_block(net_debt: dict[str, Any]) -> str:
         "investments) minus TOTAL debt; do NOT add long-term or non-current marketable "
         "securities, and do NOT subtract only long-term debt — doing so overstates net "
         "cash (e.g. NOW's $6.42B vs the authoritative $2.75B). Cite the Authoritative "
-        "Net Cash/Debt figure above verbatim for every net-cash/net-debt claim.** "
+        "figure (the labelled line above) verbatim for every net-cash/net-debt claim.** "
         "Note that yfinance's Net Debt row may "
         "differ from `Total Debt − Cash` because of capital-lease and "
         "short-term-investment definitions — surface the discrepancy if both "
