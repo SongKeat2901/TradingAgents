@@ -169,3 +169,78 @@ def test_custom_cli_path_used(monkeypatch):
     llm.invoke([HumanMessage(content="hi")])
 
     assert captured["cmd"][0] == "/Users/trueknot/.nvm/versions/node/v24.14.1/bin/claude"
+
+
+# ---------------------------------------------------------------------------
+# FIX B: max_retries default + per-call duration log
+# ---------------------------------------------------------------------------
+
+def test_max_retries_default_is_two():
+    """FIX B: max_retries was reduced 4→2; a freshly-constructed model must
+    reflect the new default."""
+    from tradingagents.llm_clients.claude_cli_chat_model import ClaudeCliChatModel
+
+    llm = ClaudeCliChatModel()
+    assert llm.max_retries == 2
+
+
+def test_duration_log_emitted_on_success(monkeypatch, capsys):
+    """FIX B: a successful subprocess.run call must emit a [claude-cli] …s
+    line to stderr so slow nodes are visible in the run log."""
+    from tradingagents.llm_clients import claude_cli_chat_model as mod
+
+    def fake_run(cmd, **kwargs):
+        return MagicMock(stdout="**HOLD**", stderr="", returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    llm = mod.ClaudeCliChatModel(model="claude-sonnet-4-6")
+    llm.invoke([HumanMessage(content="decide")])
+
+    captured = capsys.readouterr()
+    # e.g. "[claude-cli] sonnet 0s"
+    assert "[claude-cli]" in captured.err
+    assert "sonnet" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# FIX A: _run_timeout_seconds() helper
+# ---------------------------------------------------------------------------
+
+def test_run_timeout_default_when_env_unset(monkeypatch):
+    """When TRADINGRESEARCH_RUN_TIMEOUT is not set, default is 3600."""
+    from cli.research import _run_timeout_seconds
+
+    monkeypatch.delenv("TRADINGRESEARCH_RUN_TIMEOUT", raising=False)
+    assert _run_timeout_seconds() == 3600
+
+
+def test_run_timeout_parses_valid_env_value(monkeypatch):
+    """A valid integer env value is returned (clamped to floor if needed)."""
+    from cli.research import _run_timeout_seconds
+
+    monkeypatch.setenv("TRADINGRESEARCH_RUN_TIMEOUT", "4500")
+    assert _run_timeout_seconds() == 4500
+
+
+def test_run_timeout_clamps_below_floor(monkeypatch):
+    """Values below the 300s floor are clamped up to 300."""
+    from cli.research import _run_timeout_seconds, _RUN_TIMEOUT_FLOOR
+
+    monkeypatch.setenv("TRADINGRESEARCH_RUN_TIMEOUT", "10")
+    assert _run_timeout_seconds() == _RUN_TIMEOUT_FLOOR
+
+
+def test_run_timeout_falls_back_on_non_integer(monkeypatch):
+    """A non-integer env value falls back silently to the 3600 default."""
+    from cli.research import _run_timeout_seconds
+
+    monkeypatch.setenv("TRADINGRESEARCH_RUN_TIMEOUT", "not-a-number")
+    assert _run_timeout_seconds() == 3600
+
+
+# NOTE: The SIGALRM handler firing is an integration concern (it calls
+# os._exit which tears down the test process).  Manual verification:
+#   TRADINGRESEARCH_RUN_TIMEOUT=5 TRADINGRESEARCH_FOREGROUND=1 \
+#     .venv/bin/tradingresearch --ticker FAKE --date 2026-01-01
+# should print "RUN TIMEOUT: exceeded 5s …" and exit 124 within ~5s.

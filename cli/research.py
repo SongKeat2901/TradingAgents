@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import sys
 import time
 import traceback
@@ -210,6 +211,62 @@ def build_parser() -> argparse.ArgumentParser:
 # to argparse introspection and the agent doesn't set it spontaneously.
 _FOREGROUND_ENV = "TRADINGRESEARCH_FOREGROUND"
 
+# ---------------------------------------------------------------------------
+# Per-run wall-clock watchdog (FIX A)
+# ---------------------------------------------------------------------------
+_RUN_TIMEOUT_ENV = "TRADINGRESEARCH_RUN_TIMEOUT"
+_RUN_TIMEOUT_DEFAULT = 3600
+_RUN_TIMEOUT_FLOOR = 300  # 5 min minimum — anything shorter is almost certainly a mistake
+
+
+def _run_timeout_seconds() -> int:
+    """Read the per-run hard timeout from the environment.
+
+    Variable: TRADINGRESEARCH_RUN_TIMEOUT (seconds, integer).
+    Default: 3600 (1 hour).
+    Floor:    300  (5 minutes) — values below this are clamped up to avoid
+              accidental very-short timeouts from a misconfigured env var.
+
+    Non-integer values silently fall back to the default so a bad env var
+    never prevents a run from starting.
+    """
+    raw = os.environ.get(_RUN_TIMEOUT_ENV, "")
+    if raw:
+        try:
+            val = int(raw)
+        except ValueError:
+            val = _RUN_TIMEOUT_DEFAULT
+    else:
+        val = _RUN_TIMEOUT_DEFAULT
+    return max(val, _RUN_TIMEOUT_FLOOR)
+
+
+def _install_run_watchdog(timeout_s: int, ticker: str, date: str) -> None:
+    """Arm a SIGALRM-based hard timeout for the current process.
+
+    Fires ``timeout_s`` seconds after this call.  On expiry: prints a clear
+    message to stderr and calls ``os._exit(124)`` (the conventional timeout
+    exit code, e.g. bash ``timeout``).  ``os._exit`` is intentional — it
+    avoids any atexit / cleanup that might itself hang (the whole point of
+    the watchdog is that cleanup can't be trusted when a run is wedged).
+
+    Guard: a no-op on platforms without SIGALRM (e.g. Windows) so it never
+    breaks the happy path on unsupported OSes.
+    """
+    if not hasattr(signal, "SIGALRM"):
+        return  # Windows / non-POSIX — skip silently
+
+    def _handler(signum: int, frame: object) -> None:  # noqa: ANN001
+        print(
+            f"RUN TIMEOUT: exceeded {timeout_s}s, aborting {ticker} {date}",
+            file=sys.stderr,
+            flush=True,
+        )
+        os._exit(124)
+
+    signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(timeout_s)
+
 
 def _tk_research_base() -> Path:
     """Base directory for TK Research runs, resolved on the host that runs
@@ -401,7 +458,22 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     try:
         graph = TradingAgentsGraph(debug=False, config=config)
-        final_state, _decision = graph.propagate(args.ticker, args.date)
+        # Per-run wall-clock watchdog (FIX A): arm SIGALRM just before the
+        # LangGraph multi-agent run.  This is the grandchild worker process
+        # (after _daemonize's double-fork); the parent and intermediate child
+        # both exit via os._exit(0) before reaching here, so only the worker
+        # carries the alarm.  On foreground runs (TRADINGRESEARCH_FOREGROUND=1)
+        # there is no fork; the alarm still fires correctly.
+        _run_timeout_s = _run_timeout_seconds()
+        _install_run_watchdog(_run_timeout_s, args.ticker, args.date)
+        try:
+            final_state, _decision = graph.propagate(args.ticker, args.date)
+        finally:
+            # Disarm the watchdog immediately — even if propagate raises.
+            # Keeps atexit/post-processing from being silently killed on a
+            # slow-but-successful run that finishes just before the alarm.
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
         write_research_outputs(final_state, args.output_dir, config=config)
     except ClaudeCodeAuthError as e:
         msg = f"auth error: {e}"

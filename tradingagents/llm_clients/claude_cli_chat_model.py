@@ -27,6 +27,7 @@ import os
 import random
 import shutil
 import subprocess
+import sys
 import time
 from typing import Any, List, Optional
 
@@ -123,13 +124,13 @@ class ClaudeCliChatModel(BaseChatModel):
     steady-state behavior; if a ticker is still hitting this, the prompt
     itself needs trimming (sec_filing.md excerpt instead of full 10-K text)."""
 
-    max_retries: int = 4
+    max_retries: int = 2
     """Retries on a transient `claude -p` failure (non-zero exit / timeout /
-    empty output). The personal subscription intermittently 429s mid-run — the
-    MSFT 2026-05-29 run died when a single Fundamentals-Analyst call exited 1
-    with no stderr, killing a ~10-min run. Each analyst/judge call is now
-    retried with exponential backoff so a transient spike is ridden out instead
-    of aborting the whole run."""
+    empty output). Reduced from 4→2 (2026-06-18): with a per-run wall-clock
+    watchdog now bounding total run time, burning 5 attempts × 1800s/call is
+    no longer acceptable. 3 total attempts (1 initial + 2 retries) still ride
+    out a transient 429 spike while failing fast enough for the watchdog to
+    self-abort a truly wedged run within its budget."""
 
     retry_base_delay: float = 8.0
     """Base seconds for exponential backoff between retries (8, 16, 32, 64 …
@@ -165,9 +166,14 @@ class ClaudeCliChatModel(BaseChatModel):
         # without this a single bad call aborts a ~30-min run (MSFT 2026-05-29
         # died on one Fundamentals-Analyst exit-1). FileNotFoundError is a
         # config error, never retried.
+        # Label for per-call duration log: use the last segment of the model
+        # name (e.g. "opus", "sonnet") so the log line stays concise.
+        call_label = model_arg
+
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
+                _t0 = time.monotonic()
                 result = subprocess.run(
                     cmd,
                     input=prompt,
@@ -176,9 +182,13 @@ class ClaudeCliChatModel(BaseChatModel):
                     check=True,
                     timeout=self.timeout_seconds,
                 )
+                _dur = time.monotonic() - _t0
                 text = result.stdout.strip()
                 if not text:
                     raise RuntimeError("claude CLI returned empty output")
+                # Lightweight per-call duration log so slow nodes are visible
+                # in the run log without changing any behavior.
+                print(f"[claude-cli] {call_label} {_dur:.0f}s", file=sys.stderr, flush=True)
                 message = AIMessage(content=text)
                 return ChatResult(generations=[ChatGeneration(message=message)])
             except FileNotFoundError as e:
