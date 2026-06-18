@@ -340,3 +340,21 @@ def test_format_net_debt_block_includes_period_crosscheck_note():
     assert "sec_filing.md" in block
     assert "10-Q" in block
     assert "disclose" in block.lower() or "crosscheck" in block.lower() or "period" in block.lower()
+
+
+def test_format_net_debt_block_forbids_net_cash_re_derivation():
+    """Root-fix for NOW's recurring $6.42B error: the block must forbid
+    re-deriving net cash by adding long-term/non-current marketable securities
+    or subtracting only long-term debt, and direct use of the authoritative figure."""
+    from tradingagents.agents.utils.net_debt import format_net_debt_block
+    block = format_net_debt_block({
+        "trade_date": "2026-06-16", "as_of_quarter": "2026-03-31",
+        "net_debt": -2751000000.0, "net_debt_source": "yfinance",
+        "total_debt": 2431000000.0, "long_term_debt": 1491000000.0,
+        "current_debt": 940000000.0, "capital_lease_obligations": 940000000.0,
+        "cash_and_equivalents": 2702000000.0,
+        "cash_plus_short_term_investments": 5182000000.0,
+    })
+    assert "Authoritative Net Cash" in block
+    assert "do NOT add long-term or non-current marketable securities" in block
+    assert "do NOT subtract only long-term debt" in block
