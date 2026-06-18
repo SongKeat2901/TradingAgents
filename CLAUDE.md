@@ -138,6 +138,11 @@ text is hardcoded ("TrueKnot Pte. Ltd. · UEN 202608241M · 1 Bukit Batok Cres,
   `…/TK Research/preaudit/<date>-<ticker>/` (default when `--output-dir` omitted); promoted A+ reports
   moved by hand, **by week**, to `…/TK Research/final/wk NN YYYY/<date>-<ticker>/`. Pipeline only writes preaudit.
   Older runs (pre-default) live under `~/.openclaw/data/research/<date>-<ticker>.run-<sha>/`.
+- **⚠️ Canonical paths (verified 2026-06-18) — two different trees, set `TK_RESEARCH_BASE` or runs scatter:**
+  - `final/` is under **`My Drive/True Knot/TK Research/final/wk NN YYYY/`** (note the `True Knot/` prefix; holds wk 22/23/24…). This is `cli/cadence_followup.py`'s `FINAL_BASE`.
+  - The pipeline's **default** preaudit base (`_tk_base()` in `cli/research.py`) is **`My Drive/TK Research`** (NO `True Knot/`) — a *different* tree than `final/`. A run with `TK_RESEARCH_BASE` unset lands in `My Drive/TK Research/preaudit/`, scattered away from `final/` and from the local QC tooling.
+  - **Cadence runners + the bot CLI use `TK_RESEARCH_BASE=$HOME/tkresearch`** so working copies live at **`~/tkresearch/preaudit/<date>-<ticker>`** (where `cli/cadence_followup.py` `DEFAULT_PREAUDIT` + QC look). Always export it for any standalone `tradingresearch` run, or the output won't be found by promote/QC.
+  - There is **no** `~/gsheet-tool/update_register.py`; the Research Summary gsheet digest is done by the bot (LLM) per the `cadence-followup` SKILL.md, not a deterministic script.
 - Telegram delivery: `cli/research_telegram.py` (auto-discovers bot token from
   `~/.openclaw/openclaw.json` on the OpenClaw host)
 
