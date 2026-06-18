@@ -386,6 +386,58 @@ def iter_peer_metric_spans(
             ):
                 continue
 
+        # Phase 9.1 (AMKR wk25 fix): "X vs PEER Y" mis-attribution guard.
+        #
+        # Pattern: "<metric> <value> vs <PEER> <peer_value>" where <value>
+        # belongs to the subject and <peer_value> is the peer's own figure.
+        # The lookback binds <metric>→<value> to <PEER> (the nearest ticker
+        # in lookback), but the "vs <PEER>" immediately after <value> is a
+        # dead giveaway that <value> is the subject's comparison figure, NOT
+        # the peer's.
+        #
+        # Example (real AMKR wk25):
+        #   "ASX forward P/E 36.3x vs ASX 26.8x and KLIC 28.3x"
+        #   → regex finds "forward P/E" → "36.3x", lookback finds ASX
+        #   → but "36.3x vs ASX" means 36.3x = subject's P/E, not ASX's.
+        #
+        # Guard: look at the text immediately after the matched value. If it
+        # starts with (optional whitespace) "vs"/"versus" + the bound ticker,
+        # the captured value belongs to the subject — reject this binding.
+        # Then, if the post-peer forward text also contains a value, emit
+        # that as a new claim for the peer (it IS the peer's own number).
+        #
+        # Conservative: only fire when the post-value text unambiguously
+        # matches "vs <same ticker as nearest>"; no risk of swallowing
+        # genuine peer claims that don't use the "vs PEER value" pattern.
+        _vs_peer_re = re.compile(
+            rf"\s*(?:vs|versus)\s+(?P<vs_ticker>{re.escape(nearest)})\b"
+            rf"(?![A-Za-z\-/])"
+            rf"(?:\s*[=:~≈]?\s*(?P<vs_value>[~≈]?[-−]?\$?[\d.,]+\s*[%x×BM]?))?",
+            re.IGNORECASE,
+        )
+        forward_window = text[mv.end("value"):mv.end("value") + 60]
+        vs_m = _vs_peer_re.match(forward_window)
+        if vs_m:
+            # The captured value is the subject's comparison figure — skip.
+            # But if the post-peer text has a value, emit it as the peer's
+            # own claim (it's the peer's actual stated number).
+            vs_value_raw = (vs_m.group("vs_value") or "").strip()
+            if vs_value_raw:
+                vs_value_start = mv.end("value") + vs_m.start("vs_value")
+                vs_value_end = mv.end("value") + vs_m.end("vs_value")
+                seen_offsets.add(mv.start())  # already added above
+                line_no = _line_no(text, mv.start())
+                line_start = text.rfind("\n", 0, mv.start()) + 1
+                line_end = text.find("\n", mv.end())
+                if line_end == -1:
+                    line_end = len(text)
+                match_text = text[line_start:line_end].strip()
+                results.append((
+                    nearest, mv.group("metric"), vs_value_raw, line_no,
+                    match_text, vs_value_start, vs_value_end,
+                ))
+            continue  # reject original binding (it's the subject's value)
+
         line_no = _line_no(text, mv.start())
         line_start = text.rfind("\n", 0, mv.start()) + 1
         line_end = text.find("\n", mv.end())

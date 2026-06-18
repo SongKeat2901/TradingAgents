@@ -779,3 +779,152 @@ def test_peer_net_debt_fx_conversion_not_flagged(tmp_path):
     ok = "- **ASX net debt ~$5.0B USD equivalent** (159.8B TWD ÷ 32), ND/EBITDA 1.27x"
     v = validate_peer_metrics(ok, "analyst_fundamentals.md", pr, peers, main_ticker="AMKR")
     assert not any(x.metric.lower().strip() == "net debt" for x in v)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9.1: "X vs PEER Y" mis-attribution guard
+# ---------------------------------------------------------------------------
+
+def _write_amkr_peer_data(tmp_path):
+    """AMKR wk25 peer ratios fixture: ASX and KLIC with known forward P/E."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-06-05",
+        "_unavailable": [],
+        "ASX": {
+            "latest_quarter_capex_to_revenue": 8.5,
+            "latest_quarter_op_margin": 15.2,
+            "ttm_pe": 32.1,
+            "forward_pe": 26.8,
+            "net_debt": 120_000_000,
+            "ttm_ebitda": 950_000_000,
+            "nd_ebitda": 0.13,
+        },
+        "KLIC": {
+            "latest_quarter_capex_to_revenue": 3.2,
+            "latest_quarter_op_margin": 12.4,
+            "ttm_pe": 28.9,
+            "forward_pe": 28.3,
+            "net_debt": -80_000_000,
+            "ttm_ebitda": 310_000_000,
+            "nd_ebitda": -0.26,
+        },
+    }
+    peers = {"ASX": {"ticker": "ASX"}, "KLIC": {"ticker": "KLIC"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+    return raw
+
+
+def test_phase_9_1_amkr_vs_peer_no_false_wrong_peer_metric(tmp_path):
+    """AMKR wk25 false HOLD: debate_bull_bear.md contained
+    "forward P/E 36.3x vs ASX 26.8x and KLIC 28.3x".
+
+    36.3x is AMKR's own forward P/E (subject figure); 26.8x is ASX's
+    peer figure (correct in peer_ratios.json) and 28.3x is KLIC's (also
+    correct). The validator was binding 36.3x to ASX (the ticker that
+    follows 'vs') and flagging it as wrong_peer_metric because ASX's
+    actual forward P/E is 26.8x, not 36.3x.
+
+    Fix (Phase 9.1): when a matched value is immediately followed by
+    'vs <PEER>' in the forward text, the value belongs to the subject
+    — do NOT attribute it to that peer. The post-peer value (26.8x) IS
+    the peer's own number and must still be checked/passed if correct.
+
+    The text shape that triggers the bug: "ASX forward P/E 36.3x vs ASX
+    26.8x" — ASX appears in lookback before the metric, so the regex
+    binds 36.3x to ASX. But "36.3x vs ASX" means 36.3x is subject's.
+    """
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_amkr_peer_data(tmp_path)
+
+    # Text shape that reproduces the bug: ASX is the nearest ticker in
+    # lookback (appears before "forward P/E"), so 36.3x gets bound to ASX.
+    # But the "vs ASX" immediately after 36.3x signals it's the subject's
+    # comparison figure, not ASX's own value.
+    text = (
+        "ASX forward P/E 36.3x vs ASX 26.8x and KLIC 28.3x, "
+        "reflecting AMKR's premium valuation vs its closest comps."
+    )
+
+    violations = validate_peer_metrics(
+        text, "debate_bull_bear.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="AMKR",
+    )
+
+    # The subject's 36.3x must NOT appear as a wrong_peer_metric for ASX.
+    asx_36 = [v for v in violations
+               if v.ticker == "ASX" and "36.3" in str(v.claimed_value)]
+    assert asx_36 == [], (
+        "Phase 9.1: AMKR's own forward P/E 36.3x was mis-bound to ASX "
+        f"and flagged; got: {asx_36}"
+    )
+
+
+def test_phase_9_1_genuine_fabrication_without_vs_still_caught(tmp_path):
+    """Regression: a genuine wrong peer claim NOT preceded by 'vs <PEER>'
+    must still be flagged.
+
+    Prose: "ASX forward P/E 99.9x" — ASX is the nearest ticker before the
+    metric, and 99.9x is clearly wrong vs actual 26.8x. No 'vs' pattern.
+    This must remain a MATERIAL wrong_peer_metric violation.
+    """
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_amkr_peer_data(tmp_path)
+
+    text = "ASX forward P/E 99.9x, which looks expensive vs the sector."
+
+    violations = validate_peer_metrics(
+        text, "debate_bull_bear.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="AMKR",
+    )
+
+    asx_vios = [v for v in violations
+                if v.ticker == "ASX"
+                and v.type == "wrong_peer_metric"
+                and "forward p/e" in v.metric.lower()]
+    assert len(asx_vios) >= 1, (
+        f"Phase 9.1 regression: genuine fabrication 'ASX forward P/E 99.9x' "
+        f"was NOT caught; violations={violations}"
+    )
+
+
+def test_phase_9_1_post_vs_peer_value_still_checked_if_wrong(tmp_path):
+    """The value AFTER 'vs ASX' is genuinely the peer's own number.
+    When that post-peer value is wrong, the validator must still flag it.
+
+    Prose: "ASX forward P/E 36.3x vs ASX 99.9x" — 36.3x is subject's
+    comparison figure (skip because it's before 'vs ASX'), 99.9x is
+    ASX's claimed value which is wrong (actual 26.8x) → MUST flag.
+
+    This verifies the guard is surgical: only the pre-'vs' value is
+    suppressed; the post-peer value is still validated.
+    """
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_amkr_peer_data(tmp_path)
+
+    # 99.9x appears AFTER "vs ASX", so it's ASX's own stated forward P/E
+    # — and it's wrong vs canonical 26.8x. Must flag.
+    text = (
+        "ASX forward P/E 36.3x vs ASX 99.9x, "
+        "a huge premium to its nearest semiconductor peer."
+    )
+
+    violations = validate_peer_metrics(
+        text, "debate_bull_bear.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="AMKR",
+    )
+
+    # 99.9x attributed to ASX must flag (ASX actual forward_pe=26.8)
+    asx_99 = [v for v in violations
+               if v.ticker == "ASX"
+               and v.type == "wrong_peer_metric"
+               and "99.9" in str(v.claimed_value)]
+    assert len(asx_99) >= 1, (
+        "Phase 9.1: wrong post-vs peer value 'ASX 99.9x' was NOT flagged; "
+        f"violations={[(v.ticker, v.metric, v.claimed_value) for v in violations]}"
+    )
