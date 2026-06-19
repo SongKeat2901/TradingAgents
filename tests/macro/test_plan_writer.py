@@ -38,6 +38,28 @@ def test_build_payload_has_regime_board_and_rows():
     assert row["pdf_link"] == "http://x/AAPL.pdf"
 
 
+def test_build_payload_company_names_populated():
+    """company_names dict → row["company"] carries the full name."""
+    payload = plan_writer.build_payload(
+        _regime(), [_bias("AAPL")], pdf_links={},
+        company_names={"AAPL": "Apple Inc."})
+    assert payload["rows"][0]["company"] == "Apple Inc."
+
+
+def test_build_payload_company_names_default_empty():
+    """No company_names arg → row["company"] is blank string."""
+    payload = plan_writer.build_payload(_regime(), [_bias("AAPL")], pdf_links={})
+    assert payload["rows"][0]["company"] == ""
+
+
+def test_build_payload_company_names_missing_ticker():
+    """company_names present but ticker not in it → row["company"] is blank string."""
+    payload = plan_writer.build_payload(
+        _regime(), [_bias("MSFT")], pdf_links={},
+        company_names={"AAPL": "Apple Inc."})
+    assert payload["rows"][0]["company"] == ""
+
+
 def test_rows_sorted_by_adjusted_ev_desc():
     a = StockBias("AAA", "BUY", "", "G", 0.05, 0.0, 0.05, 0.5, "")
     b = StockBias("BBB", "BUY", "", "G", 0.20, 0.0, 0.20, 0.5, "")
@@ -60,26 +82,29 @@ def test_pdf_links_from_manifest_build_drive_urls(tmp_path):
 
 
 def test_to_grid_pads_to_constant_height_with_header_and_data():
+    # Updated for 18-col layout: "Company" inserted after "Ticker" (col 1).
     from tradingagents.macro.config import SHEET_MAX_ROWS
     payload = plan_writer.build_payload(
         _regime(), [_bias()], pdf_links={"AAPL": "http://x/AAPL.pdf"},
         levels={"AAPL": {"intrinsic_fv": 280.0, "mos_pct": 0.12,
                          "bear": 180.0, "target": 300.0, "bull": 340.0,
-                         "hard_stop": 170.0}})
+                         "hard_stop": 170.0}},
+        company_names={"AAPL": "Apple Inc."})
     grid = plan_writer.to_grid(payload)
     assert len(grid) == SHEET_MAX_ROWS
-    assert all(len(row) == 17 for row in grid)        # rectangular, 17 cols
+    assert all(len(row) == 18 for row in grid)        # rectangular, 18 cols (Company added)
     header = grid[4]
-    assert header[0] == "Ticker" and header[-1] == "Research"
-    assert header[10] == "Intrinsic FV" and header[11] == "Margin of Safety %"
+    assert header[0] == "Ticker" and header[1] == "Company" and header[-1] == "Research"
+    assert header[11] == "Intrinsic FV" and header[12] == "Margin of Safety %"
     data_row = grid[5]
     assert data_row[0] == "AAPL"
-    assert data_row[6] == 0.15                         # adjusted_ev_pct (raw number; % via col format)
-    assert data_row[9] == '=GOOGLEFINANCE("AAPL","price")'  # live px, no fallback (errors visibly)
-    assert data_row[10] == 280.0                       # intrinsic fair value (raw; $ via col format)
-    assert data_row[11] == 0.12                        # margin of safety (raw number)
-    assert data_row[15] == 170.0                       # hard_stop (raw number)
-    assert grid[-1] == [""] * 17
+    assert data_row[1] == "Apple Inc."                # company name at index 1
+    assert data_row[7] == 0.15                         # adjusted_ev_pct shifted right by 1
+    assert data_row[10] == '=GOOGLEFINANCE("AAPL","price")'  # live px shifted right by 1
+    assert data_row[11] == 280.0                       # intrinsic fair value shifted right by 1
+    assert data_row[12] == 0.12                        # margin of safety shifted right by 1
+    assert data_row[16] == 170.0                       # hard_stop shifted right by 1
+    assert grid[-1] == [""] * 18
 
 
 def test_write_to_sheet_invokes_gog_with_values_json(monkeypatch):
@@ -104,6 +129,18 @@ def test_write_to_sheet_tab_prefixes_range_and_omits_account(monkeypatch):
                                runner=lambda cmd, check: calls.append(cmd))
     assert calls[0][4] == "Macro!A1"
     assert "-a" not in calls[0]                 # no account → no -a flag
+
+
+def test_to_grid_company_column_placement():
+    """'Company' is right after 'Ticker' in the header; data row aligns with it."""
+    payload = plan_writer.build_payload(
+        _regime(), [_bias("MSFT")], pdf_links={},
+        company_names={"MSFT": "Microsoft Corporation"})
+    grid = plan_writer.to_grid(payload)
+    header = grid[4]
+    assert header.index("Company") == header.index("Ticker") + 1
+    data_row = grid[5]
+    assert data_row[1] == "Microsoft Corporation"
 
 
 def test_to_grid_stamps_generated_at():

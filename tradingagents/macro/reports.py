@@ -49,6 +49,20 @@ def load_base_ev(run_dir: Path) -> BaseEV | None:
     )
 
 
+def load_company_name(run_dir: str | Path) -> str:
+    """Full company name from <run_dir>/raw/financials.json ('Name:' line). '' if unavailable."""
+    import re
+    if not run_dir:
+        return ""
+    p = Path(run_dir) / "raw" / "financials.json"
+    try:
+        fund = json.loads(p.read_text()).get("fundamentals", "")
+    except (OSError, ValueError):
+        return ""
+    m = re.search(r"^Name:\s*(.+)$", fund, re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
 def load_intrinsic(run_dir: str | Path) -> dict | None:
     """Read raw/intrinsic_value.json → {fair_value, margin_of_safety_pct, profile}.
 

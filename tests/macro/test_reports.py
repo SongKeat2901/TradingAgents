@@ -132,3 +132,34 @@ def test_load_intrinsic_null_fair_value(tmp_path):
          "margin_of_safety_pct": None}))
     out = reports.load_intrinsic(d)
     assert out["fair_value"] is None and out["profile"] == "UNPROFITABLE"
+
+
+def test_load_company_name_reads_name_line(tmp_path):
+    import json as _json
+    d = _run_dir(tmp_path)
+    raw = d / "raw"
+    raw.mkdir()
+    (raw / "financials.json").write_text(_json.dumps(
+        {"fundamentals": "Name: Test Corp\nSector: Technology\nPE: 22.5\n"}))
+    assert reports.load_company_name(d) == "Test Corp"
+
+
+def test_load_company_name_missing_file_returns_empty(tmp_path):
+    d = _run_dir(tmp_path)
+    # no raw/financials.json present
+    assert reports.load_company_name(d) == ""
+
+
+def test_load_company_name_no_name_line_returns_empty(tmp_path):
+    import json as _json
+    d = _run_dir(tmp_path)
+    raw = d / "raw"
+    raw.mkdir()
+    (raw / "financials.json").write_text(_json.dumps(
+        {"fundamentals": "Sector: Technology\nPE: 22.5\n"}))
+    assert reports.load_company_name(d) == ""
+
+
+def test_load_company_name_empty_run_dir_returns_empty():
+    assert reports.load_company_name("") == ""
+    assert reports.load_company_name(None) == ""

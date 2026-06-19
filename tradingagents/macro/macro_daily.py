@@ -57,6 +57,7 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True,
                         len(base_evs), len(dropped), ",".join(sorted(dropped)))
     biases = []
     levels = {}
+    company_names = {}
     for ticker, be in base_evs.items():
         try:
             px = macro_data.load_prices(ticker, as_of)
@@ -75,10 +76,11 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True,
             "intrinsic_fv": intr.get("fair_value"),
             "mos_pct": intr.get("margin_of_safety_pct"),
         }
+        company_names[ticker] = reports_mod.load_company_name(be.run_dir)
 
     # 3. Payload + write
     pdf_links = plan_writer.pdf_links_from_manifest(manifest_path) if manifest_path else {}
-    payload = plan_writer.build_payload(regime, biases, pdf_links, levels)
+    payload = plan_writer.build_payload(regime, biases, pdf_links, levels, company_names)
     if write:
         _stamp = datetime.now().strftime("%Y-%m-%d %H:%M SGT")
         plan_writer.write_to_sheet(plan_writer.to_grid(payload, _stamp), sheet_id)

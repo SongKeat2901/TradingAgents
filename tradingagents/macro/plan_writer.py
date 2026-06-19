@@ -38,19 +38,23 @@ def pdf_links_from_manifest(path: Path) -> dict[str, str]:
 
 
 def build_payload(regime: Regime, biases: list[StockBias],
-                  pdf_links: dict[str, str], levels: dict | None = None) -> dict:
+                  pdf_links: dict[str, str], levels: dict | None = None,
+                  company_names: dict | None = None) -> dict:
     """Pure: assemble the regime board + per-ticker rows, rows sorted by
     adjusted EV descending (best-positioned first). `levels` maps ticker ->
     {intrinsic_fv, mos_pct, bear, target, bull, hard_stop} (all optional).
+    `company_names` maps ticker -> full company name ('' if absent/unknown).
     Last Px is a live GOOGLEFINANCE formula keyed off the ticker, so no static
     price is threaded through here."""
     levels = levels or {}
+    company_names = company_names or {}
     rows = []
     for sb in sorted(biases,
                      key=lambda b: (b.adjusted_ev_pct is None, -(b.adjusted_ev_pct or 0))):
         lv = levels.get(sb.ticker, {})
         rows.append({
             "ticker": sb.ticker,
+            "company": company_names.get(sb.ticker, ""),
             "rating": sb.rating,
             "driver": sb.driver,
             "macro_bias": sb.macro_bias,
@@ -96,14 +100,14 @@ def to_grid(payload: dict, generated_at: str | None = None) -> list[list]:
     grid.append(["Status"] + [f'{p["status"]} ({p["score"]:+.2f})'
                               for p in payload["pillars"]])
     grid.append([])
-    header = ["Ticker", "Rating", "Macro Driver", "Bias", "Research EV%",
+    header = ["Ticker", "Company", "Rating", "Macro Driver", "Bias", "Research EV%",
               "Macro Δ%", "Adjusted EV%", "Conviction", "Action",
               "Last Px", "Intrinsic FV", "Margin of Safety %",
               "Bear", "Target", "Bull", "Hard Stop", "Research"]
     grid.append(header)
     for row in payload["rows"]:
         grid.append([
-            row["ticker"], row["rating"], row["driver"], row["macro_bias"],
+            row["ticker"], row.get("company", ""), row["rating"], row["driver"], row["macro_bias"],
             _n(row["research_ev_pct"]), _n(row["macro_delta_pct"]),
             _n(row["adjusted_ev_pct"]), _n(row["conviction"]), row["action"],
             _gfinance(row["ticker"]),
