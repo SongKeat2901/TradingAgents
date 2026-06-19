@@ -80,7 +80,8 @@ def run(reports_dir, sheet_id, manifest_path, as_of=None, write=True,
     pdf_links = plan_writer.pdf_links_from_manifest(manifest_path) if manifest_path else {}
     payload = plan_writer.build_payload(regime, biases, pdf_links, levels)
     if write:
-        plan_writer.write_to_sheet(plan_writer.to_grid(payload), sheet_id)
+        _stamp = datetime.now().strftime("%Y-%m-%d %H:%M SGT")
+        plan_writer.write_to_sheet(plan_writer.to_grid(payload, _stamp), sheet_id)
     return payload
 
 

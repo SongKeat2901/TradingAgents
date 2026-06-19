@@ -104,3 +104,14 @@ def test_write_to_sheet_tab_prefixes_range_and_omits_account(monkeypatch):
                                runner=lambda cmd, check: calls.append(cmd))
     assert calls[0][4] == "Macro!A1"
     assert "-a" not in calls[0]                 # no account → no -a flag
+
+
+def test_to_grid_stamps_generated_at():
+    """The regime header row carries a 'Last updated' stamp when generated_at is
+    supplied (Trading Plan timestamp); default (no arg) leaves the row unchanged."""
+    from tradingagents.macro.plan_writer import to_grid
+    payload = {"regime": {"score": 0.1, "label": "Neutral", "quadrant": "Q",
+                          "gate": "GO", "red_count": 0}, "pillars": [], "rows": []}
+    g = to_grid(payload, "2026-06-19 10:00 SGT")
+    assert "Last updated:" in g[0] and "2026-06-19 10:00 SGT" in g[0]
+    assert "Last updated:" not in to_grid(payload)[0]

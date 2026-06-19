@@ -79,13 +79,19 @@ def build_payload(regime: Regime, biases: list[StockBias],
     }
 
 
-def to_grid(payload: dict) -> list[list]:
+def to_grid(payload: dict, generated_at: str | None = None) -> list[list]:
     """Flatten the payload into a 2-D cell grid for a full-range overwrite
-    (idempotent: same range, replaced in place — no appends, no dupes)."""
+    (idempotent: same range, replaced in place — no appends, no dupes).
+
+    `generated_at` (when supplied) stamps a "Last updated: <ts>" onto the regime
+    header row so the sheet shows when it was last refreshed."""
     grid: list[list] = []
     r = payload["regime"]
-    grid.append(["MACRO REGIME", r["label"], "Gate:", r["gate"],
-                 "Score:", r["score"], "Red pillars:", r["red_count"]])
+    regime_row = ["MACRO REGIME", r["label"], "Gate:", r["gate"],
+                  "Score:", r["score"], "Red pillars:", r["red_count"]]
+    if generated_at:
+        regime_row += ["Last updated:", generated_at]
+    grid.append(regime_row)
     grid.append(["Pillar"] + [p["name"] for p in payload["pillars"]])
     grid.append(["Status"] + [f'{p["status"]} ({p["score"]:+.2f})'
                               for p in payload["pillars"]])
