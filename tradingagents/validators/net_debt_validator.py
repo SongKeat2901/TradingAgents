@@ -52,6 +52,152 @@ from tradingagents.validators._helpers import (
     line_no as _line_no,
 )
 
+# ---------------------------------------------------------------------------
+# Phase 10 — wk25 context guards (off-balance-sheet / peer / pro-forma /
+# historical).  Applied in validate_net_debt_claims AFTER extraction so that
+# the extractor is untouched and all existing delta-bridge / tail guards keep
+# working.  The window used for these checks is ±80 chars around the claimed
+# value string in the claim's match_text.  This is narrower than the whole
+# paragraph so incidental mentions elsewhere in the line don't over-skip.
+# ---------------------------------------------------------------------------
+
+_GUARD_WINDOW = 80  # chars on each side of the value string
+
+# Off-balance-sheet commitment — NOT a balance-sheet debt figure.
+_OBS_RE = re.compile(r"off[- ]balance[- ]sheet", re.IGNORECASE)
+
+# Forward / pro-forma estimates — NOT the current net-debt position.
+_PROFORMA_RE = re.compile(
+    r"\b(?:pro[- ]forma|forward|estimate[sd]?|post[- ]close|post[- ]acquisition"
+    r"|rises?\s+to|would\s+rise)\b",
+    re.IGNORECASE,
+)
+
+# Historical / pre-event FROM side of "from $X to $Y".
+# We require the word "from" to appear IMMEDIATELY before the dollar figure
+# in the context window so we only skip the FROM side, not the TO side.
+_HIST_FROM_TO_RE = re.compile(
+    r"\bfrom\s+\$[\d,]+(?:\.\d+)?\s*[BM]?\s+to\b",
+    re.IGNORECASE,
+)
+# Other strong historical qualifiers in the window.
+_HIST_OTHER_RE = re.compile(
+    r"\b(?:before\s+|prior\s+to\b|pre[-\s](?:deal|acquisition|merger"
+    r"|transaction|close|closing|wiz|offer)|was\s+\$)\b",
+    re.IGNORECASE,
+)
+
+
+def _context_window(match_text: str, value_raw: str) -> str:
+    """Return the ±GUARD_WINDOW-char window around value_raw in match_text.
+
+    If value_raw appears multiple times (rare), uses the first occurrence.
+    Falls back to the whole match_text if not found.
+    """
+    pos = match_text.find(value_raw)
+    if pos == -1:
+        return match_text  # fallback: whole line
+    start = max(0, pos - _GUARD_WINDOW)
+    end = min(len(match_text), pos + len(value_raw) + _GUARD_WINDOW)
+    return match_text[start:end]
+
+
+def _is_off_balance_sheet_context(window: str) -> bool:
+    """True when the context window explicitly marks the figure as an
+    off-balance-sheet item (commitment, lease, etc.)."""
+    return bool(_OBS_RE.search(window))
+
+
+def _is_proforma_or_forward_context(window: str) -> bool:
+    """True when the context window explicitly marks the figure as a
+    forward, pro-forma, or post-close estimate — not a current position."""
+    return bool(_PROFORMA_RE.search(window))
+
+
+def _is_historical_from_side(match_text: str, value_raw: str) -> bool:
+    """True when value_raw is the FROM side of 'from $X to $Y' in the text.
+
+    We look for the 'from $X to' pattern where $X is value_raw (with some
+    tolerance for whitespace/unit variations).  We also check for other
+    explicit pre-event qualifiers in the ±80-char window.
+    """
+    window = _context_window(match_text, value_raw)
+    if _HIST_OTHER_RE.search(window):
+        return True
+    # Check the "from $X to" form: find the pattern and confirm value_raw
+    # appears as the X part.
+    for m in _HIST_FROM_TO_RE.finditer(match_text):
+        # The segment from m.start() should contain value_raw right after "from "
+        segment = match_text[m.start(): m.start() + len(value_raw) + 20]
+        if value_raw in segment:
+            return True
+    return False
+
+
+def _load_all_peer_tickers(raw_dir: Path) -> set[str]:
+    """Load peer tickers from raw/peers.json (any-length uppercase keys)
+    and from raw/peer_ratios.json (same format used by peer_metric_validator).
+
+    Returns a set of uppercase strings.  Missing / malformed files are
+    silently ignored (the guard degrades to the existing 2-5 char regex path).
+    """
+    tickers: set[str] = set()
+    for fname in ("peers.json", "peer_ratios.json"):
+        p = raw_dir / fname
+        if not p.exists():
+            continue
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(d, dict):
+            continue
+        for k in d:
+            if isinstance(k, str) and k.upper() == k and len(k) >= 1:
+                tickers.add(k)
+    return tickers
+
+
+# Short-prefix context window for peer detection: how many chars before the
+# dollar figure we scan for a peer ticker symbol (e.g. "vs T (" is ~6 chars).
+_PEER_PREFIX_WINDOW = 30
+
+
+def _is_peer_attributed_with_full_ticker_list(
+    match_text: str,
+    value_raw: str,
+    main_ticker: str | None,
+    peer_tickers: set[str],
+) -> bool:
+    """True when a PEER ticker (including 1-letter ones) appears within
+    _PEER_PREFIX_WINDOW chars BEFORE the dollar figure in match_text, AND that
+    ticker is different from main_ticker and is in the known peer list.
+
+    This supplements the existing _claim_attributed_to_other_ticker() which
+    only recognises 2-5 letter tickers via the full paragraph scan.
+    """
+    if not peer_tickers:
+        return False
+    main_upper = (main_ticker or "").upper()
+    pos = match_text.find(value_raw)
+    if pos == -1:
+        return False
+    prefix = match_text[max(0, pos - _PEER_PREFIX_WINDOW): pos]
+    # Look for any peer ticker (any length, including 1-letter) in the prefix.
+    # We require a word boundary before the ticker and a non-letter delimiter
+    # after (space, '(', ':', '\'s', etc.) to avoid matching substrings.
+    for ticker in peer_tickers:
+        if ticker == main_upper:
+            continue
+        # Build a pattern: \bTICKER(?:'s|\s|[(]:,)
+        pat = re.compile(
+            r"\b" + re.escape(ticker) + r"(?:'s|\s|[\(:\,]|$)",
+            re.IGNORECASE,
+        )
+        if pat.search(prefix):
+            return True
+    return False
+
 
 @dataclass(frozen=True)
 class NetDebtClaim:
@@ -422,11 +568,46 @@ def validate_net_debt_claims(
     if not canonicals:
         return []  # net_debt cells unavailable; can't validate
 
+    # Phase 10: load peer tickers from raw/ directory (siblings to net_debt.json)
+    # so the 1-letter ticker guard can use the actual peer list (e.g. "T" for AT&T).
+    raw_dir = net_debt_json_path.parent
+    _peer_tickers = _load_all_peer_tickers(raw_dir)
+
     violations: list[NetDebtViolation] = []
     for claim in claims:
-        # Skip claims attributed to peer tickers (handled by Phase 7.3)
+        # Skip claims attributed to peer tickers (handled by Phase 7.3).
+        # This covers 2-5 letter tickers via the existing paragraph-scan path.
         if _claim_attributed_to_other_ticker(claim.match_text, main_ticker):
             continue
+
+        # Phase 10 — context guards: skip claims that are explicitly marked as
+        # NOT the subject's current net debt.  We use a ±80-char window around
+        # the claimed dollar figure so incidental mentions elsewhere in the same
+        # paragraph don't over-skip.  When uncertain, we fall through and flag.
+        window = _context_window(claim.match_text, claim.value_raw)
+
+        # Guard 1: off-balance-sheet commitment — not on the balance sheet.
+        if _is_off_balance_sheet_context(window):
+            continue
+
+        # Guard 2: forward / pro-forma estimate — not the current position.
+        if _is_proforma_or_forward_context(window):
+            continue
+
+        # Guard 3: historical from-side — "from $X to $Y"; also catches
+        # "before the …", "prior to", "was $X" qualifiers.
+        if _is_historical_from_side(claim.match_text, claim.value_raw):
+            continue
+
+        # Guard 4: peer-attributed via 1-letter (or any-length) peer ticker
+        # appearing immediately before the dollar figure in the match_text.
+        # Supplements _claim_attributed_to_other_ticker which only covers
+        # 2-5 letter tickers.
+        if _is_peer_attributed_with_full_ticker_list(
+            claim.match_text, claim.value_raw, main_ticker, _peer_tickers
+        ):
+            continue
+
         # Find closest canonical derivation
         best_label, best_val = min(
             canonicals,

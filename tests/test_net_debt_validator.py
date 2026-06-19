@@ -874,3 +874,240 @@ def test_ebitda_denominator_after_division_glyph_not_bound():
     assert all(x.value_raw != "$27.44B" for x in c), [(x.value_raw, x.label) for x in c]
     c2 = extract_net_debt_claims("$5.0B net debt × 2 ignored $99.9B EBITDA")
     assert all(x.value_raw != "$99.9B" for x in c2)
+
+
+# ---------------------------------------------------------------------------
+# Phase 10 — wk25 FP guards: off-balance-sheet, peer (1-letter), pro-forma,
+# historical (from→to FROM side).
+# ---------------------------------------------------------------------------
+
+def _write_orcl_net_debt(tmp_path):
+    """ORCL-like net_debt.json: yfinance net_debt $96.15B."""
+    data = {
+        "trade_date": "2026-06-05",
+        "as_of_quarter": "2026-02-28",
+        "financial_currency": "USD",
+        "net_debt": 96_150_000_000.0,
+        "total_debt": 88_470_000_000.0,
+        "long_term_debt": 85_470_000_000.0,
+        "current_debt": 3_000_000_000.0,
+        "capital_lease_obligations": 8_000_000_000.0,
+        "cash_and_equivalents": 11_680_000_000.0,
+        "short_term_investments": None,
+        "cash_plus_short_term_investments": 11_680_000_000.0,
+        "unavailable": False,
+    }
+    p = tmp_path / "raw" / "net_debt.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def _write_txn_net_debt(tmp_path):
+    """TXN-like net_debt.json: yfinance net_debt $10.50B."""
+    data = {
+        "trade_date": "2026-06-05",
+        "as_of_quarter": "2026-03-31",
+        "financial_currency": "USD",
+        "net_debt": 10_500_000_000.0,
+        "total_debt": 13_800_000_000.0,
+        "long_term_debt": 12_800_000_000.0,
+        "current_debt": 1_000_000_000.0,
+        "capital_lease_obligations": 500_000_000.0,
+        "cash_and_equivalents": 3_300_000_000.0,
+        "short_term_investments": None,
+        "cash_plus_short_term_investments": 3_300_000_000.0,
+        "unavailable": False,
+    }
+    p = tmp_path / "raw" / "net_debt.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def _write_googl_net_debt(tmp_path):
+    """GOOGL-like net_debt.json: yfinance net_debt (negative = net cash) -$39.44B."""
+    data = {
+        "trade_date": "2026-06-05",
+        "as_of_quarter": "2026-03-31",
+        "financial_currency": "USD",
+        "net_debt": -39_440_000_000.0,
+        "total_debt": 28_950_000_000.0,
+        "long_term_debt": 14_760_000_000.0,
+        "current_debt": 14_190_000_000.0,
+        "capital_lease_obligations": 0.0,
+        "cash_and_equivalents": 30_760_000_000.0,
+        "short_term_investments": None,
+        "cash_plus_short_term_investments": 68_390_000_000.0,
+        "unavailable": False,
+    }
+    p = tmp_path / "raw" / "net_debt.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def _write_sats_net_debt(tmp_path):
+    """SATS-like net_debt.json: yfinance net_debt $5.10B (EchoStar/SATS)."""
+    data = {
+        "trade_date": "2026-06-05",
+        "as_of_quarter": "2026-03-31",
+        "financial_currency": "USD",
+        "net_debt": 5_100_000_000.0,
+        "total_debt": 5_900_000_000.0,
+        "long_term_debt": 5_800_000_000.0,
+        "current_debt": 100_000_000.0,
+        "capital_lease_obligations": 0.0,
+        "cash_and_equivalents": 800_000_000.0,
+        "short_term_investments": None,
+        "cash_plus_short_term_investments": 800_000_000.0,
+        "unavailable": False,
+    }
+    p = tmp_path / "raw" / "net_debt.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def _write_peers(tmp_path, tickers: list[str]):
+    """Write a minimal peers.json with the given ticker keys."""
+    data = {t: {"ticker": t} for t in tickers}
+    p = tmp_path / "raw" / "peers.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def _make_claim(c, file="analyst_fundamentals.md"):
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+    return NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file=file,
+        line_no=c.line_no, match_text=c.match_text,
+    )
+
+
+def test_wk25_orcl_off_balance_sheet_skipped(tmp_path):
+    """ORCL wk25 FP: '$261B in off-balance-sheet data-center commitments' is
+    NOT the subject's current net debt. The validator must skip it.
+    The real net debt ($96.15B) must NOT be flagged."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd_path = _write_orcl_net_debt(tmp_path)
+    _write_peers(tmp_path, ["MSFT", "AMZN", "GOOGL"])
+
+    text = (
+        "ORCL carries $96.15B net debt and $261B in off-balance-sheet "
+        "data-center commitments that do not appear on the balance sheet."
+    )
+    claims = [_make_claim(c) for c in extract_net_debt_claims(text)]
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="ORCL")
+
+    # $261B off-balance-sheet must be skipped (no definitional_drift violation for it)
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    flagged_values = {v.claimed_dollars for v in drift}
+    assert 261_000_000_000.0 not in flagged_values, (
+        f"$261B (off-balance-sheet commitment) wrongly flagged as drift: {drift}"
+    )
+    # $96.15B is the real net debt and must also not be flagged
+    assert 96_150_000_000.0 not in flagged_values, (
+        f"$96.15B (correct net debt) should pass validation"
+    )
+
+
+def test_wk25_sats_peer_one_letter_ticker_skipped(tmp_path):
+    """SATS wk25 FP: 'vs T ($117.87B net debt, 2.65x ND/EBITDA)' — AT&T's
+    single-letter ticker 'T' is in peers.json but the existing PEER_TICKER_PATTERN
+    requires 2-5 chars so it would NOT catch T. The Phase 10 guard uses the
+    peers.json list directly to detect 1-letter tickers."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd_path = _write_sats_net_debt(tmp_path)
+    # T (AT&T) is in SATS's peer list
+    _write_peers(tmp_path, ["T", "DISH", "VZ", "TMUS"])
+
+    text = (
+        "vs T ($117.87B net debt, 2.65x ND/EBITDA): AT&T's spectrum "
+        "counterparty; SATS net debt $5.10B."
+    )
+    claims = [_make_claim(c) for c in extract_net_debt_claims(text)]
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="SATS")
+
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    flagged_values = {v.claimed_dollars for v in drift}
+    assert 117_870_000_000.0 not in flagged_values, (
+        f"$117.87B (AT&T peer T's net debt) wrongly flagged as SATS drift: {drift}"
+    )
+    # SATS's own $5.10B must pass clean
+    assert 5_100_000_000.0 not in flagged_values
+
+
+def test_wk25_txn_pro_forma_forward_skipped(tmp_path):
+    """TXN wk25 FP: 'Silicon Labs ~$16.5B pro-forma net debt … is a forward
+    H1 2027 estimate, not a current cell (current authoritative Net Debt $10.50B)'
+    — $16.5B is a labeled pro-forma forward estimate; current $10.50B matches
+    canonical."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd_path = _write_txn_net_debt(tmp_path)
+    _write_peers(tmp_path, ["MCHP", "ON", "STM", "SLAB"])
+
+    text = (
+        "Silicon Labs ~$16.5B pro-forma net debt post-acquisition is a "
+        "forward H1 2027 estimate, not a current cell "
+        "(current authoritative Net Debt $10.50B per pm_brief.md)."
+    )
+    claims = [_make_claim(c) for c in extract_net_debt_claims(text)]
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="TXN")
+
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    flagged_values = {v.claimed_dollars for v in drift}
+    assert 16_500_000_000.0 not in flagged_values, (
+        f"$16.5B pro-forma forward estimate wrongly flagged as drift: {drift}"
+    )
+    # Current $10.50B must also pass
+    assert 10_500_000_000.0 not in flagged_values
+
+
+def test_wk25_googl_historical_from_side_skipped(tmp_path):
+    """GOOGL wk25 FP: 'Before the Wiz transaction … net debt (yfinance)
+    from $15.84B to $39.44B' — $15.84B is the labeled pre-event historical
+    figure (FROM side of a from→to range); current is $39.44B.
+    The FROM figure must be skipped; current $39.44B must not be flagged."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd_path = _write_googl_net_debt(tmp_path)
+    _write_peers(tmp_path, ["MSFT", "META", "AMZN"])
+
+    # "from $15.84B to $39.44B" — bridge between 'net debt' and '$15.84B'
+    # is 'from', which is NOT in the existing delta-bridge guard. The Phase
+    # 10 historical guard must catch it via "from $X to" pattern in context.
+    text = (
+        "Before the Wiz transaction closed, GOOGL net debt (yfinance) "
+        "from $15.84B to $39.44B — reflecting the acquisition financing."
+    )
+    claims = [_make_claim(c) for c in extract_net_debt_claims(text)]
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="GOOGL")
+
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    flagged_values = {v.claimed_dollars for v in drift}
+    assert 15_840_000_000.0 not in flagged_values, (
+        f"$15.84B pre-event historical (FROM side) wrongly flagged: {drift}"
+    )
+    # $39.44B is the current figure and must match canonical (net cash ~$39.44B abs)
+    assert 39_440_000_000.0 not in flagged_values
+
+
+def test_wk25_regression_unqualified_fabrication_still_flagged(tmp_path):
+    """Regression: an unqualified wrong net-debt claim must STILL be flagged.
+    No off-balance-sheet / peer / pro-forma / historical qualifier → drift."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+
+    # Use MSFT canonical ($8.16B). Claim $50B — huge fabrication, no qualifier.
+    nd_path = _write_net_debt(tmp_path)
+    _write_peers(tmp_path, ["AMZN", "GOOGL", "AAPL"])
+
+    text = "Net debt is $50B."
+    claims = [_make_claim(c) for c in extract_net_debt_claims(text)]
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    assert len(drift) == 1, f"unqualified $50B fabrication must be flagged; got {drift}"
+    assert drift[0].claimed_dollars == 50_000_000_000.0
