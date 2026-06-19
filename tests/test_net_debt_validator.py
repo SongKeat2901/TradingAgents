@@ -1111,3 +1111,148 @@ def test_wk25_regression_unqualified_fabrication_still_flagged(tmp_path):
     drift = [v for v in violations if v.type == "definitional_drift"]
     assert len(drift) == 1, f"unqualified $50B fabrication must be flagged; got {drift}"
     assert drift[0].claimed_dollars == 50_000_000_000.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 10 adversarial narrowing — false-negative (FN) tests.
+# The original over-broad guards suppressed GENUINE fabrications.
+# These 6 cases must FLAG as definitional_drift after the narrowing.
+# Canonical: MSFT $8.16B. Fabricated figures are $80B or $99B.
+# ---------------------------------------------------------------------------
+
+def _fn_setup(tmp_path):
+    """Helper: write MSFT net_debt.json + generic peer list, return nd_path."""
+    nd_path = _write_net_debt(tmp_path)
+    _write_peers(tmp_path, ["AMZN", "GOOGL", "AAPL"])
+    return nd_path
+
+
+def _fn_claims(text, file="analyst_fundamentals.md"):
+    from tradingagents.validators import extract_net_debt_claims
+    return [_make_claim(c, file=file) for c in extract_net_debt_claims(text)]
+
+
+def test_fn_was_dollar_plain_reporting_flags(tmp_path):
+    """Guard 3 narrowing: 'was $' was too broad — it also matched current-
+    reporting prose like 'Net debt was $99B per yfinance'.  After dropping
+    bare 'was $', this fabrication must now flag.
+    Note: use $99B, not $80B — $80B is within 5% of MSFT's Cash+STI $78.23B
+    and would pass the canonical check regardless of guard behaviour."""
+    from tradingagents.validators import validate_net_debt_claims
+    nd_path = _fn_setup(tmp_path)
+    text = "Net debt was $99B per yfinance."
+    claims = _fn_claims(text)
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    assert drift, (
+        "'Net debt was $99B per yfinance' was wrongly skipped; "
+        "it must flag as definitional_drift (canonical ~$8B)"
+    )
+    assert any(v.claimed_dollars == 99_000_000_000.0 for v in drift), drift
+
+
+def test_fn_bare_forward_prose_flags(tmp_path):
+    """Guard 2 narrowing: standalone 'forward' is ubiquitous analyst prose
+    ('Looking forward, net debt of $99B remains a concern') and must NOT
+    suppress a genuine fabrication after removing bare 'forward'."""
+    from tradingagents.validators import validate_net_debt_claims
+    nd_path = _fn_setup(tmp_path)
+    text = "Looking forward, net debt of $99B remains a concern."
+    claims = _fn_claims(text)
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    assert drift, (
+        "'Looking forward, net debt of $99B' was wrongly skipped; "
+        "standalone 'forward' must not suppress a fabrication"
+    )
+    assert any(v.claimed_dollars == 99_000_000_000.0 for v in drift), drift
+
+
+def test_fn_bare_estimate_prose_flags(tmp_path):
+    """Guard 2 narrowing: bare 'estimate' / 'estimated' is common analyst
+    prose ('Analysts estimate $99B net debt for the current quarter') and
+    must not suppress a genuine fabrication after removing bare 'estimate'."""
+    from tradingagents.validators import validate_net_debt_claims
+    nd_path = _fn_setup(tmp_path)
+    text = "Analysts estimate $99B net debt for the current quarter."
+    claims = _fn_claims(text)
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    assert drift, (
+        "'Analysts estimate $99B net debt' was wrongly skipped; "
+        "bare 'estimate' must not suppress a fabrication"
+    )
+    assert any(v.claimed_dollars == 99_000_000_000.0 for v in drift), drift
+
+
+def test_fn_bare_before_non_event_flags(tmp_path):
+    """Guard 3 narrowing: bare 'before' is too broad — 'Net debt before
+    interest is $99B' has nothing to do with a pre-acquisition historical
+    figure.  After restricting 'before' to event-nouns only, this must flag.
+    Note: use $99B — $80B is within 5% of MSFT's Cash+STI $78.23B and would
+    pass the canonical check regardless of guard behaviour."""
+    from tradingagents.validators import validate_net_debt_claims
+    nd_path = _fn_setup(tmp_path)
+    text = "Net debt before interest is $99B."
+    claims = _fn_claims(text)
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    assert drift, (
+        "'Net debt before interest is $99B' was wrongly skipped; "
+        "'before interest' is not an event-noun qualifier"
+    )
+    assert any(v.claimed_dollars == 99_000_000_000.0 for v in drift), drift
+
+
+def test_fn_rises_to_offering_flags(tmp_path):
+    """Guard 2 narrowing: bare 'rises to' was too broad — 'Net debt rises
+    to $99B following last month's offering' describes a current balance-
+    sheet move, not a conditional scenario. After removing bare 'rises? to'
+    (keeping only 'would rise'), this must flag."""
+    from tradingagents.validators import validate_net_debt_claims
+    nd_path = _fn_setup(tmp_path)
+    text = "Net debt rises to $99B following last month's offering."
+    claims = _fn_claims(text)
+    violations = validate_net_debt_claims(claims, nd_path, main_ticker="MSFT")
+    drift = [v for v in violations if v.type == "definitional_drift"]
+    assert drift, (
+        "'Net debt rises to $99B following offering' was wrongly skipped; "
+        "bare 'rises to' must not suppress a fabrication"
+    )
+    assert any(v.claimed_dollars == 99_000_000_000.0 for v in drift), drift
+
+
+def test_fn_obs_precedes_value_flags_subject_figure(tmp_path):
+    """Guard 1 narrowing (positional OBS): 'Net debt of $50B includes $20B
+    in off-balance-sheet leases' — the $50B is the SUBJECT figure (OBS
+    appears AFTER the claimed value in the window), not an OBS item itself.
+    After making OBS positional, $50B must flag while an OBS-suffix figure
+    like '$261B in off-balance-sheet ...' is still skipped."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd_path = _fn_setup(tmp_path)
+
+    # Case A: OBS mention is AFTER $50B in the sentence → $50B must flag
+    text_a = "Net debt of $50B includes $20B in off-balance-sheet leases."
+    claims_a = _fn_claims(text_a)
+    violations_a = validate_net_debt_claims(claims_a, nd_path, main_ticker="MSFT")
+    drift_a = [v for v in violations_a if v.type == "definitional_drift"]
+    assert drift_a, (
+        "'Net debt of $50B includes $20B in off-balance-sheet leases' "
+        "was wrongly skipped; $50B is the subject figure, not the OBS item"
+    )
+    assert any(v.claimed_dollars == 50_000_000_000.0 for v in drift_a), drift_a
+
+    # Case B: OBS mention is AFTER the value (ORCL pattern) → value must still skip
+    # Re-use the ORCL fixture: $261B appears right before 'off-balance-sheet ...'
+    nd_orcl = _write_orcl_net_debt(tmp_path / "orcl_sub")
+    text_b = (
+        "ORCL carries $96.15B net debt and $261B in off-balance-sheet "
+        "data-center commitments that do not appear on the balance sheet."
+    )
+    claims_b = [_make_claim(c) for c in extract_net_debt_claims(text_b)]
+    violations_b = validate_net_debt_claims(claims_b, nd_orcl, main_ticker="ORCL")
+    drift_b = [v for v in violations_b if v.type == "definitional_drift"]
+    flagged_b = {v.claimed_dollars for v in drift_b}
+    assert 261_000_000_000.0 not in flagged_b, (
+        f"$261B (OBS suffix) must still be skipped after positional narrowing: {drift_b}"
+    )

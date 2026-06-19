@@ -64,12 +64,25 @@ from tradingagents.validators._helpers import (
 _GUARD_WINDOW = 80  # chars on each side of the value string
 
 # Off-balance-sheet commitment — NOT a balance-sheet debt figure.
+# Guard 1 is now positional: only suppresses the claim when the OBS phrase
+# appears AT OR AFTER the value's position in the context window (i.e., the
+# figure is described AS an OBS item, e.g. "$261B in off-balance-sheet …").
+# When OBS precedes the value ("net debt of $50B includes $20B OBS leases"),
+# the $50B is the subject position and must still be flagged.
+# Implementation: instead of searching the full ±80-char window, we only
+# search a forward-only slice (value position → value position + 60 chars).
 _OBS_RE = re.compile(r"off[- ]balance[- ]sheet", re.IGNORECASE)
 
 # Forward / pro-forma estimates — NOT the current net-debt position.
+# Narrowed per adversarial review:
+#   - REMOVE bare 'forward' (ubiquitous analyst prose like "Looking forward…")
+#   - REMOVE bare 'estimate[sd]?'; keep only compound 'forward estimate' /
+#     'pro[- ]forma estimate'
+#   - REMOVE bare 'rises? to'; keep only conditional 'would rise'
+#   - KEEP 'pro[- ]forma', 'post-close', 'post-acquisition' (TXN FP)
 _PROFORMA_RE = re.compile(
-    r"\b(?:pro[- ]forma|forward|estimate[sd]?|post[- ]close|post[- ]acquisition"
-    r"|rises?\s+to|would\s+rise)\b",
+    r"\b(?:pro[- ]forma(?:\s+estimate)?|forward\s+estimate|post[- ]close"
+    r"|post[- ]acquisition|would\s+rise)\b",
     re.IGNORECASE,
 )
 
@@ -81,9 +94,19 @@ _HIST_FROM_TO_RE = re.compile(
     re.IGNORECASE,
 )
 # Other strong historical qualifiers in the window.
+# Narrowed per adversarial review:
+#   - DROP 'was\s+\$' entirely (suppresses "Net debt was $80B per yfinance"
+#     — current reporting phrasing; the GOOGL FP doesn't need it because
+#     _HIST_FROM_TO_RE already catches "from $X to" patterns)
+#   - Restrict bare 'before\s+' to event-nouns only (a specific list of
+#     transaction/corporate-event words); "before interest", "before taxes"
+#     are NOT event qualifiers
+#   - KEEP 'prior to', 'pre-<event>' (unchanged)
 _HIST_OTHER_RE = re.compile(
-    r"\b(?:before\s+|prior\s+to\b|pre[-\s](?:deal|acquisition|merger"
-    r"|transaction|close|closing|wiz|offer)|was\s+\$)\b",
+    r"\b(?:before\s+(?:the\s+)?(?:wiz|deal|acquisition|merger|transaction"
+    r"|close|closing|offer|ipo|spin[- ]off|divestiture|buyout)\b"
+    r"|prior\s+to\b"
+    r"|pre[-\s](?:deal|acquisition|merger|transaction|close|closing|wiz|offer))\b",
     re.IGNORECASE,
 )
 
@@ -102,10 +125,41 @@ def _context_window(match_text: str, value_raw: str) -> str:
     return match_text[start:end]
 
 
-def _is_off_balance_sheet_context(window: str) -> bool:
-    """True when the context window explicitly marks the figure as an
-    off-balance-sheet item (commitment, lease, etc.)."""
-    return bool(_OBS_RE.search(window))
+_DOLLAR_RE = re.compile(r"(?<![A-Za-z])\$[\d,]+(?:\.\d+)?\s*[BM]?")
+
+
+def _is_off_balance_sheet_context(match_text: str, value_raw: str) -> bool:
+    """True when the OBS phrase directly follows value_raw with no intervening
+    dollar figure.
+
+    The figure is characterized AS an off-balance-sheet item (e.g. ORCL
+    '$261B in off-balance-sheet commitments') when OBS follows the value
+    and there is no other dollar figure between the value and OBS in the text.
+
+    When a different dollar figure intervenes ('net debt of $50B includes $20B
+    in off-balance-sheet leases'), the OBS phrase qualifies $20B (the intervening
+    figure), not $50B; $50B is the subject and must still be validated.
+
+    Implementation: search a forward-only slice of 60 chars after value_raw.
+    If OBS is found, additionally check that no other dollar figure appears
+    between value_raw's end and the OBS match's start.
+    """
+    pos = match_text.find(value_raw)
+    if pos == -1:
+        # Fallback: use full text — conservative (may over-skip in edge cases)
+        return bool(_OBS_RE.search(match_text))
+    value_end = pos + len(value_raw)
+    forward_slice = match_text[value_end: value_end + 60]
+    obs_match = _OBS_RE.search(forward_slice)
+    if not obs_match:
+        return False
+    # Check for any intervening dollar figure between value_end and OBS start
+    between = forward_slice[: obs_match.start()]
+    if _DOLLAR_RE.search(between):
+        # Another dollar figure sits between the value and OBS → OBS qualifies
+        # that intervening figure, not the claimed value.
+        return False
+    return True
 
 
 def _is_proforma_or_forward_context(window: str) -> bool:
@@ -587,7 +641,8 @@ def validate_net_debt_claims(
         window = _context_window(claim.match_text, claim.value_raw)
 
         # Guard 1: off-balance-sheet commitment — not on the balance sheet.
-        if _is_off_balance_sheet_context(window):
+        # Positional: OBS must appear AT OR AFTER the value in match_text.
+        if _is_off_balance_sheet_context(claim.match_text, claim.value_raw):
             continue
 
         # Guard 2: forward / pro-forma estimate — not the current position.
