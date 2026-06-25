@@ -234,6 +234,56 @@ def test_pm_preflight_handles_no_peers_etf(tmp_path):
     assert out["peers"] == []
 
 
+_BRIEF_NO_PEERS = """\
+# PM Pre-flight Brief: MSFT 2026-05-01
+
+## Ticker validation
+- Trading day: Friday 2026-05-01
+
+## Highlights of the rest
+- (the LLM omitted the Peer set section entirely — wk26 MSFT/NOW failure mode)
+
+## What this run must answer
+1. Is Azure growth durable?
+"""
+
+
+def test_pm_preflight_retries_and_recovers_when_peers_missing(tmp_path):
+    """wk26 2026-06-24 (MSFT/NOW): the LLM omitted the '## Peer set' section,
+    yielding empty peers -> the Researcher Phase 6.4 invariant aborted the run
+    ~2 min in. PM Pre-flight must re-invoke with a corrective instruction and
+    recover when the retry produces a usable peer section."""
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        AIMessage(content=_BRIEF_NO_PEERS),   # 1st draw: no peer section
+        AIMessage(content=_VALID_BRIEF),      # retry: proper peers
+    ]
+    node = create_pm_preflight_node(fake_llm)
+    state = {"company_of_interest": "MSFT", "trade_date": "2026-05-01",
+             "raw_dir": str(tmp_path / "raw")}
+    out = node(state)
+    assert sorted(out["peers"]) == ["AAPL", "GOOG", "META"]
+    assert fake_llm.invoke.call_count == 2  # initial empty + 1 recovering retry
+
+
+def test_pm_preflight_fails_closed_after_peer_retries_exhausted(tmp_path):
+    """If peers stay unextractable after the retries, PM Pre-flight gives up
+    with empty peers (the downstream Phase 6.4 invariant then aborts) rather
+    than looping forever — and the brief is still persisted."""
+    from tradingagents.agents.managers.pm_preflight import (
+        create_pm_preflight_node, _PEER_RETRY_LIMIT)
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=_BRIEF_NO_PEERS)
+    node = create_pm_preflight_node(fake_llm)
+    state = {"company_of_interest": "MSFT", "trade_date": "2026-05-01",
+             "raw_dir": str(tmp_path / "raw")}
+    out = node(state)
+    assert out["peers"] == []
+    assert fake_llm.invoke.call_count == 1 + _PEER_RETRY_LIMIT
+    assert (tmp_path / "raw" / "pm_brief.md").exists()
+
+
 def test_pm_preflight_appends_calendar_block_to_brief(tmp_path, monkeypatch):
     """PM Pre-flight must compute the calendar (via the peers it just extracted)
     and append a deterministic 'Reporting status' block after the LLM content."""

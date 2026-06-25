@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from tradingagents.agents.utils.structured import invoke_with_empty_retry
 
@@ -142,6 +142,22 @@ def _extract_peers(brief: str) -> list[str]:
             if tok not in peers:
                 peers.append(tok)
     return peers
+
+
+# Peer-aware retry knobs. When PM Pre-flight produces a brief with no
+# extractable peers, re-invoke up to this many times with the corrective
+# instruction below before giving up (the downstream Phase 6.4 invariant then
+# aborts). Each retry is one extra LLM call (~90s) — far cheaper than a full
+# ~35-min manual rerun, and only fires on the failure path.
+_PEER_RETRY_LIMIT = 2
+_PEER_RETRY_INSTRUCTION = (
+    "Your previous brief has no usable '## Peer set' section. Re-output the "
+    "COMPLETE PM Pre-flight brief — same content — but it MUST contain a "
+    "'## Peer set' section listing 3-6 US-tradable, yfinance-fetchable peers, "
+    "ONE TICKER PER LINE in the exact format `- TICKER: one-line rationale`. "
+    "Do not omit the section, and do not comma-join multiple tickers on a "
+    "single line."
+)
 
 
 def _format_calendar_block(raw_dir: str) -> str:
@@ -300,14 +316,41 @@ def create_pm_preflight_node(llm):
         ]
         result, brief = invoke_with_empty_retry(llm, messages, "PM Pre-flight")
 
+        # Peer-aware retry (wk26 2026-06-24 COIN/MSFT/NOW). The Researcher's
+        # Phase 6.4 invariant fails the whole run ~2 min in if no peers are
+        # extractable, and PM Pre-flight stochastically either omits the
+        # `## Peer set` header entirely (MSFT/NOW) or comma-joins every peer on
+        # one line (COIN). Both are recoverable — the LLM can produce a clean
+        # section, it just didn't this draw — so re-invoke with an explicit
+        # corrective format instruction before giving up. This loop runs ONLY on
+        # the failure path (peers empty), so it is a no-op for the common case,
+        # and it still fails closed: if peers stay empty the downstream invariant
+        # aborts exactly as before (legitimately peerless tickers don't proceed).
+        peers = _extract_peers(brief)
+        peer_attempts = 0
+        while not peers and peer_attempts < _PEER_RETRY_LIMIT:
+            peer_attempts += 1
+            _logger.warning(
+                "PM Pre-flight: no peers extracted for %s (attempt %d/%d) — "
+                "re-invoking with explicit peer-format instruction",
+                ticker, peer_attempts, _PEER_RETRY_LIMIT,
+            )
+            retry_messages = messages + [
+                AIMessage(content=brief),
+                HumanMessage(content=_PEER_RETRY_INSTRUCTION),
+            ]
+            result, brief = invoke_with_empty_retry(
+                llm, retry_messages, "PM Pre-flight (peer retry)"
+            )
+            peers = _extract_peers(brief)
+
         (raw_dir / "pm_brief.md").write_text(brief, encoding="utf-8")
 
-        peers = _extract_peers(brief)
-        if not peers and "## Peer set" in brief:
+        if not peers:
             _logger.warning(
-                "PM Pre-flight: Peer set section present but no peers extracted "
-                "for %s — check LLM format drift (expected '- TICKER: rationale')",
-                ticker,
+                "PM Pre-flight: still no peers for %s after %d peer retr%s — the "
+                "Researcher Phase 6.4 invariant will abort this run",
+                ticker, peer_attempts, "y" if peer_attempts == 1 else "ies",
             )
 
         # Phase-6.2 temporal-anchor: compute the deterministic earnings
