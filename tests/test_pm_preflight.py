@@ -43,6 +43,13 @@ def _stub_fetch_latest_filing(monkeypatch):
     ("- *FN*: transceiver", ["FN"]),
     # Spaced plain-hyphen separator also parses.
     ("- **CRM** - Salesforce; SaaS", ["CRM"]),
+    # The COIN 2026-06-24 failure: MULTIPLE tickers comma-listed on ONE bullet
+    # line with a shared em-dash rationale -> the first-ticker matcher read zero
+    # -> peers.json wrote {} -> Phase 6.4 invariant crashed the run.
+    ("- **HOOD**, **CRCL**, **NDAQ**, **MSTR** — same US-tradable, yfinance set",
+     ["HOOD", "CRCL", "NDAQ", "MSTR"]),
+    # Bare (unbolded) comma list with a colon also parses.
+    ("- HOOD, CRCL, NDAQ: crypto-broker comps", ["HOOD", "CRCL", "NDAQ"]),
     # Prose bullets (acronyms, hyphenated words) must NOT be read as tickers.
     ("- US-listed broker with AI exposure\n- ETF wrapper, no earnings", []),
 ])

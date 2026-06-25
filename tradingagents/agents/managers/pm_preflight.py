@@ -113,19 +113,35 @@ _PEER_LINE = re.compile(
     #   `- **TICKER** - ...` (spaced hyphen) / `- **TICKER** – ...` (en-dash)
     # The `\s+` before a dash (vs `\s*` before colon/paren) prevents hyphenated
     # prose like `- US-listed broker` or `- ETF wrapper` from matching as tickers.
-    r"^-\s+\*{0,2}\s*([A-Z]{1,5})\*{0,2}(?:\s*[:(]|\s+[—–-])",
+    #   `- **HOOD**, **CRCL**, **NDAQ**, **MSTR** — ...` (COIN 2026-06-24 — the LLM
+    #     comma-listed EVERY peer on ONE bullet line, so the prior single-ticker
+    #     capture read zero → peers.json wrote `{}` → Phase 6.4 invariant crashed
+    #     the run). The capture group now spans the whole comma-separated ticker
+    #     run (terminating at the first `:` / `(` / space-dash, so a trailing
+    #     `(Company)` or rationale never bleeds in); `_extract_peers` tokenizes it.
+    r"^-\s+(\*{0,2}\s*[A-Z]{1,5}\*{0,2}(?:\s*,\s*\*{0,2}\s*[A-Z]{1,5}\*{0,2})*)"
+    r"(?:\s*[:(]|\s+[—–-])",
     re.MULTILINE,
 )
 
 
 def _extract_peers(brief: str) -> list[str]:
-    """Pull peer tickers from the Peer set section."""
+    """Pull peer tickers from the Peer set section.
+
+    Handles one-ticker-per-line formats and comma-listed multi-ticker lines
+    (`- **HOOD**, **CRCL**, **NDAQ** — ...`). Each matched line yields a
+    ticker-run string; tokenize it and dedupe preserving order."""
     # Find the "## Peer set" section and the next "## " section
     match = re.search(r"## Peer set\s*\n(.*?)(?=^## |\Z)", brief, re.DOTALL | re.MULTILINE)
     if not match:
         return []
     section = match.group(1)
-    return _PEER_LINE.findall(section)
+    peers: list[str] = []
+    for ticker_run in _PEER_LINE.findall(section):
+        for tok in re.findall(r"[A-Z]{1,5}", ticker_run):
+            if tok not in peers:
+                peers.append(tok)
+    return peers
 
 
 def _format_calendar_block(raw_dir: str) -> str:
