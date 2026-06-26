@@ -98,6 +98,12 @@ _EV_NUM = re.compile(
     re.IGNORECASE,
 )
 
+# Fallback when EV isn't written as "EV = $X" but as a calculation ending in a
+# bolded total, e.g. "EV = (0.66 × $A) + ... = **$206.80 (+7.96% from spot)**".
+# Take the first bolded EV-dollar inside the "Expected Value" section. (The macro
+# Trading Plan went blank on AAOI/TSM/RKLB/STM/MSFT wk26 — all the calc form.)
+_EV_DOLLAR_FALLBACK = re.compile(r"\*\*\$(?P<ev>[\d,]+\.?\d*)")
+
 # Hard PORTFOLIO stop — the "exit everything regardless" level. Distinguished
 # from per-step trim triggers that may also use the words "hard stop" inside a
 # table cell (the MARA report has a Step-2 add row with "hard stop on close <
@@ -147,6 +153,12 @@ def parse_research(run_dir: Path) -> dict | None:
 
     ev_match = _EV_NUM.search(decision)
     ev = float(ev_match.group("ev").replace(",", "")) if ev_match else None
+    if ev is None:
+        idx = decision.find("Expected Value")
+        if idx != -1:
+            fb = _EV_DOLLAR_FALLBACK.search(decision[idx:idx + 600])
+            if fb:
+                ev = float(fb.group("ev").replace(",", ""))
 
     scenarios: list[Scenario] = []
     for m in _SCEN_ROW.finditer(decision):

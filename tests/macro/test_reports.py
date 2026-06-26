@@ -49,6 +49,21 @@ def test_ev_pct_derives_from_scenarios_when_ev_absent(tmp_path):
     assert round(reports.ev_pct(be), 4) == 0.18
 
 
+def test_ev_parsed_from_calc_form_bolded_total(tmp_path):
+    # The calc form "EV = (...) = **$116.00 (...)**" — _EV_NUM needs a dollar
+    # directly after "EV =" so it misses this; the bolded-total fallback catches
+    # it. No scenario table, so the only EV source is the fallback. (Trading Plan
+    # went blank on AAOI/TSM/RKLB/STM/MSFT wk26, all this form.)
+    body = (
+        "Reference price: **$100.00**\n\n**Rating: BUY**\n\n"
+        "**Expected Value:** EV = (0.60 × $130.00) + (0.40 × $95.00) = "
+        "**$116.00 (+16.00% from spot $100.00)**\n"
+    )
+    be = reports.load_base_ev(_run_dir(tmp_path, body=body))
+    assert be.ev == 116.0
+    assert round(reports.ev_pct(be), 4) == 0.16
+
+
 def test_returns_none_for_incomplete_dir(tmp_path):
     d = tmp_path / "empty"
     d.mkdir()
