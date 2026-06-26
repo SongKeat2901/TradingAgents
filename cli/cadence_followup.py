@@ -26,6 +26,7 @@ FINAL_BASE = (Path.home() / "Library/CloudStorage"
               / "My Drive/True Knot/TK Research/final")
 VENV_PY = str(Path.home() / "tradingagents" / ".venv" / "bin" / "python")
 SUMMARY_SCRIPT = str(Path.home() / "gsheet-tool" / "update_summary.py")
+TRADING_PLAN_SCRIPT = str(Path.home() / "gsheet-tool" / "refresh_trading_plan.sh")
 
 _WEEK_RE = re.compile(r"^wk (\d+) (\d{4})$")
 
@@ -141,14 +142,21 @@ def main(argv: list[str] | None = None) -> int:
     # extraction — no LLM needed; supersedes the old "flag for the bot" path).
     # Runs after promotion so the sheet always reflects the latest published set;
     # a failed render leaves summary_update_pending=True so it isn't lost.
+    # Both customer sheets refresh from the same final/ source on every promote:
+    # the Research Summary (update_summary.py) and the macro Trading Plan
+    # (refresh_trading_plan.sh). summary_update_pending stays True unless BOTH
+    # render, so a failure of either isn't silently lost.
     published_any = any(t["published"] for t in result["tickers"])
     if writes_enabled and published_any:
-        updated = pub.refresh_summary_sheet(
+        summary_ok = pub.refresh_summary_sheet(
             python=VENV_PY, script=SUMMARY_SCRIPT, account=ACCOUNT)
-        result["summary_updated"] = updated
-        result["summary_update_pending"] = not updated
+        plan_ok = pub.refresh_trading_plan(script=TRADING_PLAN_SCRIPT)
+        result["summary_updated"] = summary_ok
+        result["trading_plan_updated"] = plan_ok
+        result["summary_update_pending"] = not (summary_ok and plan_ok)
     else:
         result["summary_updated"] = False
+        result["trading_plan_updated"] = False
         result["summary_update_pending"] = published_any
 
     print(json.dumps(result, indent=2))

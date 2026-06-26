@@ -71,3 +71,11 @@ def refresh_summary_sheet(*, python: str, script: str, account: str,
                           run=_run_default) -> bool:
     proc = run([python, script, "-a", account])
     return getattr(proc, "returncode", 1) == 0
+
+
+def refresh_trading_plan(*, script: str, run=_run_default) -> bool:
+    """Re-render the macro Trading Plan sheet by running the self-contained
+    refresh script (it pulls FRED key + gog keyring pw from the macrodaily plist
+    and runs `tradingmacro` against the final/ tree). Returns True on success."""
+    proc = run([script])
+    return getattr(proc, "returncode", 1) == 0

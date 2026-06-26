@@ -113,15 +113,20 @@ def test_publish_success_promotes_and_refreshes_summary(tmp_path, capsys, monkey
     refresh = {}
     monkeypatch.setattr(cf.pub, "refresh_summary_sheet",
                         lambda **k: refresh.update(k) or True)
+    plan = {}
+    monkeypatch.setattr(cf.pub, "refresh_trading_plan",
+                        lambda **k: plan.update(k) or True)
     rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "final"),
                   "--week", "wk 24 2026"])
     out = json.loads(capsys.readouterr().out)
     assert out["tickers"][0]["published"] is True
     assert "wk 24 2026" in out["tickers"][0]["promoted_to"]
-    # the deterministic renderer ran -> sheet is current, nothing left pending
+    # both sheets rendered -> current, nothing left pending
     assert out["summary_updated"] is True
+    assert out["trading_plan_updated"] is True
     assert out["summary_update_pending"] is False
     assert refresh["script"].endswith("update_summary.py")
+    assert plan["script"].endswith("refresh_trading_plan.sh")
 
 
 def test_revalidate_when_decision_newer(tmp_path, monkeypatch):
@@ -161,13 +166,15 @@ def test_summary_refresh_failure_keeps_pending(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(cf.pub, "promote",
                         lambda run_dir, fb, wk: Path(fb) / wk / Path(run_dir).name)
     monkeypatch.setattr(cf.pub, "refresh_summary_sheet", lambda **k: False)
+    monkeypatch.setattr(cf.pub, "refresh_trading_plan", lambda **k: True)
     rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "final"),
                   "--week", "wk 24 2026"])
     out = json.loads(capsys.readouterr().out)
     assert rc == 0
     assert out["tickers"][0]["published"] is True
-    # render failed -> stays flagged so the update isn't silently lost
+    # one sheet's render failed -> stays flagged so the update isn't silently lost
     assert out["summary_updated"] is False
+    assert out["trading_plan_updated"] is True
     assert out["summary_update_pending"] is True
 
 
