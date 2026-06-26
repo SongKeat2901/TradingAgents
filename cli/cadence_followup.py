@@ -25,6 +25,7 @@ FINAL_BASE = (Path.home() / "Library/CloudStorage"
               / "GoogleDrive-trueknotsg@gmail.com"
               / "My Drive/True Knot/TK Research/final")
 VENV_PY = str(Path.home() / "tradingagents" / ".venv" / "bin" / "python")
+SUMMARY_SCRIPT = str(Path.home() / "gsheet-tool" / "update_summary.py")
 
 _WEEK_RE = re.compile(r"^wk (\d+) (\d{4})$")
 
@@ -135,10 +136,20 @@ def main(argv: list[str] | None = None) -> int:
                     row["error"] = "%s: %s" % (type(exc).__name__, exc)
         result["tickers"].append(row)
 
-    # The Research Summary gsheet digest needs LLM reading (rating/EV extraction is
-    # not reliably deterministic), so it is NOT auto-run here. Flag it for the bot
-    # (SKILL.md step) to digest the published reports and update the sheet.
-    result["summary_update_pending"] = any(t["published"] for t in result["tickers"])
+    # Research Summary gsheet: deterministically re-rendered from the promoted
+    # reports by ~/gsheet-tool/update_summary.py (reliable rating/EV/price
+    # extraction — no LLM needed; supersedes the old "flag for the bot" path).
+    # Runs after promotion so the sheet always reflects the latest published set;
+    # a failed render leaves summary_update_pending=True so it isn't lost.
+    published_any = any(t["published"] for t in result["tickers"])
+    if writes_enabled and published_any:
+        updated = pub.refresh_summary_sheet(
+            python=VENV_PY, script=SUMMARY_SCRIPT, account=ACCOUNT)
+        result["summary_updated"] = updated
+        result["summary_update_pending"] = not updated
+    else:
+        result["summary_updated"] = False
+        result["summary_update_pending"] = published_any
 
     print(json.dumps(result, indent=2))
     return 0

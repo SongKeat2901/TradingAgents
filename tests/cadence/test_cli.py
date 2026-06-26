@@ -102,7 +102,7 @@ def test_pdf_missing_degrades(tmp_path, capsys, monkeypatch):
     assert out["tickers"][0]["error"] == "PDF missing"
 
 
-def test_publish_success_promotes_and_sets_pending(tmp_path, capsys, monkeypatch):
+def test_publish_success_promotes_and_refreshes_summary(tmp_path, capsys, monkeypatch):
     pre = tmp_path / "preaudit"
     _mk_run(pre, "2026-06-05-AAA", BUYBACK_FP, with_pdf=True)
     monkeypatch.setattr(cf.pub, "gog_token_valid", lambda *a, **k: True)
@@ -110,12 +110,18 @@ def test_publish_success_promotes_and_sets_pending(tmp_path, capsys, monkeypatch
     def fake_promote(run_dir, final_base, week):
         return Path(final_base) / week / Path(run_dir).name
     monkeypatch.setattr(cf.pub, "promote", fake_promote)
+    refresh = {}
+    monkeypatch.setattr(cf.pub, "refresh_summary_sheet",
+                        lambda **k: refresh.update(k) or True)
     rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "final"),
                   "--week", "wk 24 2026"])
     out = json.loads(capsys.readouterr().out)
     assert out["tickers"][0]["published"] is True
     assert "wk 24 2026" in out["tickers"][0]["promoted_to"]
-    assert out["summary_update_pending"] is True
+    # the deterministic renderer ran -> sheet is current, nothing left pending
+    assert out["summary_updated"] is True
+    assert out["summary_update_pending"] is False
+    assert refresh["script"].endswith("update_summary.py")
 
 
 def test_revalidate_when_decision_newer(tmp_path, monkeypatch):
@@ -147,19 +153,22 @@ def test_no_revalidate_flag_skips(tmp_path, monkeypatch):
     assert "ran" not in called
 
 
-def test_summary_update_pending_flag(tmp_path, capsys, monkeypatch):
+def test_summary_refresh_failure_keeps_pending(tmp_path, capsys, monkeypatch):
     pre = tmp_path / "preaudit"
     _mk_run(pre, "2026-06-05-AAA", BUYBACK_FP, with_pdf=True)
     monkeypatch.setattr(cf.pub, "gog_token_valid", lambda *a, **k: True)
     monkeypatch.setattr(cf.pub, "publish_pdf", lambda *a, **k: "ID")
     monkeypatch.setattr(cf.pub, "promote",
                         lambda run_dir, fb, wk: Path(fb) / wk / Path(run_dir).name)
+    monkeypatch.setattr(cf.pub, "refresh_summary_sheet", lambda **k: False)
     rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "final"),
                   "--week", "wk 24 2026"])
     out = json.loads(capsys.readouterr().out)
     assert rc == 0
-    assert out["summary_update_pending"] is True
     assert out["tickers"][0]["published"] is True
+    # render failed -> stays flagged so the update isn't silently lost
+    assert out["summary_updated"] is False
+    assert out["summary_update_pending"] is True
 
 
 def test_week_inferred_from_highest_existing(tmp_path, capsys, monkeypatch):
