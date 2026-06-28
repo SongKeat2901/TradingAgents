@@ -149,14 +149,16 @@ def test_notify_success_builds_pdf_and_uploads(monkeypatch, tmp_path):
     assert b'filename="fake.pdf"' in body
 
 
-def test_notify_success_falls_back_to_inline_on_pdf_failure(monkeypatch, tmp_path):
-    """If PDF generation raises, fall back to inline text via sendMessage."""
+def test_notify_success_falls_back_to_summary_on_pdf_failure(monkeypatch, tmp_path):
+    """If PDF generation raises, fall back to the structured summary via sendMessage."""
     from cli import research_telegram as t
+    import json as _json
 
+    (tmp_path / "state.json").write_text(_json.dumps({
+        "company_of_interest": "NVDA", "trade_date": "2024-05-10"}), encoding="utf-8")
     (tmp_path / "decision.md").write_text(
-        "# NVDA — 2024-05-10\n\n**Decision:** BUY\n\nReasoning here.",
-        encoding="utf-8",
-    )
+        "- **Reference price:** $100.00 (yfinance close)\n"
+        "**Rating implication:** **HOLD.**\n", encoding="utf-8")
 
     def boom(**kwargs):
         raise RuntimeError("weasyprint not installed")
@@ -172,13 +174,44 @@ def test_notify_success_falls_back_to_inline_on_pdf_failure(monkeypatch, tmp_pat
 
     monkeypatch.setattr(t.urllib.request, "urlopen", fake_urlopen)
 
-    t.notify_success("BOT", "-100", str(tmp_path), "BUY", ticker="NVDA", date="2024-05-10")
+    t.notify_success("BOT", "-100", str(tmp_path), "HOLD", ticker="NVDA", date="2024-05-10")
 
-    # Falls back to sendMessage; body contains the warning + decision.md text
     assert captured["url"].endswith("/sendMessage")
-    sent = captured["data"].decode("utf-8")
-    assert "PDF+generation+failed" in sent or "PDF generation failed" in sent.replace("+", " ")
-    assert "Reasoning here" in sent.replace("+", " ")
+    import urllib.parse as up
+    text = up.parse_qs(captured["data"].decode("utf-8"))["text"][0]
+    assert "PDF unavailable" in text
+    assert "NVDA" in text and "TrueKnot Research" in text
+
+
+def test_build_caption_includes_key_metrics(tmp_path):
+    """The caption surfaces rating + ref price + EV/target + fair value/MoS +
+    next catalyst + branding — not a truncated decision dump."""
+    from cli import research_telegram as t
+    import json as _json
+
+    (tmp_path / "state.json").write_text(_json.dumps({
+        "company_of_interest": "MSFT", "trade_date": "2026-06-24"}), encoding="utf-8")
+    (tmp_path / "decision.md").write_text(
+        "- **Reference price:** $365.46 (yfinance close)\n"
+        "**Rating implication:** **HOLD.**\n"
+        "**Expected Value:** (0.5 × $400) = **$382.84 (+4.76% from spot $365.46)**\n",
+        encoding="utf-8")
+    raw = tmp_path / "raw"; raw.mkdir()
+    (raw / "financials.json").write_text(_json.dumps(
+        {"fundamentals": "Name: Microsoft Corporation\n"}))
+    (raw / "intrinsic_value.json").write_text(_json.dumps(
+        {"fair_value": {"base": 329.94}, "margin_of_safety_pct": -0.0972}))
+    (raw / "calendar.json").write_text(_json.dumps(
+        {"MSFT": {"next_expected": "2026-07-29"}}))
+
+    cap = t._build_caption(tmp_path, "MSFT", "2026-06-24")
+    assert "TrueKnot Research" in cap and "Microsoft Corporation (MSFT)" in cap
+    assert "🟡" in cap and "*Hold*" in cap
+    assert "$365.46" in cap                       # reference price
+    assert "+4.8%" in cap and "$382.84" in cap    # EV % + target
+    assert "$329.94" in cap and "-9.7%" in cap    # fair value + MoS
+    assert "2026-07-29" in cap                     # next catalyst
+    assert "trueknot.sg" in cap
 
 
 def test_notify_failure_includes_ticker_date_and_error(monkeypatch):

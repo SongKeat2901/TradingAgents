@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +25,10 @@ from pathlib import Path
 
 TELEGRAM_MAX_MESSAGE_LEN = 4096
 _TRUNCATED_SUFFIX = "\n\n…(truncated)"
+_RATING_EMOJI = {
+    "OVERWEIGHT": "🟢", "BUY": "🟢", "HOLD": "🟡",
+    "UNDERWEIGHT": "🔴", "SELL": "⛔",
+}
 
 
 class TelegramSendError(RuntimeError):
@@ -67,6 +72,7 @@ def post_document(
     document_path: Path,
     caption: str = "",
     mime_type: str = "application/pdf",
+    parse_mode: str | None = None,
 ) -> dict:
     """Upload a file to Telegram via sendDocument (multipart/form-data).
 
@@ -92,6 +98,8 @@ def post_document(
     field("chat_id", chat_id)
     if caption:
         field("caption", caption[:1024])
+    if parse_mode:
+        field("parse_mode", parse_mode)
 
     parts.append(f"--{boundary}\r\n".encode())
     parts.append(
@@ -127,6 +135,76 @@ def post_document(
     if not payload.get("ok"):
         raise TelegramSendError(f"Telegram sendDocument not-ok: {payload}")
     return payload
+
+
+def _md_clean(s: str) -> str:
+    """Strip legacy-Markdown control chars from inline text (e.g. company names)
+    so they can't break the caption's bold/italic parsing."""
+    return re.sub(r"[*_`\[\]]", "", s or "").strip()
+
+
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _summary_fields(out: Path, ticker: str) -> dict:
+    """Pull the at-a-glance fields for the Telegram caption from a run dir.
+    Every field is best-effort — missing ones just drop out of the caption."""
+    fields: dict = {"company": "", "rating": None, "ref": None, "ev_abs": None,
+                    "fv": None, "mos": None, "next_earnings": None}
+    fin = _read_json(out / "raw" / "financials.json") or {}
+    m = re.search(r"^Name:\s*(.+)$", fin.get("fundamentals", ""), re.MULTILINE)
+    if m:
+        fields["company"] = _md_clean(m.group(1))
+    try:
+        from cli.daily_followup import parse_research
+        parsed = parse_research(out)
+    except Exception:  # noqa: BLE001 - never let the notifier crash the run
+        parsed = None
+    if parsed:
+        fields["rating"] = (parsed.get("rating") or "").upper() or None
+        fields["ref"] = parsed.get("reference_price")
+        fields["ev_abs"] = parsed.get("ev")
+    iv = _read_json(out / "raw" / "intrinsic_value.json")
+    if iv:
+        fields["fv"] = (iv.get("fair_value") or {}).get("base")
+        fields["mos"] = iv.get("margin_of_safety_pct")
+    cal = _read_json(out / "raw" / "calendar.json") or {}
+    fields["next_earnings"] = (cal.get(ticker) or {}).get("next_expected")
+    return fields
+
+
+def _build_caption(out: Path, ticker: str, date: str) -> str:
+    """A polished at-a-glance summary for the Telegram group (legacy Markdown)."""
+    f = _summary_fields(out, ticker)
+    rating = f["rating"]
+    title = f"{f['company']} ({ticker})" if f["company"] else ticker
+    emoji = _RATING_EMOJI.get(rating, "•")
+    rating_disp = rating.title() if rating and rating != "UNKNOWN" else "—"
+    lines = [
+        f"📊 *TrueKnot Research* — {title}",
+        f"{emoji} *{rating_disp}*  ·  as of {date} close",
+        "",
+    ]
+    if f["ref"] is not None:
+        lines.append(f"• Reference price:  ${f['ref']:,.2f}")
+    if f["ev_abs"] is not None and f["ref"]:
+        ev_pct = (f["ev_abs"] - f["ref"]) / f["ref"]
+        lines.append(f"• 12-mo expected value:  *{ev_pct:+.1%}*  →  target ${f['ev_abs']:,.2f}")
+    if f["fv"] is not None:
+        mos = f"  (margin of safety {f['mos']:+.1%})" if f["mos"] is not None else ""
+        lines.append(f"• Intrinsic fair value:  ${f['fv']:,.2f}{mos}")
+    if f["next_earnings"]:
+        lines.append(f"• Next catalyst:  ~{f['next_earnings']}")
+    lines += [
+        "",
+        "📎 Full multi-agent research report attached (PDF).",
+        "_TrueKnot Pte. Ltd. · trueknot.sg_",
+    ]
+    return "\n".join(lines)
 
 
 def notify_success(
@@ -168,24 +246,22 @@ def notify_success(
             output_dir=str(out), ticker=ticker, date=date, decision=decision
         )
     except Exception as e:  # noqa: BLE001 - fall back rather than fail the run
-        # PDF is best-effort. Fall back to inline truncated text.
-        decision_md = (out / "decision.md").read_text(encoding="utf-8")
-        text = (
-            f"✅ {ticker} {date} — {decision}\n\n"
-            f"⚠️ PDF generation failed ({type(e).__name__}: {e}); inline below.\n\n"
-            f"{decision_md}\n\n"
-            f"📁 Full reports: {out}/"
+        # PDF is best-effort. Send the structured summary inline + flag the PDF
+        # issue (the operator still has the on-disk reports for full detail).
+        summary = _build_caption(out, ticker, date).replace(
+            "📎 Full multi-agent research report attached (PDF).",
+            f"⚠️ PDF unavailable ({type(e).__name__}); see on-disk reports.",
         )
-        post_message(bot_token, chat_id, text)
+        post_message(bot_token, chat_id, re.sub(r"[*_`]", "", summary))
         return
 
-    caption = (
-        f"✅ {ticker} {date}\n"
-        f"Decision: {decision}\n\n"
-        f"Full multi-agent research attached as PDF. "
-        f"On-disk reports: {out}/"
-    )
-    post_document(bot_token, chat_id, pdf_path, caption=caption)
+    caption = _build_caption(out, ticker, date)
+    try:
+        post_document(bot_token, chat_id, pdf_path, caption=caption, parse_mode="Markdown")
+    except TelegramSendError:
+        # A stray char tripped Markdown parsing — resend as plain text so the
+        # report is never dropped.
+        post_document(bot_token, chat_id, pdf_path, caption=re.sub(r"[*_`]", "", caption))
 
 
 def notify_failure(
