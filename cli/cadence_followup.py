@@ -7,9 +7,9 @@ in tradingagents/cadence/.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -27,8 +27,6 @@ FINAL_BASE = (Path.home() / "Library/CloudStorage"
 VENV_PY = str(Path.home() / "tradingagents" / ".venv" / "bin" / "python")
 SUMMARY_SCRIPT = str(Path.home() / "gsheet-tool" / "update_summary.py")
 TRADING_PLAN_SCRIPT = str(Path.home() / "gsheet-tool" / "refresh_trading_plan.sh")
-
-_WEEK_RE = re.compile(r"^wk (\d+) (\d{4})$")
 
 
 def _maybe_revalidate(run_dir: Path) -> bool:
@@ -50,19 +48,15 @@ def _maybe_revalidate(run_dir: Path) -> bool:
     return False
 
 
-def _highest_week(final_base: str) -> str | None:
-    """The highest existing 'wk N YYYY' folder (by year then week). Fallback only
-    when --week is not supplied; the cadence number is sequential, not the ISO week."""
-    try:
-        entries = os.listdir(final_base)
-    except OSError:
-        return None
-    weeks = []
-    for d in entries:
-        m = _WEEK_RE.match(d)
-        if m:
-            weeks.append((int(m.group(2)), int(m.group(1)), d))
-    return max(weeks)[2] if weeks else None
+def _iso_week_label(date: datetime.date | None = None) -> str:
+    """Default cadence label = the ISO calendar week we publish in, e.g.
+    'wk 27 2026'. The wk number is the ISO calendar week (NOT a sequential
+    counter) — used when --week is omitted. Pass --week explicitly to override
+    (e.g. a Monday run on the prior Friday's close that should carry the new
+    week's number)."""
+    d = date or datetime.date.today()
+    iso = d.isocalendar()  # (ISO year, ISO week, ISO weekday)
+    return f"wk {iso[1]} {iso[0]}"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,9 +64,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--preaudit-base", default=str(DEFAULT_PREAUDIT))
     ap.add_argument("--final-base", default=str(FINAL_BASE))
     ap.add_argument("--week", default=None,
-                    help='target final/ week folder, e.g. "wk 24 2026". Required to '
-                         "promote; the cadence number is SEQUENTIAL, not the ISO week. "
-                         "If omitted, the highest existing week folder is used.")
+                    help='target final/ week folder, e.g. "wk 27 2026". If omitted, '
+                         "defaults to the ISO calendar week we publish in "
+                         "(wk = ISO week, not a sequential counter).")
     ap.add_argument("--no-write", action="store_true",
                     help="QC + emit contract without any Drive/sheet writes (no gog call)")
     ap.add_argument("--no-revalidate", action="store_true",
@@ -94,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     token_ok = None if args.no_write else pub.gog_token_valid(ACCOUNT)
     result["token_valid"] = token_ok
 
-    week = args.week or _highest_week(args.final_base)
+    week = args.week or _iso_week_label()
     result["week"] = week
 
     writes_enabled = (not args.no_write) and bool(token_ok) and bool(week)

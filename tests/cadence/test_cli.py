@@ -63,16 +63,22 @@ def test_writes_held_on_invalid_token(tmp_path, capsys, monkeypatch):
     assert out["tickers"][0]["published"] is False
 
 
-def test_week_required_when_missing(tmp_path, capsys, monkeypatch):
+def test_week_defaults_to_iso_week_when_omitted(tmp_path, capsys):
     pre = tmp_path / "preaudit"
     _mk_run(pre, "2026-06-05-AAA", BUYBACK_FP, with_pdf=True)
-    monkeypatch.setattr(cf.pub, "gog_token_valid", lambda *a, **k: True)
-    rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "empty_final")])
+    rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(tmp_path / "empty_final"),
+                  "--no-write"])
     out = json.loads(capsys.readouterr().out)
-    assert out["week"] is None
-    assert out["week_required"] is True
-    assert out["writes_held"] is True
-    assert out["tickers"][0]["published"] is False
+    # No --week and no existing folders -> the ISO calendar week we publish in.
+    assert out["week"] == cf._iso_week_label()
+    assert out["week_required"] is False
+
+
+def test_iso_week_label_known_dates():
+    import datetime
+    assert cf._iso_week_label(datetime.date(2026, 6, 29)) == "wk 27 2026"  # Mon, ISO wk27
+    assert cf._iso_week_label(datetime.date(2026, 6, 26)) == "wk 26 2026"  # Fri, still wk26
+    assert cf._iso_week_label(datetime.date(2026, 6, 24)) == "wk 26 2026"
 
 
 def test_hold_ticker_not_published(tmp_path, capsys, monkeypatch):
@@ -178,13 +184,14 @@ def test_summary_refresh_failure_keeps_pending(tmp_path, capsys, monkeypatch):
     assert out["summary_update_pending"] is True
 
 
-def test_week_inferred_from_highest_existing(tmp_path, capsys, monkeypatch):
+def test_week_defaults_to_iso_ignoring_existing_folders(tmp_path, capsys):
     pre = tmp_path / "preaudit"
     _mk_run(pre, "2026-06-05-AAA", BUYBACK_FP)
     final = tmp_path / "final"
     (final / "wk 22 2026").mkdir(parents=True)
-    (final / "wk 23 2026").mkdir(parents=True)
-    monkeypatch.setattr(cf.pub, "gog_token_valid", lambda *a, **k: True)
+    (final / "wk 99 2099").mkdir(parents=True)   # a higher sequential — must be ignored
     rc = cf.main(["--preaudit-base", str(pre), "--final-base", str(final), "--no-write"])
     out = json.loads(capsys.readouterr().out)
-    assert out["week"] == "wk 23 2026"
+    # ISO week of today, NOT the highest existing folder (sequential is gone).
+    assert out["week"] == cf._iso_week_label()
+    assert out["week"] != "wk 99 2099"
