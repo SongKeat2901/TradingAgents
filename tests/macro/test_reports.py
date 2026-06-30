@@ -64,6 +64,22 @@ def test_ev_parsed_from_calc_form_bolded_total(tmp_path):
     assert round(reports.ev_pct(be), 4) == 0.16
 
 
+def test_ev_ignores_unrelated_enterprise_value(tmp_path):
+    # ONDS bug: an "EV = $3,881.8M" (Enterprise Value) lower in the doc must NOT
+    # hijack the Expected Value ($7.7992). EV extraction is scoped to the section.
+    body = (
+        "Reference price: **$7.83**\n\n**Rating: UNDERWEIGHT**\n\n"
+        "**Expected Value:** (0.44 × $9.14) + (0.12 × $7.83) + (0.44 × $6.45) "
+        "= **$7.7992 (−0.39% from spot $7.83)**\n\n"
+        "## Valuation cross-check\n"
+        "**Numerator (EV):** Market cap = $7.83 × 495,762,650 sh = **$3,881.8M**; "
+        "less gross net cash → EV = $3,881.8M − …\n"
+    )
+    be = reports.load_base_ev(_run_dir(tmp_path, body=body))
+    assert be.ev == 7.7992                                   # not 3881.8
+    assert round(reports.ev_pct(be), 4) == round((7.7992 - 7.83) / 7.83, 4)
+
+
 def test_returns_none_for_incomplete_dir(tmp_path):
     d = tmp_path / "empty"
     d.mkdir()

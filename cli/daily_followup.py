@@ -151,14 +151,25 @@ def parse_research(run_dir: Path) -> dict | None:
     rating_match = _RATING.search(decision)
     rating = rating_match.group("rating").upper() if rating_match else "UNKNOWN"
 
-    ev_match = _EV_NUM.search(decision)
-    ev = float(ev_match.group("ev").replace(",", "")) if ev_match else None
+    # Prefer the "Expected Value" section so an unrelated "EV = $X" elsewhere
+    # can't hijack it — ONDS had an Enterprise-Value calc "EV = $3,881.8M" lower
+    # in the doc that the old doc-wide regex grabbed instead of the Expected
+    # Value ($7.79). In-section: "EV = $X" else the bolded total; only if there
+    # is NO "Expected Value" header do we fall back to a doc-wide "EV = $X".
+    ev = None
+    idx = decision.find("Expected Value")
+    if idx != -1:
+        seg = decision[idx:idx + 600]
+        # Bolded total first (it sits right after "Expected Value:", before any
+        # later "EV = $X" like an Enterprise-Value line), else an in-section
+        # "EV = $X".
+        m = _EV_DOLLAR_FALLBACK.search(seg) or _EV_NUM.search(seg)
+        if m:
+            ev = float(m.group("ev").replace(",", ""))
     if ev is None:
-        idx = decision.find("Expected Value")
-        if idx != -1:
-            fb = _EV_DOLLAR_FALLBACK.search(decision[idx:idx + 600])
-            if fb:
-                ev = float(fb.group("ev").replace(",", ""))
+        m = _EV_NUM.search(decision)
+        if m:
+            ev = float(m.group("ev").replace(",", ""))
 
     scenarios: list[Scenario] = []
     for m in _SCEN_ROW.finditer(decision):
