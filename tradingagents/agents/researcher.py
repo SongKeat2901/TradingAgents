@@ -133,6 +133,9 @@ def _fetch_financials(ticker: str, date: str) -> dict[str, Any]:
         "balance_sheet": get_balance_sheet.invoke({"ticker": ticker, "curr_date": date}),
         "cashflow": get_cashflow.invoke({"ticker": ticker, "curr_date": date}),
         "income_statement": get_income_statement.invoke({"ticker": ticker, "curr_date": date}),
+        "balance_sheet_annual": get_balance_sheet.invoke({"ticker": ticker, "curr_date": date, "freq": "annual"}),
+        "cashflow_annual": get_cashflow.invoke({"ticker": ticker, "curr_date": date, "freq": "annual"}),
+        "income_statement_annual": get_income_statement.invoke({"ticker": ticker, "curr_date": date, "freq": "annual"}),
     }
 
 
