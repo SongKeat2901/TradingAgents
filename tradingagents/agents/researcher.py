@@ -411,6 +411,7 @@ def fetch_research_pack(state: dict) -> None:
         fetch_risk_free,
         format_intrinsic_value_block,
     )
+    iv = None
     try:
         risk_free = fetch_risk_free()
         iv = compute_intrinsic_value(
@@ -427,26 +428,41 @@ def fetch_research_pack(state: dict) -> None:
         f.write(iv_block)
 
     # Accounting ratios + relative valuation multiples (deterministic).
-    # Reuses financials/net_debt/ratios/iv already computed above. Guarded in
-    # its own try/except (matching the intrinsic-value block's pattern above)
-    # so a compute failure never crashes the run — this also covers `iv`
-    # being unbound if compute_intrinsic_value raised before assignment.
+    # Reuses financials/net_debt/ratios already computed above, and `iv` only
+    # opportunistically (for its wacc/market_cap). Each block is guarded in
+    # its OWN try/except — mirroring the self-contained net-debt/peer-ratios
+    # blocks above — so a failure in compute_intrinsic_value (which leaves
+    # `iv = None`, not unbound; see the `iv = None` init before the IV
+    # try-block) or in one of these two computations never drops the other.
+    from tradingagents.agents.utils.financials_parser import parse_financials
+    fin_parsed = parse_financials(financials)
+
     try:
-        from tradingagents.agents.utils.financials_parser import parse_financials
         from tradingagents.agents.utils.accounting_ratios import (
             compute_accounting_ratios, format_accounting_ratios_block,
         )
-        from tradingagents.agents.utils.relative_multiples import (
-            compute_relative_multiples, format_relative_multiples_block,
-        )
-        fin_parsed = parse_financials(financials)
         wacc = (iv.get("inputs", {}) or {}).get("wacc") if isinstance(iv, dict) else None
         acct = compute_accounting_ratios(fin_parsed, wacc=wacc, net_debt=net_debt)
         (raw / "accounting_ratios.json").write_text(
             json.dumps(acct, indent=2, default=str), encoding="utf-8")
         acct_block = format_accounting_ratios_block(
             acct, fin_parsed.get("trade_date"), fin_parsed.get("as_of_quarter"))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        acct_block = (
+            f"\n\n## Accounting ratios\n\n"
+            f"**Accounting ratios unavailable** — {exc}. "
+            f"**Do not cite accounting-ratio figures (margins, returns, leverage) "
+            f"in this report.** If profitability or leverage context is essential "
+            f"to the thesis, flag it as `(accounting ratios unavailable)` and do "
+            f"not invent figures from memory.\n"
+        )
+    with open(pm_brief_path, "a", encoding="utf-8") as f:
+        f.write(acct_block)
 
+    try:
+        from tradingagents.agents.utils.relative_multiples import (
+            compute_relative_multiples, format_relative_multiples_block,
+        )
         mc = (iv.get("inputs", {}) or {}).get("market_cap") if isinstance(iv, dict) else None
         if mc is None:
             mc = fin_parsed.get("market_cap")
@@ -457,11 +473,16 @@ def fetch_research_pack(state: dict) -> None:
         (raw / "relative_multiples.json").write_text(
             json.dumps(rel, indent=2, default=str), encoding="utf-8")
         rel_block = format_relative_multiples_block(rel, fin_parsed.get("trade_date"))
-    except Exception as exc:  # noqa: BLE001 - these blocks must never crash the run
-        acct_block = f"\n\n## Accounting ratios\n\n(accounting ratios unavailable — {exc})\n"
-        rel_block = f"\n\n## Relative valuation multiples\n\n(relative multiples unavailable — {exc})\n"
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        rel_block = (
+            f"\n\n## Relative valuation multiples\n\n"
+            f"**Relative valuation multiples unavailable** — {exc}. "
+            f"**Do not cite relative-multiple figures (P/E, EV/EBITDA, peer medians) "
+            f"in this report.** If relative valuation is essential to the thesis, "
+            f"flag it as `(relative multiples unavailable)` and do not invent "
+            f"figures from memory.\n"
+        )
     with open(pm_brief_path, "a", encoding="utf-8") as f:
-        f.write(acct_block)
         f.write(rel_block)
 
     # Phase 6.9 deterministic latest-session block: the 2026-05-08 COIN run
