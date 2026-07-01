@@ -114,6 +114,12 @@ Distress) as a solvency flag in your Sanity check section — do NOT compute \
 your own Z-score or invent a zone. If the block is marked "not applicable" \
 or "unavailable", do not cite a Z-score at all.
 
+Manipulation screen discipline: when pm_brief.md's "## Manipulation screen \
+(Beneish M-score)" block is applicable, cite its M-score and flag verbatim \
+(elevated/normal) alongside the Z″ score in your Sanity check section — do \
+NOT compute your own M-score or invent a flag. If the block is marked "not \
+applicable" or "unavailable", do not cite an M-score at all.
+
 ## Sanity check on reported numbers
 
 | Metric | Reported | Implied math | Plausible? |

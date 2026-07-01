@@ -30,3 +30,10 @@ def test_distress_citation_mandated():
     from tradingagents.agents.analysts import fundamentals_analyst as fa
     # tightened: assert the distinctive prohibition clause itself, not just a topic mention
     assert "do not compute your own z-score or invent a zone" in fa._SYSTEM.lower()
+
+
+def test_beneish_citation_mandated():
+    from tradingagents.agents.analysts import fundamentals_analyst as fa
+    assert "beneish" in fa._SYSTEM.lower() or "manipulation screen" in fa._SYSTEM.lower()
+    # tightened: assert the distinctive prohibition clause itself, not just a topic mention
+    assert "do not compute your own m-score or invent a flag" in fa._SYSTEM.lower()
