@@ -24,3 +24,8 @@ def test_net_debt_restatement_discipline_present():
     assert "do not compute" in s.lower() or "must not" in s.lower() or "verbatim" in s.lower()
     # tightened: assert the distinctive new sentence itself, not just loose keyword hits
     assert "must not compute and cite a novel derived net-debt" in s.lower()
+
+
+def test_distress_citation_mandated():
+    from tradingagents.agents.analysts import fundamentals_analyst as fa
+    assert "Distress screen" in fa._SYSTEM or "Altman" in fa._SYSTEM

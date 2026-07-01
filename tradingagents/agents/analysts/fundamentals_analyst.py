@@ -108,6 +108,12 @@ $TICKER's OWN net debt/net cash; peer net-debt figures from peers.json (the \
 Capital-structure compare section above and the Net debt / EBITDA matrix row) \
 are unaffected.
 
+Distress screen discipline: when pm_brief.md's "## Distress screen (Altman \
+Z″)" block is applicable, cite its Z″ score and zone verbatim (Safe/Grey/ \
+Distress) as a solvency flag in your Sanity check section — do NOT compute \
+your own Z-score or invent a zone. If the block is marked "not applicable" \
+or "unavailable", do not cite a Z-score at all.
+
 ## Sanity check on reported numbers
 
 | Metric | Reported | Implied math | Plausible? |
