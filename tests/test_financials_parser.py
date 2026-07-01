@@ -104,3 +104,38 @@ def test_parse_financials_retained_earnings():
               "balance_sheet": "# BS\n\n,2026-03-31,2025-12-31\nTotal Assets,80,79\nRetained Earnings,40000000000,38000000000\n",
               "cashflow": "", "income_statement": ""}
     assert parse_financials(bundle)["retained_earnings"] == 40000000000
+
+
+_BS_A = ("# BS annual\n\n,2025-12-31,2024-12-31,2023-12-31\n"
+         "Total Assets,1000,900,\nCurrent Assets,400,360,\nNet PPE,500,450,\n"
+         "Receivables,100,90,\nStockholders Equity,600,540,\n")
+_IS_A = ("# IS annual\n\n,2025-12-31,2024-12-31,2023-12-31\n"
+         "Total Revenue,1000,900,\nCost Of Revenue,600,540,\n"
+         "Selling General And Administration,100,90,\nReconciled Depreciation,50,45,\n"
+         "Net Income,120,100,\n")
+_CF_A = ("# CF annual\n\n,2025-12-31,2024-12-31,2023-12-31\n"
+         "Operating Cash Flow,110,95,\n")
+
+
+def test_beneish_inputs_current_and_prior():
+    from tradingagents.agents.utils.financials_parser import parse_financials
+    bundle = {"ticker": "ACME", "trade_date": "2026-01-01", "financial_currency": "USD",
+              "fundamentals": "# f\nMarket Cap: 1\n", "balance_sheet": "", "cashflow": "", "income_statement": "",
+              "balance_sheet_annual": _BS_A, "income_statement_annual": _IS_A, "cashflow_annual": _CF_A}
+    bi = parse_financials(bundle)["beneish_inputs"]
+    assert bi["current"]["total_assets"] == 1000 and bi["prior"]["total_assets"] == 900
+    assert bi["current"]["sales"] == 1000 and bi["prior"]["sales"] == 900
+    assert bi["current"]["depreciation"] == 50 and bi["prior"]["depreciation"] == 45
+    assert bi["current"]["sga"] == 100 and bi["prior"]["sga"] == 90
+    assert bi["current"]["cfo"] == 110  # cfo current-only
+    assert bi["current"]["net_income"] == 120
+
+
+def test_beneish_inputs_missing_prior_year():
+    from tradingagents.agents.utils.financials_parser import parse_financials
+    bs1 = "# BS\n\n,2025-12-31\nTotal Assets,1000\n"  # only one year
+    bundle = {"ticker": "ACME", "trade_date": "2026-01-01", "financial_currency": "USD",
+              "fundamentals": "# f\n", "balance_sheet": "", "cashflow": "", "income_statement": "",
+              "balance_sheet_annual": bs1, "income_statement_annual": "", "cashflow_annual": ""}
+    bi = parse_financials(bundle)["beneish_inputs"]
+    assert bi["prior"]["total_assets"] is None  # no prior column -> None

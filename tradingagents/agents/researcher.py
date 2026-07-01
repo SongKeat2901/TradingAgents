@@ -133,6 +133,9 @@ def _fetch_financials(ticker: str, date: str) -> dict[str, Any]:
         "balance_sheet": get_balance_sheet.invoke({"ticker": ticker, "curr_date": date}),
         "cashflow": get_cashflow.invoke({"ticker": ticker, "curr_date": date}),
         "income_statement": get_income_statement.invoke({"ticker": ticker, "curr_date": date}),
+        "balance_sheet_annual": get_balance_sheet.invoke({"ticker": ticker, "curr_date": date, "freq": "annual"}),
+        "cashflow_annual": get_cashflow.invoke({"ticker": ticker, "curr_date": date, "freq": "annual"}),
+        "income_statement_annual": get_income_statement.invoke({"ticker": ticker, "curr_date": date, "freq": "annual"}),
     }
 
 
@@ -501,13 +504,36 @@ def fetch_research_pack(state: dict) -> None:
         )
         z = compute_altman_z(fin_parsed)
         (raw / "distress_screens.json").write_text(
-            json.dumps(z, indent=2, default=str), encoding="utf-8")
+            json.dumps({"altman_z": z}, indent=2, default=str), encoding="utf-8")
         with open(pm_brief_path, "a", encoding="utf-8") as f:
             f.write(format_distress_block(z))
     except Exception as exc:  # noqa: BLE001 - this block must never crash the run
         with open(pm_brief_path, "a", encoding="utf-8") as f:
             f.write(f"\n\n## Distress screen (Altman Z″) — unavailable ({exc})\n\n"
                     "*Do not cite a Z-score.*\n")
+
+    # --- Manipulation screen (Beneish M-score, WP4b) ---
+    try:
+        from tradingagents.agents.utils.distress_screens import (
+            compute_beneish_m, format_beneish_block,
+        )
+        m = compute_beneish_m(fin_parsed)
+        _dscreens_path = raw / "distress_screens.json"
+        _dscreens: dict = {}
+        if _dscreens_path.exists():
+            try:
+                _dscreens = json.loads(_dscreens_path.read_text(encoding="utf-8"))
+            except Exception:
+                _dscreens = {}
+        _dscreens["beneish_m"] = m
+        _dscreens_path.write_text(
+            json.dumps(_dscreens, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_beneish_block(m))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Manipulation screen (Beneish M-score) — unavailable ({exc})\n\n"
+                    "*Do not cite an M-score.*\n")
 
     try:
         from tradingagents.agents.utils.relative_multiples import (

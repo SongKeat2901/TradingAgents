@@ -2,8 +2,9 @@
 
 Altman Z'' (4-variable, non-manufacturer) — sector-robust, uses book equity
 (no market cap). Missing inputs -> None -> rendered "n/a"; financials skipped.
-Beneish M-score (WP4b) will be added here once the annual-statement data layer
-exists.
+Beneish M-score (WP4b) — 8-ratio earnings-manipulation screen computed from
+annual current/prior statement pairs (`beneish_inputs`); same missing-inputs
+-> "n/a" and financials-skipped conventions as Altman Z.
 """
 from __future__ import annotations
 
@@ -74,4 +75,83 @@ def format_distress_block(result: dict[str, Any]) -> str:
         f"| X4 book equity / total liabilities | {r['x4']} |\n\n"
         "*Use the Z″ score and zone verbatim; do not recompute. Z″ (4-variable, "
         "non-manufacturer) is a relative distress indicator, not a default prediction.*\n"
+    )
+
+
+def _sub(a, b):
+    return None if (a is None or b is None) else a - b
+
+
+def _add(a, b):
+    return None if (a is None or b is None) else a + b
+
+
+def compute_beneish_m(fin: dict[str, Any]) -> dict[str, Any]:
+    fin = fin or {}
+    sector = fin.get("sector") or ""
+    if "financial" in sector.lower():
+        return {"model": "Beneish M", "applicable": False,
+                "skip_reason": f"Beneish not meaningful for financials (sector: {sector})"}
+    bi = fin.get("beneish_inputs") or {}
+    c = bi.get("current") or {}
+    p = bi.get("prior") or {}
+
+    def gm(s):   # gross margin
+        return _div(_sub(s.get("sales"), s.get("cogs")), s.get("sales"))
+
+    def aq(s):   # asset quality = 1 - (CA+PPE)/TA
+        num = _add(s.get("current_assets"), s.get("ppe"))
+        frac = _div(num, s.get("total_assets"))
+        return None if frac is None else 1 - frac
+
+    def dr(s):   # depreciation rate = dep/(dep+ppe)
+        return _div(s.get("depreciation"), _add(s.get("depreciation"), s.get("ppe")))
+
+    def lev(s):  # leverage = total_liabilities / total_assets
+        return _div(_sub(s.get("total_assets"), s.get("total_equity")), s.get("total_assets"))
+
+    dsri = _div(_div(c.get("receivables"), c.get("sales")), _div(p.get("receivables"), p.get("sales")))
+    gmi = _div(gm(p), gm(c))
+    aqi = _div(aq(c), aq(p))
+    sgi = _div(c.get("sales"), p.get("sales"))
+    depi = _div(dr(p), dr(c))
+    sgai = _div(_div(c.get("sga"), c.get("sales")), _div(p.get("sga"), p.get("sales")))
+    lvgi = _div(lev(c), lev(p))
+    tata = _div(_sub(c.get("net_income"), c.get("cfo")), c.get("total_assets"))
+
+    ratios = {"DSRI": dsri, "GMI": gmi, "AQI": aqi, "SGI": sgi,
+              "DEPI": depi, "SGAI": sgai, "LVGI": lvgi, "TATA": tata}
+    if any(v is None for v in ratios.values()):
+        missing = [k for k, v in ratios.items() if v is None]
+        return {"model": "Beneish M", "applicable": True, "m_score": None, "flag": None,
+                "unavailable_reason": f"missing ratios: {', '.join(missing)}",
+                **{k: _r(v) for k, v in ratios.items()}}
+
+    m = (-4.84 + 0.92 * dsri + 0.528 * gmi + 0.404 * aqi + 0.892 * sgi
+         + 0.115 * depi - 0.172 * sgai + 4.679 * tata - 0.327 * lvgi)
+    flag = "elevated" if m > -1.78 else "normal"
+    return {"model": "Beneish M", "applicable": True, "m_score": round(m, 2), "flag": flag,
+            **{k: _r(v) for k, v in ratios.items()}}
+
+
+def format_beneish_block(result: dict[str, Any]) -> str:
+    r = result or {}
+    if not r.get("applicable", True):
+        return (f"\n\n## Manipulation screen (Beneish M-score) — not applicable "
+                f"({r.get('skip_reason', 'financials')})\n\n"
+                "*Beneish is not meaningful for this sector; do not cite an M-score for it.*\n")
+    if r.get("m_score") is None:
+        return (f"\n\n## Manipulation screen (Beneish M-score) — n/a (data unavailable: "
+                f"{r.get('unavailable_reason', 'missing annual inputs')})\n\n"
+                "*Do not cite an M-score; required annual inputs were missing.*\n")
+    rows = "".join(f"| {k} | {r.get(k)} |\n" for k in ("DSRI", "GMI", "AQI", "SGI", "DEPI", "SGAI", "LVGI", "TATA"))
+    return (
+        f"\n\n## Manipulation screen (Beneish M-score) (computed from annual statements)\n\n"
+        "| Metric | Value |\n|---|---|\n"
+        f"| **Beneish M** | **{r['m_score']}** |\n"
+        f"| **Flag** | **{r['flag']}** (M > -1.78 = elevated manipulation risk) |\n"
+        f"{rows}\n"
+        "*Use the M-score and flag verbatim; do not recompute. Beneish flags RISK of "
+        "earnings manipulation, not proof; it is unreliable for financials, recent IPOs, "
+        "and heavy-M&A years.*\n"
     )
