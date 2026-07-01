@@ -34,6 +34,53 @@ from tradingagents.agents.utils.structured import invoke_with_empty_retry
 logger = logging.getLogger(__name__)
 
 
+VALIDATOR_RETRY_CAP = 2  # max in-graph self-correction attempts (self-verifying)
+
+# Phase-7/8/9 result keys produced by run_phase_7_validators(); each maps to a
+# {"violations": [ {severity, file, ...}, ... ]} dict.
+_VALIDATOR_PHASE_KEYS = (
+    "phase_7_1_price_date", "phase_7_2_quote_attribution",
+    "phase_7_3_peer_metric", "phase_7_5_net_debt",
+    "phase_8_scenario_probability", "phase_9_filing_attribution",
+)
+
+
+def _decision_blocking_violations(results: dict) -> list[dict]:
+    """Keep blocking (severity != MINOR) violations the PM can fix by rewriting
+    decision.md: those whose file == 'decision.md', plus all phase-8 scenario
+    violations (which only ever concern decision.md and may omit a file key)."""
+    out: list[dict] = []
+    for key in _VALIDATOR_PHASE_KEYS:
+        for v in (results.get(key, {}) or {}).get("violations", []) or []:
+            if v.get("severity") == "MINOR":
+                continue
+            if key == "phase_8_scenario_probability" or v.get("file") == "decision.md":
+                out.append({**v, "_phase": key})
+    return out
+
+
+def format_validator_feedback(violations: list[dict]) -> str:
+    """Turn decision.md violations into actionable correction instructions for the PM."""
+    lines = [
+        "DETERMINISTIC validation found errors in your decision document. Re-emit the "
+        "FULL document, correcting ONLY these flagged numbers to the authoritative values:",
+    ]
+    for v in violations:
+        phase = v.get("_phase", "").replace("phase_", "").replace("_", " ").strip()
+        label = v.get("type") or phase or "violation"
+        claimed = v.get("claimed_price", v.get("claimed_value", v.get("claimed_dollars")))
+        actual = v.get("actual_close", v.get("closest_canonical"))
+        ctx = f' in: "{v["match_text"][:120]}"' if v.get("match_text") else ""
+        if claimed is not None and actual is not None:
+            lines.append(f"- [{label}]{ctx} — you wrote {claimed}; the authoritative "
+                         f"value is {actual}. Restate it as {actual}.")
+        elif v.get("detail"):
+            lines.append(f"- [{label}]{ctx} — {v['detail']}")
+        else:
+            lines.append(f"- [{label}]{ctx} — correct this value to match raw/*.json.")
+    return "\n".join(lines)
+
+
 _SYSTEM = """\
 You are an independent QC reviewer auditing a Portfolio Manager's decision \
 document. Your role is adversarial, not collaborative — your job is to catch \
