@@ -426,6 +426,44 @@ def fetch_research_pack(state: dict) -> None:
     with open(pm_brief_path, "a", encoding="utf-8") as f:
         f.write(iv_block)
 
+    # Accounting ratios + relative valuation multiples (deterministic).
+    # Reuses financials/net_debt/ratios/iv already computed above. Guarded in
+    # its own try/except (matching the intrinsic-value block's pattern above)
+    # so a compute failure never crashes the run — this also covers `iv`
+    # being unbound if compute_intrinsic_value raised before assignment.
+    try:
+        from tradingagents.agents.utils.financials_parser import parse_financials
+        from tradingagents.agents.utils.accounting_ratios import (
+            compute_accounting_ratios, format_accounting_ratios_block,
+        )
+        from tradingagents.agents.utils.relative_multiples import (
+            compute_relative_multiples, format_relative_multiples_block,
+        )
+        fin_parsed = parse_financials(financials)
+        wacc = (iv.get("inputs", {}) or {}).get("wacc") if isinstance(iv, dict) else None
+        acct = compute_accounting_ratios(fin_parsed, wacc=wacc, net_debt=net_debt)
+        (raw / "accounting_ratios.json").write_text(
+            json.dumps(acct, indent=2, default=str), encoding="utf-8")
+        acct_block = format_accounting_ratios_block(
+            acct, fin_parsed.get("trade_date"), fin_parsed.get("as_of_quarter"))
+
+        mc = (iv.get("inputs", {}) or {}).get("market_cap") if isinstance(iv, dict) else None
+        if mc is None:
+            mc = fin_parsed.get("market_cap")
+        nd_val = (net_debt or {}).get("net_debt")
+        rel = compute_relative_multiples(
+            fin_parsed, market_cap=mc, net_debt=nd_val, peers=ratios,
+            forward_eps=fin_parsed.get("forward_eps"))
+        (raw / "relative_multiples.json").write_text(
+            json.dumps(rel, indent=2, default=str), encoding="utf-8")
+        rel_block = format_relative_multiples_block(rel, fin_parsed.get("trade_date"))
+    except Exception as exc:  # noqa: BLE001 - these blocks must never crash the run
+        acct_block = f"\n\n## Accounting ratios\n\n(accounting ratios unavailable — {exc})\n"
+        rel_block = f"\n\n## Relative valuation multiples\n\n(relative multiples unavailable — {exc})\n"
+    with open(pm_brief_path, "a", encoding="utf-8") as f:
+        f.write(acct_block)
+        f.write(rel_block)
+
     # Phase 6.9 deterministic latest-session block: the 2026-05-08 COIN run
     # surfaced a forward-projection failure mode where the Market Analyst
     # invented a "May 8 trade-date close of $206.50 on 14.39M shares" when
