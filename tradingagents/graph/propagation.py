@@ -18,7 +18,7 @@ class Propagator:
 
     def create_initial_state(
         self, company_name: str, trade_date: str, past_context: str = "",
-        output_dir: str = "/tmp",
+        output_dir: str = "/tmp", reuse_raw: bool = False,
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
         raw_dir = str(Path(output_dir) / "raw")
@@ -57,6 +57,7 @@ class Propagator:
             "news_report": "",
             # Quant-research rebuild fields (2026-05-03)
             "raw_dir": raw_dir,
+            "reuse_raw": reuse_raw,
             "peers": [],
             "pm_brief": "",
             "technicals_report": "",

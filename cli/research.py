@@ -201,6 +201,12 @@ def build_parser() -> argparse.ArgumentParser:
             "still throttles per-minute throughput."
         ),
     )
+    p.add_argument(
+        "--reuse-raw", action="store_true",
+        help="On a rerun, reuse reproducible raw/*.json (financials/prices/"
+             "peers/insider/reference) instead of re-fetching; news/social "
+             "are still fetched fresh.",
+    )
     return p
 
 
@@ -309,6 +315,7 @@ def _build_config(args: argparse.Namespace) -> dict:
     config["max_tokens"] = args.max_tokens
     config["deep_cooldown_seconds"] = args.deep_cooldown_seconds
     config["output_dir"] = args.output_dir
+    config["reuse_raw"] = args.reuse_raw
     return config
 
 

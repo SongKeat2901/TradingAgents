@@ -84,6 +84,7 @@ class AgentState(MessagesState):
     pm_brief: str
     peers: List[str]
     raw_dir: str
+    reuse_raw: bool  # opt-in: load reproducible raw/*.json instead of re-fetching
     technicals_report: str
     pm_feedback: str
     pm_retries: int
