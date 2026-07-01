@@ -58,6 +58,33 @@ def parse_financials(financials: Any) -> dict[str, Any]:
     bs_cols, bs = _parse_quarterly_csv(d.get("balance_sheet", ""))
     _, cf = _parse_quarterly_csv(d.get("cashflow", ""))
     _, is_ = _parse_quarterly_csv(d.get("income_statement", ""))
+    _, bs_a = _parse_quarterly_csv(d.get("balance_sheet_annual", ""))
+    _, is_a = _parse_quarterly_csv(d.get("income_statement_annual", ""))
+    _, cf_a = _parse_quarterly_csv(d.get("cashflow_annual", ""))
+
+    def _dep(rows_is, rows_cf, idx):
+        # depreciation: income-statement 'Reconciled Depreciation', else cashflow D&A
+        return (_row_at(rows_is, idx, "Reconciled Depreciation")
+                or _row_at(rows_cf, idx, "Depreciation And Amortization",
+                           "Depreciation Amortization Depletion"))
+
+    def _annual_side(idx):
+        return {
+            "receivables": _row_at(bs_a, idx, "Receivables", "Accounts Receivable", "Net Receivables"),
+            "current_assets": _row_at(bs_a, idx, "Current Assets", "Total Current Assets"),
+            "ppe": _row_at(bs_a, idx, "Net PPE", "Net Property Plant And Equipment"),
+            "total_assets": _row_at(bs_a, idx, "Total Assets"),
+            "total_equity": _row_at(bs_a, idx, "Stockholders Equity", "Common Stock Equity"),
+            "sales": _row_at(is_a, idx, "Total Revenue", "Operating Revenue"),
+            "cogs": _row_at(is_a, idx, "Cost Of Revenue"),
+            "sga": _row_at(is_a, idx, "Selling General And Administration"),
+            "depreciation": _dep(is_a, cf_a, idx),
+        }
+
+    current_side = _annual_side(0)
+    current_side["net_income"] = _row_at(is_a, 0, "Net Income", "Net Income Common Stockholders")
+    current_side["cfo"] = _row_at(cf_a, 0, "Operating Cash Flow", "Cash Flow From Continuing Operating Activities")
+    beneish_inputs = {"current": current_side, "prior": _annual_side(1)}
 
     return {
         "trade_date": d.get("trade_date"),
@@ -118,4 +145,5 @@ def parse_financials(financials: Any) -> dict[str, Any]:
         "net_income_latest_q": _row_at(is_, 0, "Net Income", "Net Income Common Stockholders"),
         "net_income_yoy_ago": _row_at(is_, 4, "Net Income", "Net Income Common Stockholders"),
         "diluted_eps_yoy_ago": _row_at(is_, 4, "Diluted EPS"),
+        "beneish_inputs": beneish_inputs,
     }
