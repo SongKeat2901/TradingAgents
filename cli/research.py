@@ -205,7 +205,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--reuse-raw", action="store_true",
         help="On a rerun, reuse reproducible raw/*.json (financials/prices/"
              "peers/insider/reference) instead of re-fetching; news/social "
-             "are still fetched fresh.",
+             "are still fetched fresh. Use only for interrupted/rate-limited "
+             "reruns; it re-serves the prior attempt's prices/financials/"
+             "reference VERBATIM, so do NOT use it to correct a "
+             "data-corrupted run.",
     )
     return p
 

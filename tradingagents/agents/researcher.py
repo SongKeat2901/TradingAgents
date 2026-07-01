@@ -228,9 +228,10 @@ def _gather_raw(ticker, date, peers, raw, reuse):
     prices, r_px = reuse_or_fetch(raw, "prices.json", lambda: _fetch_prices(ticker, date), reuse)
     insider, r_ins = reuse_or_fetch(raw, "insider.json", lambda: _fetch_insider(ticker, date), reuse)
     peers_data, r_peers = reuse_or_fetch_peers(raw, peers, lambda: {p: _fetch_financials(p, date) for p in peers}, reuse)
+    _ref_ok = lambda d: _id(d) and d.get("reference_price") is not None
     reference, r_ref = reuse_or_fetch(raw, "reference.json",
                                       lambda: _build_reference(ticker, date, prices, _fetch_indicators(ticker, date)),
-                                      reuse, sanity=_id)
+                                      reuse, sanity=_ref_ok)
     news = _fetch_news(ticker, date)     # always fresh (date-sensitive)
     social = _fetch_social(ticker, date)  # always fresh (date-sensitive)
     bundle = {"financials": financials, "prices": prices, "insider": insider,
@@ -269,7 +270,8 @@ def fetch_research_pack(state: dict) -> None:
     if reuse:
         hit = ", ".join(k for k, v in reused.items() if v) or "none"
         print(f"[raw-reuse] reused {sum(reused.values())}/{len(reused)} artifacts "
-              f"({hit}); re-fetched fresh: news, social")
+              f"({hit}); re-fetched fresh: news, social — reused data is verbatim "
+              f"from the prior attempt; not for correcting bad data")
     else:
         print("[raw-reuse] off (fetched all fresh)")
 

@@ -54,3 +54,27 @@ def test_reuse_off_fetches_everything(tmp_path, monkeypatch):
 
     assert counts["fin"] >= 1 and counts["prices"] == 1 and counts["ind"] == 1
     assert not any(reused.values())
+
+
+def test_reference_missing_price_degrades_to_fetch(tmp_path, monkeypatch):
+    raw = tmp_path
+    _seed(raw)
+    # Overwrite reference.json with a schema-drifted / price-less version that
+    # still passes ticker+trade_date sanity.
+    (raw / "reference.json").write_text(
+        json.dumps({"ticker": "MSFT", "trade_date": "2026-06-30", "reference_price": None}),
+        encoding="utf-8",
+    )
+    counts = {k: 0 for k in ("fin", "news", "insider", "social", "prices", "ind")}
+    monkeypatch.setattr(R, "_fetch_financials", lambda t, d: counts.__setitem__("fin", counts["fin"] + 1) or {"ticker": t, "trade_date": d})
+    monkeypatch.setattr(R, "_fetch_news", lambda t, d: counts.__setitem__("news", counts["news"] + 1) or {"n": 1})
+    monkeypatch.setattr(R, "_fetch_insider", lambda t, d: counts.__setitem__("insider", counts["insider"] + 1) or {"transactions": []})
+    monkeypatch.setattr(R, "_fetch_social", lambda t, d: counts.__setitem__("social", counts["social"] + 1) or {"s": 1})
+    monkeypatch.setattr(R, "_fetch_prices", lambda t, d: counts.__setitem__("prices", counts["prices"] + 1) or {"ohlcv": _OHLCV})
+    monkeypatch.setattr(R, "_fetch_indicators", lambda t, d: counts.__setitem__("ind", counts["ind"] + 1) or {})
+
+    bundle, reused = R._gather_raw("MSFT", "2026-06-30", ["AAPL", "GOOGL"], raw, reuse=True)
+
+    assert reused["reference"] is False
+    assert counts["ind"] == 1
+    assert bundle["reference"]["reference_price"] == 373.02
