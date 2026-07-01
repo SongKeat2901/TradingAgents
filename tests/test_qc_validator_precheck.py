@@ -58,3 +58,9 @@ def test_formatter_actionable_lines():
     assert "368.57" in fb          # authoritative price surfaced
     assert "359.90" in fb          # claimed price surfaced
     assert "full document" in fb.lower() or "re-emit" in fb.lower()
+
+
+def test_initial_state_has_qc_validator_retries():
+    from tradingagents.graph.propagation import Propagator
+    st = Propagator().create_initial_state("MSFT", "2026-06-30", output_dir="/tmp/x")
+    assert st["qc_validator_retries"] == 0
