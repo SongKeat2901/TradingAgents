@@ -24,12 +24,14 @@ class GraphSetup:
         deep_thinking_llm: Any,
         tool_nodes: Dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
+        config: Dict[str, Any] | None = None,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
+        self.config = config
 
     def setup_graph(
         self, selected_analysts=["market", "social", "news", "fundamentals"]
@@ -87,7 +89,7 @@ class GraphSetup:
         ta_agent_v2_node = create_ta_agent_v2_node(self.quick_thinking_llm)
         # QC agent runs on a Sonnet-tier (quick) model to keep cost low; the
         # checklist work doesn't require Opus reasoning.
-        qc_agent_node = create_qc_agent_node(self.quick_thinking_llm)
+        qc_agent_node = create_qc_agent_node(self.quick_thinking_llm, self.config)
         # Phase 6.7 Executive PM runs on the deep tier (Opus) — stakeholder
         # voice + numerical fidelity require careful prose, and it's the
         # last LLM call in the pipeline so the marginal cost is small.

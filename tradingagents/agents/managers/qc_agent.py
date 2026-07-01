@@ -14,9 +14,18 @@ Design:
   qc_retries. The graph routes back to the PM.
 - On PASS or qc_retries == 1: routes through to END.
 
-Cap at 1 retry per run to bound LLM cost. The PM's existing PM_RETRY_SIGNAL
-remains independent — it pushes back to RM/Risk, this agent only audits PM
-output and pushes back to PM.
+Two independent retry mechanisms, each capped separately:
+- `qc_retries` (cap 1): the LLM 18-item audit below. Bounds LLM cost — QC
+  runs its full adversarial review at most once per run.
+- `qc_validator_retries` (cap `VALIDATOR_RETRY_CAP` = 2): the deterministic
+  Phase-7 pre-check that runs BEFORE the LLM audit (materializes preview
+  outputs, re-runs the numeric validators, and on a decision.md-scoped
+  blocking violation sends feedback straight back to the PM without an LLM
+  call). This is cheap self-correction for obviously-wrong numbers and is
+  exhausted before the LLM audit ever gets a chance to run.
+
+The PM's existing PM_RETRY_SIGNAL remains independent — it pushes back to
+RM/Risk, this agent only audits PM output and pushes back to PM.
 """
 
 from __future__ import annotations
@@ -29,6 +38,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from cli.research_validation import run_phase_7_validators
+from cli.research_writer import write_research_outputs
 from tradingagents.agents.utils.structured import invoke_with_empty_retry
 
 logger = logging.getLogger(__name__)
@@ -265,7 +276,23 @@ def _load_reference_snapshot(state: dict) -> str:
     return _json.dumps(ref, indent=2)
 
 
-def create_qc_agent_node(llm):
+def _run_deterministic_precheck(state: dict, config) -> list[dict]:
+    """Materialize preview outputs, run the Phase-7 validators, return the
+    decision.md-scoped blocking violations. Fail-open: any error -> []."""
+    try:
+        output_dir = str(Path(state["raw_dir"]).parent)
+        write_research_outputs(state, output_dir, config=config)
+        results = run_phase_7_validators(output_dir)
+        return _decision_blocking_violations(results)
+    except Exception:
+        logger.warning(
+            "QC deterministic pre-check failed; falling through to LLM audit",
+            exc_info=True,
+        )
+        return []
+
+
+def create_qc_agent_node(llm, config=None):
     """Factory: returns the QC Agent LangGraph node function.
 
     Reads state.final_trade_decision and raw/reference.json, runs the audit,
@@ -273,6 +300,22 @@ def create_qc_agent_node(llm):
     """
 
     def qc_agent_node(state: dict) -> dict[str, Any]:
+        # --- Phase B: deterministic inline validation (before the LLM audit) ---
+        # Materializes a preview of the report outputs and re-runs the Phase-7
+        # validators against them; a decision.md-scoped blocking violation is
+        # sent straight back to the PM (no LLM call) so obviously-wrong
+        # numbers are self-corrected without burning an LLM round-trip.
+        val_retries = state.get("qc_validator_retries", 0)
+        if val_retries < VALIDATOR_RETRY_CAP:
+            blocking = _run_deterministic_precheck(state, config)
+            if blocking:
+                return {
+                    "qc_passed": False,
+                    "qc_feedback": format_validator_feedback(blocking),
+                    "qc_validator_retries": val_retries + 1,
+                }
+
+        # --- existing LLM 18-item audit (unchanged) ---
         retries = state.get("qc_retries", 0)
         # Hard cap: only run QC once. After one round of feedback (whether the PM
         # re-passed or not) the graph proceeds to END.
