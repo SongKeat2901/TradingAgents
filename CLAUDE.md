@@ -7,7 +7,7 @@ PDFs to Telegram chat `-1003753140043`.
 ## Quick Start
 
 ```bash
-# Unit tests (216 tests, ~2s)
+# Unit tests (735 tests, ~11s)
 .venv/bin/python -m pytest -q -m unit --tb=line
 
 # Single-test debug
@@ -74,9 +74,10 @@ can't paraphrase. See memory: `project_phase6_deterministic_blocks_pattern.md`.
 | `cli/research_writer.py` | Writes per-run markdown + state.json with `_meta` block |
 | `tradingagents/graph/trading_graph.py` | Graph wiring (`deep_via_cli`/`quick_via_cli` routing) |
 | `tradingagents/agents/managers/pm_preflight.py` | Calendar (6.2) + SEC filing (6.3) block appends |
-| `tradingagents/agents/researcher.py` | Peer-ratios (6.4) block append + classification |
-| `tradingagents/agents/managers/qc_agent.py` | 16-item audit (item 15 filing-anchor, 16 numerical-trace) |
-| `tradingagents/agents/utils/{calendar,sec_edgar,peer_ratios,classifier}.py` | Pure-Python deterministic helpers |
+| `tradingagents/agents/researcher.py` | Peer-ratios (6.4) + accounting-ratios + relative-multiples block appends + classification |
+| `tradingagents/agents/utils/{financials_parser,accounting_ratios,relative_multiples}.py` | Phase-1 (2026-07-01) deterministic fundamentals blocks; ratio blocks must use `financials_parser`'s `ebit_ttm`, not single-quarter `ebit` |
+| `tradingagents/agents/managers/qc_agent.py` | 18-item audit (15 filing-anchor, 16 numerical-trace, 17 accounting-ratios, 18 relative-multiples) |
+| `tradingagents/agents/utils/{calendar,sec_edgar,peer_ratios,classifier}.py` | Pure-Python deterministic helpers (calendar also carries earnings-surprise history) |
 | `tradingagents/llm_clients/claude_cli_chat_model.py` | `claude -p` subprocess wrapper + model alias map |
 
 ## Commit conventions
