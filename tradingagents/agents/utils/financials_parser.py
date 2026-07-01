@@ -95,6 +95,7 @@ def parse_financials(financials: Any) -> dict[str, Any]:
         "payables": _row_col0(bs, "Payables", "Accounts Payable"),
         "total_debt": _row_col0(bs, "Total Debt"),
         "total_equity": _row_col0(bs, "Stockholders Equity", "Common Stock Equity"),
+        "retained_earnings": _row_col0(bs, "Retained Earnings"),
         "receivables_avg": _avg2(bs, "Receivables", "Accounts Receivable", "Net Receivables"),
         "inventory_avg": _avg2(bs, "Inventory"),
         "payables_avg": _avg2(bs, "Payables", "Accounts Payable"),

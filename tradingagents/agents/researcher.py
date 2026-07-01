@@ -494,6 +494,21 @@ def fetch_research_pack(state: dict) -> None:
     with open(pm_brief_path, "a", encoding="utf-8") as f:
         f.write(acct_block)
 
+    # --- Distress screen (Altman Z'') ---
+    try:
+        from tradingagents.agents.utils.distress_screens import (
+            compute_altman_z, format_distress_block,
+        )
+        z = compute_altman_z(fin_parsed)
+        (raw / "distress_screens.json").write_text(
+            json.dumps(z, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_distress_block(z))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Distress screen (Altman Z″) — unavailable ({exc})\n\n"
+                    "*Do not cite a Z-score.*\n")
+
     try:
         from tradingagents.agents.utils.relative_multiples import (
             compute_relative_multiples, format_relative_multiples_block,

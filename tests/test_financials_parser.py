@@ -95,3 +95,12 @@ def test_parse_financials_missing_rows_are_none_not_fabricated():
 
 def test_parse_financials_tolerates_non_dict():
     assert parse_financials(None)["market_cap"] is None
+
+
+def test_parse_financials_retained_earnings():
+    from tradingagents.agents.utils.financials_parser import parse_financials
+    bundle = {"ticker": "ACME", "trade_date": "2026-05-01", "financial_currency": "USD",
+              "fundamentals": "# f\nMarket Cap: 1\n",
+              "balance_sheet": "# BS\n\n,2026-03-31,2025-12-31\nTotal Assets,80,79\nRetained Earnings,40000000000,38000000000\n",
+              "cashflow": "", "income_statement": ""}
+    assert parse_financials(bundle)["retained_earnings"] == 40000000000
