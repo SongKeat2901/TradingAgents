@@ -9,7 +9,7 @@ pytestmark = pytest.mark.unit
 _FIN = {
     "revenue_ttm": 40000000000.0, "net_income": 8000000000.0, "ebit": 10000000000.0,
     "ebitda": 15000000000.0, "fcf": 9000000000.0, "tax": 0.21,
-    "gross_margin": 60.0,
+    "gross_margin": 0.60,
     "total_assets": 80000000000.0, "total_assets_avg": 79000000000.0,
     "current_assets": 30000000000.0, "current_liabilities": 15000000000.0,
     "cash_and_equivalents": 12000000000.0, "inventory": 4000000000.0,
@@ -25,6 +25,7 @@ _FIN = {
 
 def test_core_ratios():
     r = compute_accounting_ratios(_FIN, wacc=0.09, net_debt={"net_debt": 8000000000.0})
+    assert r["gross_margin"] == 60.0           # 0.60 fraction -> 60%
     assert r["net_margin"] == 20.0            # 8000/40000
     assert r["roe"] == 20.0                    # 8000/40000
     assert r["roa"] == 10.0                    # 8000/80000
@@ -53,6 +54,24 @@ def test_missing_inputs_yield_none_never_crash():
     assert r["total_shareholder_yield"] is None
 
 
+def test_missing_receivables_avg_yields_none_dso_not_fabricated_zero():
+    fin = dict(_FIN)
+    fin.pop("receivables_avg")
+    r = compute_accounting_ratios(fin, wacc=0.09, net_debt={"net_debt": 8000000000.0})
+    assert r["dso_days"] is None
+    block = format_accounting_ratios_block(r, "2026-05-01", "2026-03-31")
+    assert "| DSO (days) | n/a (data unavailable) |" in block
+
+
+def test_zero_dividends_and_buybacks_render_as_real_zero_not_na():
+    fin = dict(_FIN)
+    fin["dividends_paid_ttm"] = 0.0
+    fin["buybacks_ttm"] = 0.0
+    r = compute_accounting_ratios(fin, wacc=0.09, net_debt={"net_debt": 8000000000.0})
+    assert r["dividend_yield"] == 0.0
+    assert r["buyback_yield"] == 0.0
+
+
 def test_block_renders_na_for_missing():
     block = format_accounting_ratios_block(compute_accounting_ratios({}), "2026-05-01", None)
     assert "## Accounting ratios" in block
@@ -65,3 +84,4 @@ def test_block_has_values_and_header():
     assert "## Accounting ratios" in block
     assert "ROE" in block and "ROIC" in block and "Cash conversion cycle" in block
     assert "verbatim" in block  # anti-fabrication usage mandate present
+    assert "21% statutory tax rate" in block  # ROIC tax assumption disclosed
