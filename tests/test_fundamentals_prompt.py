@@ -12,4 +12,5 @@ def test_insider_json_in_files_list():
 
 def test_insider_section_and_citation_mandate():
     assert "Insider transactions" in fa._SYSTEM
-    assert "insider.json" in fa._SYSTEM  # citation-source mandate updated
+    # closing blanket citation mandate explicitly lists insider.json as a source
+    assert "reference.json, or insider.json" in fa._SYSTEM

@@ -115,8 +115,8 @@ must be addressed downstream by bull/bear or trader.
 | Last 6-12 months | <net $ or share count> | <CEO/CFO/director names & direction> |
 
 Summarize cluster buying/selling and any signal, citing figures from \
-raw/insider.json. If raw/insider.json is empty, state "no reported insider \
-transactions in the window" — do not infer activity.
+raw/insider.json. If raw/insider.json's `transactions` list is empty, state \
+"no reported insider transactions in the window" — do not infer activity.
 
 ## What management needs to prove
 
