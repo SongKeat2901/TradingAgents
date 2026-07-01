@@ -115,14 +115,21 @@ def _compute_one_ticker(symbol: str, trade_date: str) -> dict[str, Any]:
         reported = row.get("Reported EPS")
         estimate = row.get("EPS Estimate")
         surprise_pct = row.get("Surprise(%)")
+        has_estimate = estimate is not None and not pd.isna(estimate)
+        has_surprise_pct = surprise_pct is not None and not pd.isna(surprise_pct)
         if reported is not None and not pd.isna(reported) and d_naive < trade_dt:
             past_rows.append((date_str, d_naive))
-            surprises.append({
-                "date": date_str,
-                "reported": float(reported),
-                "estimate": None if estimate is None or pd.isna(estimate) else float(estimate),
-                "surprise_pct": None if surprise_pct is None or pd.isna(surprise_pct) else float(surprise_pct),
-            })
+            # Only capture a surprise entry when there's real surprise
+            # signal (an estimate or a surprise %) — a Reported-EPS-only
+            # row with no estimate/surprise columns/values carries no
+            # surprise information and would just be reported-only noise.
+            if has_estimate or has_surprise_pct:
+                surprises.append({
+                    "date": date_str,
+                    "reported": float(reported),
+                    "estimate": float(estimate) if has_estimate else None,
+                    "surprise_pct": float(surprise_pct) if has_surprise_pct else None,
+                })
         elif d_naive > trade_dt:
             future_rows.append((date_str, d_naive))
 
@@ -164,9 +171,14 @@ def compute_calendar(trade_date: str, tickers: list[str]) -> dict[str, Any]:
               {"date": "YYYY-MM-DD", "reported": float,
                "estimate": float or None, "surprise_pct": float or None},
               ...  # most-recent-first, at most the last 8 PAST rows with a
-                   # non-NaN Reported EPS. estimate/surprise_pct are None
-                   # when yfinance's DataFrame lacks those columns or the
-                   # cell is NaN (never fabricated).
+                   # non-NaN Reported EPS AND real surprise signal (a
+                   # non-NaN EPS Estimate and/or Surprise(%)). A row whose
+                   # DataFrame lacks those columns, or has them but NaN,
+                   # is skipped entirely — it carries no surprise
+                   # information, so it's excluded rather than emitted as
+                   # a reported-only, estimate=None/surprise_pct=None
+                   # noise entry. When emitted, estimate/surprise_pct are
+                   # each independently float or None (never fabricated).
             ],
           } OR {"unavailable": True, "reason": "..."},
           ...

@@ -256,6 +256,7 @@ def _format_surprise_block(raw_dir: str) -> str:
         rows = []
         beats = 0
         misses = 0
+        graded = 0
         for s in surprises:
             date = s.get("date", "?")
             reported = s.get("reported")
@@ -265,19 +266,28 @@ def _format_surprise_block(raw_dir: str) -> str:
             surprise_pct = s.get("surprise_pct")
             if isinstance(surprise_pct, (int, float)):
                 surprise_str = f"{surprise_pct:+.2f}%"
+                graded += 1
                 if surprise_pct > 0:
                     beats += 1
                 elif surprise_pct < 0:
                     misses += 1
+                # surprise_pct == 0.0 is neutral (in line with estimate):
+                # counted in `graded` but neither a beat nor a miss.
             else:
                 surprise_str = "n/a"
             rows.append(f"| {date} | {reported_str} | {estimate_str} | {surprise_str} |")
 
-        total = beats + misses
-        if total:
-            streak = f"beat {beats} of last {total}" if beats >= misses else f"missed {misses} of last {total}"
-        else:
+        if graded == 0:
+            # No row has a numeric surprise_pct at all — genuinely no data.
             streak = "no beat/miss data (estimate or surprise % unavailable)"
+        elif beats > misses:
+            streak = f"beat {beats} of last {graded}"
+        elif misses > beats:
+            streak = f"missed {misses} of last {graded}"
+        else:
+            # Tie (including all-neutral, surprise_pct == 0.0 throughout):
+            # numeric data IS present, so don't claim it's "unavailable".
+            streak = f"in line with estimates ({beats} beat / {misses} miss of last {graded})"
 
         table = "\n".join(rows)
         sections.append(

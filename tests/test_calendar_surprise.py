@@ -53,6 +53,10 @@ def test_surprise_history_most_recent_first_full_order():
 
 
 def test_surprise_history_capped_at_eight():
+    """10 past rows, each carrying real surprise data (Surprise(%)=5.0),
+    are captured (per fix #1) then capped at the 8 most recent — confirm
+    the exact count, that the two OLDEST dates are dropped, and that the
+    newest date survives as sur[0]."""
     rows = [
         (f"202{2 + i // 4}-{(i % 4) * 3 + 1:02d}-15", 1.0 + i * 0.01, 1.05 + i * 0.01, 5.0)
         for i in range(10)
@@ -63,14 +67,21 @@ def test_surprise_history_capped_at_eight():
     with patch("tradingagents.agents.utils.calendar.yf.Ticker", return_value=fake):
         out = compute_calendar("2026-05-01", ["MSFT"])
     sur = out["MSFT"]["surprises"]
-    assert len(sur) <= 8
+    assert len(sur) == 8
+    dates = [s["date"] for s in sur]
+    # The 10 input dates ascend 2022-01-15 .. 2024-04-15 (see the row
+    # comprehension above); the two oldest must be dropped by the cap.
+    assert "2022-01-15" not in dates
+    assert "2022-04-15" not in dates
+    assert sur[0]["date"] == "2024-04-15"
 
 
-def test_surprise_history_missing_columns_does_not_crash():
-    """Fixture without EPS Estimate / Surprise(%) columns (existing
-    test_calendar.py shape) must not crash. The reported-EPS row still
-    yields one surprise entry, but with estimate/surprise_pct as None
-    rather than fabricated — row.get(...) tolerates the missing columns."""
+def test_surprise_history_missing_columns_yields_empty_list():
+    """Fixture without EPS Estimate / Surprise(%) columns (the exact
+    test_calendar.py fixture shape) must not crash, and per fix #1 must
+    yield an EMPTY surprises list: a Reported-EPS-only row with no
+    estimate/surprise signal carries no surprise information, so it is
+    excluded rather than emitted as a reported-only noise entry."""
     idx = pd.to_datetime(["2026-04-29"])
     df = pd.DataFrame({"Reported EPS": [3.45]}, index=idx)
     fake = MagicMock()
@@ -78,7 +89,4 @@ def test_surprise_history_missing_columns_does_not_crash():
     with patch("tradingagents.agents.utils.calendar.yf.Ticker", return_value=fake):
         out = compute_calendar("2026-05-01", ["MSFT"])
     sur = out["MSFT"]["surprises"]
-    assert len(sur) == 1
-    assert sur[0]["reported"] == 3.45
-    assert sur[0]["estimate"] is None
-    assert sur[0]["surprise_pct"] is None
+    assert sur == []
