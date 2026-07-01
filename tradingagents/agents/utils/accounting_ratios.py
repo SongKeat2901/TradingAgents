@@ -101,11 +101,16 @@ def compute_accounting_ratios(
     else:
         r["total_shareholder_yield"] = None
 
-    # growth & quality (YoY from statements; multi-year CAGR deferred — needs annual data)
+    # growth & quality (single quarter vs the same quarter a year ago; multi-year
+    # CAGR deferred — needs annual data). Must NOT diff a TTM figure against a
+    # single-quarter one -- that mismatch inflated real-data growth ~4x (e.g.
+    # MSFT revenue_yoy_growth computed as 354% against a true ~18%).
+    rq = fin.get("revenue_latest_q")
     ry = fin.get("revenue_yoy_ago")
-    r["revenue_yoy_growth"] = _pct(_div(rev - ry, ry)) if (rev is not None and ry) else None
+    r["revenue_yoy_growth"] = _pct(_div(rq - ry, ry)) if (rq is not None and ry is not None and ry) else None
+    nq = fin.get("net_income_latest_q")
     niy = fin.get("net_income_yoy_ago")
-    r["net_income_yoy_growth"] = _pct(_div(ni - niy, niy)) if (ni is not None and niy) else None
+    r["net_income_yoy_growth"] = _pct(_div(nq - niy, niy)) if (nq is not None and niy is not None and niy) else None
     r["cfo_to_ni"] = _r(_div(fin.get("cfo_ttm"), ni))
     return r
 
@@ -148,8 +153,8 @@ def format_accounting_ratios_block(
         ("Dividend yield", _cell(r.get("dividend_yield"), "%")),
         ("Buyback yield", _cell(r.get("buyback_yield"), "%")),
         ("Total shareholder yield", _cell(r.get("total_shareholder_yield"), "%")),
-        ("Revenue growth (YoY)", _cell(r.get("revenue_yoy_growth"), "%")),
-        ("Net income growth (YoY)", _cell(r.get("net_income_yoy_growth"), "%")),
+        ("Revenue growth (latest Q, YoY)", _cell(r.get("revenue_yoy_growth"), "%")),
+        ("Net income growth (latest Q, YoY)", _cell(r.get("net_income_yoy_growth"), "%")),
         ("CFO / net income (accruals quality)", _cell(r.get("cfo_to_ni"), "x")),
     ]
     body = "\n".join(f"| {k} | {v} |" for k, v in rows)
@@ -158,8 +163,9 @@ def format_accounting_ratios_block(
         f"trade_date {trade_date}, latest quarter {as_of})\n\n"
         "| Metric | Value |\n|---|---|\n"
         f"{body}\n\n"
-        "*Use these values verbatim; do not recompute or paraphrase. Growth is "
-        "year-over-year from statements (multi-year CAGR out of scope). Any "
+        "*Use these values verbatim; do not recompute or paraphrase. Growth compares "
+        "the latest reported quarter to the same quarter a year ago (multi-year CAGR "
+        "out of scope). Any "
         "`n/a (data unavailable)` means the source line-item was absent — do NOT "
         "substitute an estimate. ROIC uses a 21% statutory tax rate when the "
         "issuer's effective tax rate is unavailable.*\n"

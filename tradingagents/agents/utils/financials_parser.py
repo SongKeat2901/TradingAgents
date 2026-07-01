@@ -106,9 +106,15 @@ def parse_financials(financials: Any) -> dict[str, Any]:
         "buybacks_ttm": _ttm(cf, "Repurchase Of Capital Stock", "Common Stock Payments"),
         "sbc_ttm": _ttm(cf, "Stock Based Compensation"),
         # income statement (TTM + YoY)
+        # NOTE: growth must compare like-for-like (single quarter vs the same
+        # quarter a year ago) -- the *_latest_q fields below pair with
+        # *_yoy_ago; never diff a TTM figure against a single-quarter one
+        # (that produced a ~4x-inflated growth rate on real data).
+        "revenue_latest_q": _row_at(is_, 0, "Total Revenue", "Operating Revenue"),
         "revenue_yoy_ago": _row_at(is_, 4, "Total Revenue", "Operating Revenue"),
         "cogs_ttm": _ttm(is_, "Cost Of Revenue"),
         "interest_expense_ttm": _ttm(is_, "Interest Expense", "Interest Expense Non Operating"),
+        "net_income_latest_q": _row_at(is_, 0, "Net Income", "Net Income Common Stockholders"),
         "net_income_yoy_ago": _row_at(is_, 4, "Net Income", "Net Income Common Stockholders"),
         "diluted_eps_yoy_ago": _row_at(is_, 4, "Diluted EPS"),
     }

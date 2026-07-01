@@ -73,6 +73,10 @@ def test_parse_financials_extracts_all_line_items():
     # YoY-ago = column index 4 (same quarter, prior year)
     assert fin["revenue_yoy_ago"] == 9000000000
     assert fin["diluted_eps_yoy_ago"] == 1.10
+    # latest-quarter counterparts = column index 0 (pair with *_yoy_ago so
+    # growth diffs quarter-vs-year-ago-quarter, never TTM-vs-quarter)
+    assert fin["revenue_latest_q"] == 10000000000
+    assert fin["net_income_latest_q"] == 2100000000
     # average balance = mean(col0, col1)
     assert fin["receivables_avg"] == (6000000000 + 5800000000) / 2
     # ebit_ttm = sum of last 4 quarterly "Operating Income" columns (TTM,

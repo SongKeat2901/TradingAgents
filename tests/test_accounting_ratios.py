@@ -18,7 +18,12 @@ _FIN = {
     "total_debt": 20000000000.0, "total_equity": 40000000000.0,
     "interest_expense_ttm": 600000000.0, "market_cap": 100000000000.0,
     "dividends_paid_ttm": -1600000000.0, "buybacks_ttm": -4000000000.0,
-    "revenue_yoy_ago": 36000000000.0, "net_income_yoy_ago": 7000000000.0,
+    # revenue_latest_q/revenue_yoy_ago are the single-quarter figures growth
+    # must use; kept deliberately far from revenue_ttm (~4x it, like real
+    # TTM-vs-Q data) so a regression that diffs TTM against a year-ago
+    # quarter is caught -- see test_revenue_and_net_income_growth_use_quarter_not_ttm.
+    "revenue_latest_q": 82900000000.0, "revenue_yoy_ago": 70100000000.0,
+    "net_income_latest_q": 22000000000.0, "net_income_yoy_ago": 18000000000.0,
     "cfo_ttm": 10800000000.0,
 }
 
@@ -43,8 +48,29 @@ def test_core_ratios():
     assert r["dividend_yield"] == 1.6          # 1600/100000
     assert r["buyback_yield"] == 4.0           # 4000/100000
     assert r["total_shareholder_yield"] == 5.6
-    assert r["revenue_yoy_growth"] == round((40000-36000)/36000*100, 2)
+    # growth compares the latest single quarter to the same quarter a year
+    # ago -- NOT revenue_ttm/net_income (TTM), which are ~4x a single quarter.
+    assert r["revenue_yoy_growth"] == round((82900-70100)/70100*100, 2)
+    assert r["net_income_yoy_growth"] == round((22000-18000)/18000*100, 2)
     assert r["cfo_to_ni"] == round(10800/8000, 2)
+
+
+def test_revenue_and_net_income_growth_use_quarter_not_ttm():
+    """Regression for the TTM-vs-quarter units mismatch: growth must diff
+    revenue_latest_q/net_income_latest_q against *_yoy_ago (both single
+    quarters), never revenue_ttm/net_income (TTM) against a single quarter.
+    On the old code this produced ~354%/~385% on live MSFT data instead of
+    the true ~18%/~23%."""
+    fin = dict(_FIN)
+    fin["revenue_ttm"] = 320000000000.0  # ~4x revenue_latest_q, as on real data
+    fin["net_income"] = 88000000000.0    # ~4x net_income_latest_q
+    r = compute_accounting_ratios(fin, wacc=0.09, net_debt={"net_debt": 8000000000.0})
+    assert r["revenue_yoy_growth"] == round((82900000000.0 - 70100000000.0) / 70100000000.0 * 100, 2)
+    assert r["revenue_yoy_growth"] == 18.26
+    assert r["net_income_yoy_growth"] == round((22000000000.0 - 18000000000.0) / 18000000000.0 * 100, 2)
+    # sanity: nowhere near the TTM-vs-quarter-inflated ~354%/~385%
+    assert r["revenue_yoy_growth"] < 50
+    assert r["net_income_yoy_growth"] < 50
 
 
 def test_missing_inputs_yield_none_never_crash():
