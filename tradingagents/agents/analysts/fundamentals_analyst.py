@@ -99,7 +99,7 @@ META has tons of debt" framing — make leverage / cash position concrete.
 
 Net-debt discipline (subject ticker only): for $TICKER's OWN net debt / net \
 cash, state it ONLY by restating a figure already shown in the pm_brief "## \
-Net debt" block (or raw/net_debt.json). You MUST NOT compute and cite a novel \
+Net debt" / "## Net cash" block (or raw/net_debt.json). You MUST NOT compute and cite a novel \
 derived net-debt/net-cash figure (e.g. a "~$Xbn divergence" between two \
 definitions) — the validator only recognizes the canonical derivations in \
 that block, so an invented one will be flagged. If two framings differ, name \
