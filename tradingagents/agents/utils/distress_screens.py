@@ -27,13 +27,13 @@ def compute_altman_z(fin: dict[str, Any]) -> dict[str, Any]:
     eq = fin.get("total_equity")
     ca = fin.get("current_assets")
     cl = fin.get("current_liabilities")
-    re = fin.get("retained_earnings")
+    retained = fin.get("retained_earnings")  # not `re` — avoids shadowing stdlib re (Beneish WP4b lands here)
     ebit = fin.get("ebit_ttm")
 
     tl = None if (ta is None or eq is None) else ta - eq
     wc = None if (ca is None or cl is None) else ca - cl
     x1 = _div(wc, ta)
-    x2 = _div(re, ta)
+    x2 = _div(retained, ta)
     x3 = _div(ebit, ta)
     x4 = _div(eq, tl) if (tl is not None and tl > 0) else None
 
