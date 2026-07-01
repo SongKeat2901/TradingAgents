@@ -105,6 +105,7 @@ def _compute_one_ticker(symbol: str, trade_date: str) -> dict[str, Any]:
 
     past_rows = []
     future_rows = []
+    surprises = []
     for _, row in rows.iterrows():
         d = row["earnings_date"]
         if hasattr(d, "to_pydatetime"):
@@ -112,8 +113,16 @@ def _compute_one_ticker(symbol: str, trade_date: str) -> dict[str, Any]:
         d_naive = d.replace(tzinfo=None) if d.tzinfo else d
         date_str = d_naive.strftime("%Y-%m-%d")
         reported = row.get("Reported EPS")
+        estimate = row.get("EPS Estimate")
+        surprise_pct = row.get("Surprise(%)")
         if reported is not None and not pd.isna(reported) and d_naive < trade_dt:
             past_rows.append((date_str, d_naive))
+            surprises.append({
+                "date": date_str,
+                "reported": float(reported),
+                "estimate": None if estimate is None or pd.isna(estimate) else float(estimate),
+                "surprise_pct": None if surprise_pct is None or pd.isna(surprise_pct) else float(surprise_pct),
+            })
         elif d_naive > trade_dt:
             future_rows.append((date_str, d_naive))
 
@@ -125,11 +134,15 @@ def _compute_one_ticker(symbol: str, trade_date: str) -> dict[str, Any]:
     if future_rows:
         next_expected, _ = min(future_rows, key=lambda r: r[1])
 
+    surprises.sort(key=lambda s: s["date"], reverse=True)
+    surprises = surprises[:8]
+
     return {
         "last_reported": last_reported,
         "fiscal_period": _fiscal_period(symbol, last_reported),
         "next_expected": next_expected,
         "source": "yfinance",
+        "surprises": surprises,
     }
 
 
@@ -147,6 +160,14 @@ def compute_calendar(trade_date: str, tickers: list[str]) -> dict[str, Any]:
             "fiscal_period": "FY26 Q3" or "Q1 2026",
             "next_expected": "YYYY-MM-DD" or None,
             "source": "yfinance",
+            "surprises": [
+              {"date": "YYYY-MM-DD", "reported": float,
+               "estimate": float or None, "surprise_pct": float or None},
+              ...  # most-recent-first, at most the last 8 PAST rows with a
+                   # non-NaN Reported EPS. estimate/surprise_pct are None
+                   # when yfinance's DataFrame lacks those columns or the
+                   # cell is NaN (never fabricated).
+            ],
           } OR {"unavailable": True, "reason": "..."},
           ...
           "_unavailable": list of ticker symbols that returned unavailable
