@@ -370,6 +370,7 @@ class TradingAgentsGraph:
         init_agent_state = self.propagator.create_initial_state(
             company_name, trade_date, past_context=past_context,
             output_dir=output_dir,
+            reuse_raw=self.config.get("reuse_raw", False),
         )
         args = self.propagator.get_graph_args()
 

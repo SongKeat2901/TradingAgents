@@ -186,31 +186,8 @@ def _fetch_indicators(ticker: str, date: str) -> dict[str, Any]:
     }
 
 
-def fetch_research_pack(state: dict) -> None:
-    """Fetch all data needed by the multi-agent pipeline. Writes to raw/.
-
-    Required state keys: `company_of_interest`, `trade_date`, `peers`, `raw_dir`.
-    """
-    ticker = state["company_of_interest"]
-    date = state["trade_date"]
-    peers = state.get("peers", [])
-    raw = Path(state["raw_dir"])
-    raw.mkdir(parents=True, exist_ok=True)
-
-    # Per-ticker bundles
-    financials = _fetch_financials(ticker, date)
-    news = _fetch_news(ticker, date)
-    insider = _fetch_insider(ticker, date)
-    social = _fetch_social(ticker, date)
-    prices = _fetch_prices(ticker, date)
-    indicators = _fetch_indicators(ticker, date)
-
-    # Peers (one financials bundle per peer)
-    peers_data = {p: _fetch_financials(p, date) for p in peers}
-
-    # Reference: single source of truth for prices. Parse the CSV / indicator
-    # strings to numeric values here so downstream agents (especially the PM's
-    # QC #7 self-audit) can verify price citations against a real number.
+def _build_reference(ticker, date, prices, indicators):
+    """Build the reference dict (was inline in fetch_research_pack)."""
     rows = _parse_ohlcv_rows(prices.get("ohlcv", ""))
     close_date, close_on_date = _close_with_date_on_or_before(rows, date)
     ytd_high, ytd_low = _ytd_high_low(rows, date)
@@ -227,7 +204,7 @@ def fetch_research_pack(state: dict) -> None:
         )
     else:
         _ref_source = f"yfinance close on or before {date}"
-    reference = {
+    return {
         "ticker": ticker,
         "trade_date": date,
         "reference_price": close_on_date,
@@ -239,6 +216,64 @@ def fetch_research_pack(state: dict) -> None:
         "ytd_low": ytd_low,
         "atr_14": _latest_indicator_value(indicators.get("atr", "")),
     }
+
+
+def _gather_raw(ticker, date, peers, raw, reuse):
+    """Fetch (or reuse) the raw inputs. Reuses financials/prices/insider/peers/
+    reference from raw/*.json when reuse is on; always fetches news/social fresh;
+    returns (bundle, reused_map)."""
+    from tradingagents.agents.utils.raw_reuse import reuse_or_fetch, reuse_or_fetch_peers
+    _id = lambda d: d.get("ticker") == ticker and d.get("trade_date") == date
+    financials, r_fin = reuse_or_fetch(raw, "financials.json", lambda: _fetch_financials(ticker, date), reuse, sanity=_id)
+    prices, r_px = reuse_or_fetch(raw, "prices.json", lambda: _fetch_prices(ticker, date), reuse)
+    insider, r_ins = reuse_or_fetch(raw, "insider.json", lambda: _fetch_insider(ticker, date), reuse)
+    peers_data, r_peers = reuse_or_fetch_peers(raw, peers, lambda: {p: _fetch_financials(p, date) for p in peers}, reuse)
+    _ref_ok = lambda d: _id(d) and d.get("reference_price") is not None
+    reference, r_ref = reuse_or_fetch(raw, "reference.json",
+                                      lambda: _build_reference(ticker, date, prices, _fetch_indicators(ticker, date)),
+                                      reuse, sanity=_ref_ok)
+    news = _fetch_news(ticker, date)     # always fresh (date-sensitive)
+    social = _fetch_social(ticker, date)  # always fresh (date-sensitive)
+    bundle = {"financials": financials, "prices": prices, "insider": insider,
+              "peers_data": peers_data, "reference": reference, "news": news, "social": social}
+    reused = {"financials": r_fin, "prices": r_px, "insider": r_ins, "peers": r_peers, "reference": r_ref}
+    return bundle, reused
+
+
+def fetch_research_pack(state: dict) -> None:
+    """Fetch all data needed by the multi-agent pipeline. Writes to raw/.
+
+    Required state keys: `company_of_interest`, `trade_date`, `peers`, `raw_dir`.
+    """
+    ticker = state["company_of_interest"]
+    date = state["trade_date"]
+    peers = state.get("peers", [])
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+
+    # Per-ticker bundles + peers + reference: routed through the raw-reuse
+    # loader (Phase A). With reuse off, behavior is unchanged from before —
+    # every artifact is fetched fresh in the same order. With reuse on,
+    # financials/prices/insider/peers/reference are loaded from a prior
+    # attempt's raw/*.json when present and valid; news/social always fetch
+    # fresh (date-sensitive, not reproducible from a stale snapshot).
+    reuse = state.get("reuse_raw", False)
+    bundle, reused = _gather_raw(ticker, date, peers, raw, reuse)
+    financials = bundle["financials"]
+    prices = bundle["prices"]
+    insider = bundle["insider"]
+    peers_data = bundle["peers_data"]
+    reference = bundle["reference"]
+    news = bundle["news"]
+    social = bundle["social"]
+    close_on_date = reference["reference_price"]
+    if reuse:
+        hit = ", ".join(k for k, v in reused.items() if v) or "none"
+        print(f"[raw-reuse] reused {sum(reused.values())}/{len(reused)} artifacts "
+              f"({hit}); re-fetched fresh: news, social — reused data is verbatim "
+              f"from the prior attempt; not for correcting bad data")
+    else:
+        print("[raw-reuse] off (fetched all fresh)")
 
     # Write everything
     (raw / "financials.json").write_text(json.dumps(financials, indent=2, default=str), encoding="utf-8")
