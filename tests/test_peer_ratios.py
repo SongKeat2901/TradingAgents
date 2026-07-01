@@ -336,9 +336,10 @@ def test_format_peer_ratios_block_renders_seven_columns():
     assert "(n/m)" in block.lower() or "uninterpretable" in block.lower()
 
 
-def test_format_peer_ratios_block_unavailable_row_has_seven_columns():
+def test_format_peer_ratios_block_unavailable_row_has_eight_columns():
     """When a peer is unavailable, the (unavailable) row must still match the
-    new 7-column width to keep the markdown table structurally valid."""
+    new 8-column width (Phase-1 Task 3 added Market Cap) to keep the markdown
+    table structurally valid."""
     from tradingagents.agents.utils.peer_ratios import (
         compute_peer_ratios,
         format_peer_ratios_block,
@@ -368,10 +369,10 @@ def test_format_peer_ratios_block_unavailable_row_has_seven_columns():
     # Find the BAD row and count cells
     for line in block.split("\n"):
         if line.startswith("| BAD |"):
-            # 1 ticker + 7 data + trailing empty = 9 pipe-separated cells
+            # 1 ticker + 8 data + trailing empty = 10 pipe-separated cells
             cell_count = line.count("|")
-            assert cell_count == 9, f"BAD row has {cell_count} pipes; expected 9"
-            assert line.count("(unavailable)") == 7
+            assert cell_count == 10, f"BAD row has {cell_count} pipes; expected 10"
+            assert line.count("(unavailable)") == 8
             break
     else:
         raise AssertionError("BAD row not found in rendered block")
