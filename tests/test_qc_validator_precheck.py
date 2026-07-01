@@ -49,6 +49,26 @@ def test_filter_keeps_only_decision_blocking_plus_scenario():
                for v in keep)
 
 
+def test_peer_metric_excluded_price_date_kept():
+    # peer_metric is known to over-trigger; a BLOCKING decision.md peer_metric
+    # violation must NOT be kept by the in-graph self-correct filter, while a
+    # price_date decision.md blocking violation IS kept.
+    results = {
+        "phase_7_1_price_date": {"violations": [
+            {"severity": "MATERIAL", "file": "decision.md", "type": "wrong_close",
+             "claimed_price": 359.90, "actual_close": 368.57},
+        ]},
+        "phase_7_3_peer_metric": {"violations": [
+            {"severity": "MATERIAL", "file": "decision.md", "type": "peer_mismatch",
+             "claimed_value": 12.0, "actual_close": 8.5},
+        ]},
+    }
+    keep = _decision_blocking_violations(results)
+    types = [v["type"] for v in keep]
+    assert "wrong_close" in types
+    assert "peer_mismatch" not in types
+
+
 def test_empty_when_no_blocking():
     clean = {"phase_7_1_price_date": {"violations": [
         {"severity": "MINOR", "file": "decision.md", "type": "x"}]},

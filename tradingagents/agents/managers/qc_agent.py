@@ -55,13 +55,26 @@ _VALIDATOR_PHASE_KEYS = (
     "phase_8_scenario_probability", "phase_9_filing_attribution",
 )
 
+# In-graph self-correct is limited to the high-confidence decision.md failure
+# modes we actually observe. peer_metric is known to over-trigger, and
+# quote/filing are lower-confidence — excluded here (still caught post-hoc),
+# so a spurious flag can't burn PM re-drafts.
+_SELF_CORRECT_PHASE_KEYS = (
+    "phase_7_1_price_date",
+    "phase_7_5_net_debt",
+    "phase_8_scenario_probability",
+)
+
 
 def _decision_blocking_violations(results: dict) -> list[dict]:
     """Keep blocking (severity != MINOR) violations the PM can fix by rewriting
-    decision.md: those whose file == 'decision.md', plus all phase-8 scenario
-    violations (which only ever concern decision.md and may omit a file key)."""
+    decision.md, restricted to the high-confidence self-correct phases
+    (_SELF_CORRECT_PHASE_KEYS): those whose file == 'decision.md', plus all
+    phase-8 scenario violations (which only ever concern decision.md and may
+    omit a file key). peer_metric/quote_attribution/filing_attribution are
+    excluded from this in-graph loop — they're still caught post-hoc."""
     out: list[dict] = []
-    for key in _VALIDATOR_PHASE_KEYS:
+    for key in _SELF_CORRECT_PHASE_KEYS:
         for v in (results.get(key, {}) or {}).get("violations", []) or []:
             if v.get("severity") == "MINOR":
                 continue
