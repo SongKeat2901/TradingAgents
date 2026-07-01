@@ -97,6 +97,17 @@ Quote the explicit comparison: "$TICKER's net cash of $<X>B vs <peer>'s net \
 debt of $<Y>B" or similar. This addresses the "MSFT cash is disgusting / \
 META has tons of debt" framing — make leverage / cash position concrete.
 
+Net-debt discipline (subject ticker only): for $TICKER's OWN net debt / net \
+cash, state it ONLY by restating a figure already shown in the pm_brief "## \
+Net debt" / "## Net cash" block (or raw/net_debt.json). You MUST NOT compute and cite a novel \
+derived net-debt/net-cash figure (e.g. a "~$Xbn divergence" between two \
+definitions) — the validator only recognizes the canonical derivations in \
+that block, so an invented one will be flagged. If two framings differ, name \
+them using the block's own cells, not a new number. This applies to \
+$TICKER's OWN net debt/net cash; peer net-debt figures from peers.json (the \
+Capital-structure compare section above and the Net debt / EBITDA matrix row) \
+are unaffected.
+
 ## Sanity check on reported numbers
 
 | Metric | Reported | Implied math | Plausible? |

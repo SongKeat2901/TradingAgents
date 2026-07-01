@@ -515,6 +515,22 @@ def fetch_research_pack(state: dict) -> None:
     with open(pm_brief_path, "a", encoding="utf-8") as f:
         f.write(latest_session_block)
 
+    # --- Recent closes (deterministic; pins specific-date closes) ---
+    try:
+        from tradingagents.agents.utils.recent_closes import (
+            compute_recent_closes, format_recent_closes_block,
+        )
+        rc = compute_recent_closes(prices, date)
+        (raw / "recent_closes.json").write_text(
+            json.dumps(rc, indent=2, default=str), encoding="utf-8")
+        rc_block = format_recent_closes_block(rc)
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(rc_block)
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Recent closes — unavailable ({exc})\n\n"
+                    "*Do not cite a closing price for any specific date.*\n")
+
     with (raw / "pm_brief.md").open("a", encoding="utf-8") as fh:
         fh.write(format_volume_profile_block(volume_profile))
 
