@@ -28,4 +28,5 @@ def test_net_debt_restatement_discipline_present():
 
 def test_distress_citation_mandated():
     from tradingagents.agents.analysts import fundamentals_analyst as fa
-    assert "Distress screen" in fa._SYSTEM or "Altman" in fa._SYSTEM
+    # tightened: assert the distinctive prohibition clause itself, not just a topic mention
+    assert "do not compute your own z-score or invent a zone" in fa._SYSTEM.lower()
