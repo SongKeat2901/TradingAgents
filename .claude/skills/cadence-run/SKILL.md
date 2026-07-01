@@ -52,8 +52,17 @@ historical). If only tickers are given, ask for the trade date or use today's la
    A+, ref price, EV, EV-vs-spot, QC, PDF) and rebuild the summary:
    `ssh macmini-trueknot 'cd ~/tradingagents && .venv/bin/python -m cli.update_research_summary'`
    (consolidates the PDF into `final/pdf/` and refreshes prices/moves).
-   **If NOT A+**: re-run once (non-determinism often clears a transient nit). If a
-   defect persists across re-runs, it's a failed run — leave it out of the
+   **If NOT A+**: re-run once **with `--reuse-raw`** — reuses the first attempt's
+   good `raw/*.json` (financials/prices/peers/insider/reference) to skip the yfinance
+   fetch + 429 risk and keep the reference price deterministic, while the LLM stages
+   re-roll (non-determinism often clears a transient nit); news/social still fetch fresh:
+   ```bash
+   ssh macmini-trueknot 'cd ~ && TRADINGRESEARCH_NO_TELEGRAM=1 ~/local/bin/tradingresearch --ticker <T> --date <D> --reuse-raw'
+   ```
+   **EXCEPTION — OMIT `--reuse-raw`** if the defect is a DATA problem (wrong reference
+   price / bad prices, e.g. the intraday-bar bug): `--reuse-raw` re-serves the prior
+   attempt's data verbatim, so a data-correctness rerun must re-fetch fresh.
+   If a defect persists across re-runs, it's a failed run — leave it out of the
    register and report why (per "remove all failed run").
 6. **If you HAND-CORRECT a report** (edit `decision.md`/`decision_executive.md` to
    fix a real defect instead of re-running): after editing you MUST **re-run the
