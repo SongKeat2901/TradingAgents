@@ -30,7 +30,10 @@ def compute_accounting_ratios(
     fin = fin or {}
     rev = fin.get("revenue_ttm")
     ni = fin.get("net_income")
-    ebit = fin.get("ebit")
+    # EBIT-derived ratios must use the TTM figure, not parse_fundamentals'
+    # single-quarter "ebit" (mixing periods understated/overstated these ~4x
+    # on real data). No fallback to the single-quarter value -> honest n/a.
+    ebit = fin.get("ebit_ttm")
     ta = fin.get("total_assets")
     eq = fin.get("total_equity")
     cl = fin.get("current_liabilities")

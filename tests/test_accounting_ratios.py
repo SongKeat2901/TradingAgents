@@ -7,7 +7,7 @@ from tradingagents.agents.utils.accounting_ratios import (
 pytestmark = pytest.mark.unit
 
 _FIN = {
-    "revenue_ttm": 40000000000.0, "net_income": 8000000000.0, "ebit": 10000000000.0,
+    "revenue_ttm": 40000000000.0, "net_income": 8000000000.0, "ebit_ttm": 10000000000.0,
     "ebitda": 15000000000.0, "fcf": 9000000000.0, "tax": 0.21,
     "gross_margin": 0.60,
     "total_assets": 80000000000.0, "total_assets_avg": 79000000000.0,

@@ -48,6 +48,7 @@ _IS = (
     ",2026-03-31,2025-12-31,2025-09-30,2025-06-30,2025-03-31\n"
     "Total Revenue,10000000000,9800000000,9600000000,9400000000,9000000000\n"
     "Cost Of Revenue,4000000000,3900000000,3800000000,3700000000,3600000000\n"
+    "Operating Income,2600000000,2500000000,2400000000,2300000000,2200000000\n"
     "Interest Expense,150000000,150000000,150000000,150000000,150000000\n"
     "Net Income,2100000000,2000000000,1950000000,1900000000,1800000000\n"
     "Diluted EPS,1.30,1.25,1.22,1.18,1.10\n"
@@ -74,6 +75,9 @@ def test_parse_financials_extracts_all_line_items():
     assert fin["diluted_eps_yoy_ago"] == 1.10
     # average balance = mean(col0, col1)
     assert fin["receivables_avg"] == (6000000000 + 5800000000) / 2
+    # ebit_ttm = sum of last 4 quarterly "Operating Income" columns (TTM,
+    # not the single-quarter "ebit" from parse_fundamentals)
+    assert fin["ebit_ttm"] == 2600000000 + 2500000000 + 2400000000 + 2300000000
 
 
 def test_parse_financials_missing_rows_are_none_not_fabricated():

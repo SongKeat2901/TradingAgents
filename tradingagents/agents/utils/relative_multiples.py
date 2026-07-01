@@ -70,7 +70,7 @@ def compute_relative_multiples(
         "market_cap": market_cap,
         "ev": ev,
         "ev_ebitda": _r(_div(ev, fin.get("ebitda"))),
-        "ev_ebit": _r(_div(ev, fin.get("ebit"))),
+        "ev_ebit": _r(_div(ev, fin.get("ebit_ttm"))),
         "ev_sales": _r(_div(ev, fin.get("revenue_ttm"))),
         "p_e_ttm": _r(_div(market_cap, fin.get("net_income"))),
         "p_e_fwd": p_e_fwd,

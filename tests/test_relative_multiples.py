@@ -9,7 +9,7 @@ from tradingagents.agents.utils.relative_multiples import (
 pytestmark = pytest.mark.unit
 
 _FIN = {
-    "revenue_ttm": 40000000000.0, "ebit": 10000000000.0, "ebitda": 15000000000.0,
+    "revenue_ttm": 40000000000.0, "ebit_ttm": 10000000000.0, "ebitda": 15000000000.0,
     "fcf": 9000000000.0, "net_income": 8000000000.0, "total_equity": 40000000000.0,
     "eps": 5.0, "forward_eps": 6.0, "diluted_shares": 2000000000.0,
 }
@@ -25,6 +25,7 @@ def test_subject_multiples_and_ev_tie_out():
     m = compute_relative_multiples(_FIN, market_cap=100e9, net_debt=8e9, peers=_PEERS, forward_eps=6.0)
     assert m["subject"]["ev"] == 108e9                 # market_cap + net_debt
     assert m["subject"]["ev_ebitda"] == round(108e9 / 15e9, 2)
+    assert m["subject"]["ev_ebit"] == round(108e9 / 10e9, 2)   # ev / ebit_ttm
     assert m["subject"]["ev_sales"] == round(108e9 / 40e9, 2)
     assert m["subject"]["p_b"] == round(100e9 / 40e9, 2)
     # forward P/E basis: market_cap / (forward_eps * diluted_shares)

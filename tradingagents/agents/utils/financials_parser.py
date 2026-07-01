@@ -66,8 +66,13 @@ def parse_financials(financials: Any) -> dict[str, Any]:
         # fundamentals-derived (reused; do not recompute)
         "market_cap": fund.get("market_cap"),
         "revenue_ttm": fund.get("revenue"),
+        # NOTE: "ebit" is a SINGLE-QUARTER value (parse_fundamentals._col0 on the
+        # income statement) — do not use it as a denominator/numerator against TTM
+        # figures. "ebit_ttm" below is the trailing-twelve-month sum the
+        # accounting-ratios and relative-multiples blocks must use instead.
         "ebit": fund.get("ebit"),
-        "ebitda": fund.get("ebitda"),
+        "ebit_ttm": _ttm(is_, "Operating Income", "EBIT"),
+        "ebitda": fund.get("ebitda"),  # already TTM, from yfinance info
         "net_income": fund.get("net_income"),
         "fcf": fund.get("fcf"),
         "eps": fund.get("eps"),
