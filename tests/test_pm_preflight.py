@@ -339,6 +339,153 @@ def test_pm_preflight_appends_calendar_block_to_brief(tmp_path, monkeypatch):
     assert out["pm_brief"] == brief
 
 
+def test_pm_preflight_appends_surprise_block_to_brief(tmp_path, monkeypatch):
+    """PM Pre-flight must append a '## Surprise history' block, built from
+    the same calendar.json, right after the Reporting status block."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    fake_calendar = {
+        "trade_date": "2026-05-01",
+        "_unavailable": [],
+        "MSFT": {
+            "last_reported": "2026-04-29",
+            "fiscal_period": "FY26 Q3",
+            "next_expected": "2026-07-25",
+            "source": "yfinance",
+            "surprises": [
+                {"date": "2026-04-29", "reported": 3.45, "estimate": 3.40, "surprise_pct": 1.47},
+                {"date": "2026-01-29", "reported": 3.22, "estimate": 3.20, "surprise_pct": 0.63},
+                {"date": "2025-10-29", "reported": 3.10, "estimate": 3.05, "surprise_pct": 1.64},
+                {"date": "2025-07-30", "reported": 2.95, "estimate": 2.90, "surprise_pct": 1.72},
+            ],
+        },
+        "GOOGL": {
+            "last_reported": "2026-04-22",
+            "fiscal_period": "Q1 2026",
+            "next_expected": "2026-07-23",
+            "source": "yfinance",
+            "surprises": [],
+        },
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: fake_calendar,
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="# PM Brief: MSFT 2026-05-01\n\n## Peer set\n- GOOGL: hyperscaler peer\n")
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path / "raw"),
+    }
+    out = node(state)
+
+    raw = Path(state["raw_dir"])
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+
+    assert "## Surprise history" in brief
+    assert brief.index("## Surprise history") > brief.index("## Reporting status")
+    assert "### MSFT" in brief
+    assert "2026-04-29" in brief
+    assert "3.45" in brief
+    assert "+1.47%" in brief
+    assert "beat 4 of last 4" in brief
+    # GOOGL has an empty surprises list — no section rendered for it.
+    assert "### GOOGL" not in brief
+    assert out["pm_brief"] == brief
+
+
+def test_pm_preflight_surprise_block_omitted_when_no_surprises(tmp_path, monkeypatch):
+    """No ticker has surprise history -> no '## Surprise history' block at all
+    (free-data honesty: don't render an empty section)."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    fake_calendar = {
+        "trade_date": "2026-05-01",
+        "_unavailable": [],
+        "MSFT": {
+            "last_reported": "2026-04-29",
+            "fiscal_period": "FY26 Q3",
+            "next_expected": "2026-07-25",
+            "source": "yfinance",
+            # No "surprises" key at all (mirrors pre-Task-7 calendar.json shape).
+        },
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: fake_calendar,
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="# PM Brief: MSFT 2026-05-01\n\n## Peer set\n- GOOGL: hyperscaler peer\n")
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path / "raw"),
+    }
+    node(state)
+
+    raw = Path(state["raw_dir"])
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Surprise history" not in brief
+
+
+def test_pm_preflight_surprise_block_all_tie_streak_is_labeled_in_line(tmp_path, monkeypatch):
+    """A record where every row's surprise_pct == 0.0 has real numeric
+    surprise data (graded > 0) but zero beats and zero misses. It must
+    render an accurate 'in line with estimates' label, NOT the
+    'no beat/miss data (estimate or surprise % unavailable)' string,
+    which would falsely claim the numeric data is missing."""
+    from unittest.mock import MagicMock
+    from langchain_core.messages import AIMessage
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+
+    fake_calendar = {
+        "trade_date": "2026-05-01",
+        "_unavailable": [],
+        "MSFT": {
+            "last_reported": "2026-04-29",
+            "fiscal_period": "FY26 Q3",
+            "next_expected": "2026-07-25",
+            "source": "yfinance",
+            "surprises": [
+                {"date": "2026-04-29", "reported": 3.40, "estimate": 3.40, "surprise_pct": 0.0},
+                {"date": "2026-01-29", "reported": 3.20, "estimate": 3.20, "surprise_pct": 0.0},
+                {"date": "2025-10-29", "reported": 3.05, "estimate": 3.05, "surprise_pct": 0.0},
+            ],
+        },
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: fake_calendar,
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="# PM Brief: MSFT 2026-05-01\n\n## Peer set\n- GOOGL: hyperscaler peer\n")
+
+    node = create_pm_preflight_node(fake_llm)
+    state = {
+        "company_of_interest": "MSFT",
+        "trade_date": "2026-05-01",
+        "raw_dir": str(tmp_path / "raw"),
+    }
+    node(state)
+
+    raw = Path(state["raw_dir"])
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "in line with estimates (0 beat / 0 miss of last 3)" in brief
+    assert "no beat/miss data (estimate or surprise % unavailable)" not in brief
+
+
 def test_pm_preflight_writes_calendar_json_using_extracted_peers(tmp_path, monkeypatch):
     """compute_calendar must be called with the peer list extracted from the
     LLM brief, not with state['peers'] (PM Pre-flight runs before peers are

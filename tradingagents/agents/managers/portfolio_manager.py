@@ -128,7 +128,7 @@ _QC_CHECKLIST = """
 
 # Self-correction QC checklist (Quant Research Rebuild — 2026-05-03)
 
-Before emitting your response, apply this 13-item checklist to your draft. \
+Before emitting your response, apply this 15-item checklist to your draft. \
 If ANY item fails, revise the draft IN PLACE (rewrite the affected sections \
 inside your response), then re-apply the checklist. Do not emit until every \
 item passes. Do not narrate which checks passed — the audit is internal; \
@@ -162,6 +162,12 @@ be silently ignored.
 11. Inputs section is present and complete in decision.md.
 12. Peer comparisons cite specific numbers, not vague comparisons.
 13. All claimed numbers trace back to raw/*.json data.
+14. **Accounting ratios cited.** The Accounting-ratios block's ROE / ROIC / \
+net-debt-to-EBITDA / leverage figures appear in the report where relevant and \
+match raw/accounting_ratios.json — no contradictory or recomputed values.
+15. **Relative multiples consistent.** Relative-valuation multiples (EV/EBITDA, \
+P/E, P/B) are cited from raw/relative_multiples.json; subject EV equals market \
+cap + net debt and ties to the net-debt block; no fabricated peer multiples.
 
 If revision after one self-correction loop still fails, see the push-back \
 retry rules in the next section."""

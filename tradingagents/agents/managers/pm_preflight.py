@@ -225,6 +225,95 @@ def _format_calendar_block(raw_dir: str) -> str:
     )
 
 
+def _format_surprise_block(raw_dir: str) -> str:
+    """Format raw/calendar.json's per-ticker `surprises` lists as a
+    '## Surprise history' Markdown block for appending to pm_brief.md
+    after the LLM call. Mirrors `_format_calendar_block`.
+
+    Returns "" if calendar.json is missing, unparsable, or no ticker has
+    any surprise history — in which case downstream agents fall back to
+    LLM judgment (same INDETERMINATE pattern as the classifier/calendar).
+    """
+    import json as _json
+    cal_path = Path(raw_dir) / "calendar.json"
+    if not cal_path.exists():
+        return ""
+    try:
+        cal = _json.loads(cal_path.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError:
+        return ""
+
+    sections = []
+    for key, val in cal.items():
+        if key in ("trade_date", "_unavailable"):
+            continue
+        if not isinstance(val, dict):
+            continue
+        surprises = val.get("surprises") or []
+        if not surprises:
+            continue
+
+        rows = []
+        beats = 0
+        misses = 0
+        graded = 0
+        for s in surprises:
+            date = s.get("date", "?")
+            reported = s.get("reported")
+            reported_str = f"{reported:.2f}" if isinstance(reported, (int, float)) else "n/a"
+            estimate = s.get("estimate")
+            estimate_str = f"{estimate:.2f}" if isinstance(estimate, (int, float)) else "n/a"
+            surprise_pct = s.get("surprise_pct")
+            if isinstance(surprise_pct, (int, float)):
+                surprise_str = f"{surprise_pct:+.2f}%"
+                graded += 1
+                if surprise_pct > 0:
+                    beats += 1
+                elif surprise_pct < 0:
+                    misses += 1
+                # surprise_pct == 0.0 is neutral (in line with estimate):
+                # counted in `graded` but neither a beat nor a miss.
+            else:
+                surprise_str = "n/a"
+            rows.append(f"| {date} | {reported_str} | {estimate_str} | {surprise_str} |")
+
+        if graded == 0:
+            # No row has a numeric surprise_pct at all — genuinely no data.
+            streak = "no beat/miss data (estimate or surprise % unavailable)"
+        elif beats > misses:
+            streak = f"beat {beats} of last {graded}"
+        elif misses > beats:
+            streak = f"missed {misses} of last {graded}"
+        else:
+            # Tie (including all-neutral, surprise_pct == 0.0 throughout):
+            # numeric data IS present, so don't claim it's "unavailable".
+            streak = f"in line with estimates ({beats} beat / {misses} miss of last {graded})"
+
+        table = "\n".join(rows)
+        sections.append(
+            f"### {key}\n\n"
+            "| Date | Reported | Estimate | Surprise % |\n"
+            "|---|---|---|---|\n"
+            f"{table}\n\n"
+            f"*{key} {streak}.*\n"
+        )
+
+    if not sections:
+        return ""
+
+    body = "\n".join(sections)
+    return (
+        "\n\n## Surprise history\n\n"
+        f"{body}\n"
+        "*Use these reported/estimate/surprise figures verbatim — they are "
+        "sourced from yfinance, not recalled from training data. \"n/a\" "
+        "means yfinance did not supply an estimate or surprise figure for "
+        "that quarter; never fabricate a number to fill the gap. A "
+        "consistent beat or miss streak is a legitimate input to earnings-"
+        "quality and estimate-revision reasoning.*\n"
+    )
+
+
 def _fetch_canonical_identity(ticker: str) -> str:
     """Phase 7.6: fetch yfinance authoritative identity for the ticker
     and format as a system-prompt prefix.
@@ -370,6 +459,15 @@ def create_pm_preflight_node(llm):
             with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
                 f.write(calendar_block)
             brief = brief + calendar_block
+
+        # Task 7 (WP1b): earnings-surprise history, sourced from the same
+        # calendar.json computed above. Appended right after the calendar
+        # block so it lands in the same deterministic-data neighborhood.
+        surprise_block = _format_surprise_block(state["raw_dir"])
+        if surprise_block:
+            with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
+                f.write(surprise_block)
+            brief = brief + surprise_block
 
         # Phase-6.3 filing-anchor: fetch the most recent 10-Q/10-K filed on
         # or before the trade date from SEC EDGAR. This catches the case

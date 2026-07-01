@@ -108,12 +108,22 @@ Always include 3-5 rows. Flag ❌ on any ratio that looks implausible (e.g., \
 "likely excludes capitalized interest or convertibles"). Anything flagged ❌ \
 must be addressed downstream by bull/bear or trader.
 
+## Insider transactions
+
+| Window | Net buy/sell | Notable individuals |
+|---|---|---|
+| Last 6-12 months | <net $ or share count> | <CEO/CFO/director names & direction> |
+
+Summarize cluster buying/selling and any signal, citing figures from \
+raw/insider.json. If raw/insider.json's `transactions` list is empty, state \
+"no reported insider transactions in the window" — do not infer activity.
+
 ## What management needs to prove
 
 Three falsifiable hurdles. Each: specific metric or event + by-when + threshold.
 
 Every numerical claim in your report must trace back to financials.json, \
-peers.json, news.json, or reference.json. No invented numbers."""
+peers.json, news.json, reference.json, or insider.json. No invented numbers."""
 
 
 def create_fundamentals_analyst(llm):
@@ -126,7 +136,7 @@ def create_fundamentals_analyst(llm):
         context = format_for_prompt(
             raw_dir,
             files=["pm_brief.md", "reference.json", "financials.json",
-                   "peers.json", "news.json", "sec_filing.md"],
+                   "peers.json", "news.json", "sec_filing.md", "insider.json"],
         )
 
         messages = [

@@ -82,6 +82,24 @@ def _parse_ttm_ebitda(text: str) -> float | None:
         return None
 
 
+def _parse_market_cap(text: str) -> float | None:
+    """Extract Market Cap from the yfinance fundamentals block.
+
+    Format is `Market Cap: <number>` on its own line (already fetched
+    alongside PE/EBITDA; no new network call). Missing/unparseable -> None
+    (free-data honesty; never fabricate).
+    """
+    if not text:
+        return None
+    m = re.search(r"^Market Cap:\s*(-?[0-9.]+)", text, re.MULTILINE)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except (ValueError, IndexError):
+        return None
+
+
 def _parse_balance_sheet_leverage(text: str) -> tuple[float | None, float | None, float | None]:
     """Extract (Net Debt, Total Debt, Cash+STI) from the balance_sheet CSV.
 
@@ -167,6 +185,8 @@ def _compute_one_peer(peer_data: dict[str, Any]) -> dict[str, Any]:
     else:
         nd_ebitda = None
 
+    market_cap = _parse_market_cap(peer_data.get("fundamentals", ""))
+
     return {
         "latest_quarter_capex_to_revenue": round(capex / revenue * 100, 2),
         "latest_quarter_op_margin": round(op_income / revenue * 100, 2),
@@ -175,6 +195,7 @@ def _compute_one_peer(peer_data: dict[str, Any]) -> dict[str, Any]:
         "net_debt": net_debt,
         "ttm_ebitda": ttm_ebitda,
         "nd_ebitda": round(nd_ebitda, 2) if nd_ebitda is not None else None,
+        "market_cap": market_cap,
         "source": "peers.json (yfinance: capex/revenue/op-margin from quarterly income+cashflow; PE/EBITDA from fundamentals; net-debt from balance_sheet col 0)",
     }
 
@@ -231,7 +252,8 @@ def format_peer_ratios_block(ratios: dict[str, Any]) -> str:
         if key in unavailable_set or val.get("unavailable"):
             rows.append(
                 f"| {key} | (unavailable) | (unavailable) | (unavailable) | "
-                f"(unavailable) | (unavailable) | (unavailable) | (unavailable) |"
+                f"(unavailable) | (unavailable) | (unavailable) | (unavailable) | "
+                f"(unavailable) |"
             )
             continue
 
@@ -258,6 +280,7 @@ def format_peer_ratios_block(ratios: dict[str, Any]) -> str:
             f"{_pct(val.get('latest_quarter_op_margin'))} | "
             f"{_x(val.get('ttm_pe'))} | "
             f"{_x(val.get('forward_pe'))} | "
+            f"{_b(val.get('market_cap'))} | "
             f"{_b(val.get('net_debt'))} | "
             f"{_b(val.get('ttm_ebitda'))} | "
             f"{_ratio(val.get('nd_ebitda'))} |"
@@ -270,8 +293,8 @@ def format_peer_ratios_block(ratios: dict[str, Any]) -> str:
     return (
         f"\n\n## Peer ratios (computed from raw/peers.json, trade_date {trade_date})\n\n"
         "| Ticker | Q1 capex/revenue | Q1 op margin | TTM P/E | Forward P/E | "
-        "Net Debt | TTM EBITDA | ND/EBITDA |\n"
-        "|---|---|---|---|---|---|---|---|\n"
+        "Market Cap | Net Debt | TTM EBITDA | ND/EBITDA |\n"
+        "|---|---|---|---|---|---|---|---|---|\n"
         f"{table}\n\n"
         "*Use these values verbatim. Do NOT cite \"approximate\" or "
         "\"inherited from prior debate\" alternatives — these are the "

@@ -8,7 +8,7 @@ call with a fresh context, so a "PASS" from QC is a real second opinion.
 Design:
 - Receives the full PM draft via state.final_trade_decision.
 - Reads raw/reference.json to verify reference_price/trade_date citations.
-- Applies the 16-item checklist (a strict superset of portfolio_manager._QC_CHECKLIST's 13 items — QC adds independent audit items 14, 15, 16 that the PM doesn't self-check).
+- Applies the 18-item checklist (a strict superset of portfolio_manager._QC_CHECKLIST's 15 items — QC adds independent audit items 14, 15, 16 that the PM doesn't self-check).
 - Emits structured verdict: PASS or FAIL with concrete feedback.
 - On FAIL: sets state.qc_feedback (text the PM must address) and bumps
   qc_retries. The graph routes back to the PM.
@@ -43,10 +43,10 @@ You will be given:
 - The PM's full decision document
 - The canonical reference snapshot from raw/reference.json
 
-Apply the 16-item checklist below to the document. For each item, decide PASS \
+Apply the 18-item checklist below to the document. For each item, decide PASS \
 or FAIL based on what's literally in the document — do not infer or extrapolate.
 
-# 16-item checklist
+# 18-item checklist
 
 1. Probabilities in the 12-month scenario table sum to exactly 100%.
 2. All three price targets are specific dollar values (e.g., "$485"), not \
@@ -162,6 +162,12 @@ Forward P/E for a peer, do not cite a Forward value labeled as TTM or vice \
 versa (the 2026-05-06 REGN re-run cited "BIIB 11.5x TTM" when 11.52 is \
 BIIB's Forward P/E and BIIB's TTM is 20.44 — column drift that reverses \
 the bear-case compression target).
+17. **Accounting ratios cited.** The Accounting-ratios block's ROE / ROIC / \
+net-debt-to-EBITDA / leverage figures appear in the report where relevant and \
+match raw/accounting_ratios.json — no contradictory or recomputed values.
+18. **Relative multiples consistent.** Relative-valuation multiples (EV/EBITDA, \
+P/E, P/B) are cited from raw/relative_multiples.json; subject EV equals market \
+cap + net debt and ties to the net-debt block; no fabricated peer multiples.
 
 # Output format
 
@@ -175,7 +181,7 @@ Or:
 QC_VERDICT: {"status": "FAIL", "feedback": "<≤300-word specific instruction \
 to the PM listing exactly which checklist items failed and what to fix>"}
 
-Before the verdict line, walk through each of the 16 items briefly with \
+Before the verdict line, walk through each of the 18 items briefly with \
 PASS/FAIL and one-sentence rationale. The PM will read your feedback and \
 revise — be specific, not vague."""
 
@@ -236,7 +242,7 @@ def create_qc_agent_node(llm):
         messages = [
             SystemMessage(content=_SYSTEM),
             HumanMessage(content=(
-                "Audit the document below. Apply the 16-item checklist and "
+                "Audit the document below. Apply the 18-item checklist and "
                 "emit your verdict on the last line.\n\n"
                 f"## Reference snapshot (from raw/reference.json)\n"
                 f"```json\n{reference_snapshot}\n```\n\n"

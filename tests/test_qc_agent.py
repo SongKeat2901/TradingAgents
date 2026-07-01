@@ -138,7 +138,7 @@ def test_qc_checklist_has_16_items_and_filing_anchor_text():
     all three sub-rules (verbatim/computed, sign+direction, peer-delta reconcile)."""
     from tradingagents.agents.managers.qc_agent import _SYSTEM
 
-    assert "16-item checklist" in _SYSTEM
+    assert "18-item checklist" in _SYSTEM
     # Item 15: filing-anchor temporal correctness
     assert "Filing-anchor temporal correctness" in _SYSTEM
     assert "raw/sec_filing.md" in _SYSTEM
