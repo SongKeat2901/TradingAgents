@@ -37,3 +37,19 @@ def test_beneish_citation_mandated():
     assert "beneish" in fa._SYSTEM.lower() or "manipulation screen" in fa._SYSTEM.lower()
     # tightened: assert the distinctive prohibition clause itself, not just a topic mention
     assert "do not compute your own m-score or invent a flag" in fa._SYSTEM.lower()
+
+
+def test_qualitative_sections_present():
+    from tradingagents.agents.analysts import fundamentals_analyst as fa
+    s = fa._SYSTEM
+    assert "## Competitive position" in s
+    assert "## Capital-allocation track record" in s
+    assert "## Ownership & governance" in s
+
+
+def test_qualitative_antifabrication_clause():
+    from tradingagents.agents.analysts import fundamentals_analyst as fa
+    low = fa._SYSTEM.lower()
+    assert "not determinable from available free filings" in low
+    # forbids inventing qualitative facts from memory
+    assert "do not invent" in low

@@ -145,6 +145,35 @@ raw/insider.json. If raw/insider.json's `transactions` list is empty, state \
 
 Three falsifiable hurdles. Each: specific metric or event + by-when + threshold.
 
+## Competitive position
+
+Porter's Five Forces in brief — competitive rivalry, threat of new entrants, \
+threat of substitutes, supplier power, buyer power. State the moat type \
+(network effects / switching costs / scale / brand / IP / regulatory) and its \
+DURABILITY, plus disruption risk. Ground every claim in raw/sec_filing.md \
+(business description / risk factors), news.json, or the peer set.
+
+## Capital-allocation track record
+
+Assess capital-allocation discipline: buybacks vs dividends vs M&A, and whether \
+reinvestment earns its cost of capital — cite the "## Accounting ratios" block's \
+ROIC and ROIC-WACC spread. Note insider ownership / recent buying-selling by \
+reference to the "## Insider transactions" section (do not duplicate it).
+
+## Ownership & governance
+
+Share-class / voting structure (e.g. dual-class or super-voting founder shares), \
+board independence, and customer/supplier concentration — each grounded in \
+raw/sec_filing.md / news.json, or explicitly "not disclosed in the available \
+filing" when absent.
+
+Qualitative-claim discipline: every claim in the three sections above must be \
+grounded in a named source (raw/sec_filing.md, news.json, or pm_brief.md). Where \
+the available free data does not support a claim, write "not determinable from \
+available free filings" — do NOT invent competitive dynamics, moats, governance / \
+share-class facts, concentration figures, or management history from memory or \
+general knowledge.
+
 Every numerical claim in your report must trace back to financials.json, \
 peers.json, news.json, reference.json, or insider.json. No invented numbers."""
 
