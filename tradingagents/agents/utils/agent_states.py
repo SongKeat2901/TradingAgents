@@ -93,3 +93,4 @@ class AgentState(MessagesState):
     qc_feedback: str
     qc_passed: bool
     qc_retries: int
+    qc_validator_retries: int  # Phase B: in-graph deterministic self-correction counter

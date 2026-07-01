@@ -67,6 +67,7 @@ class Propagator:
             "qc_feedback": "",
             "qc_passed": False,
             "qc_retries": 0,
+            "qc_validator_retries": 0,
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:
