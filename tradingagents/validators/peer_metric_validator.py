@@ -237,6 +237,22 @@ def _normalise_metric(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower())
 
 
+# Phase 9.2 (ORCL 2026-07-01): does the text right after a ticker mention
+# start with the ticker's OWN inline value? Covers possessive ("MSFT's
+# 46.3%"), prepositional ("IBM at 3.34x", "of 36.0%"), bare-adjacent
+# ("AMAT 31.9%"), and separator forms ("ASML: 36.0%", "TSM (31.0%)").
+# A name/word after the ticker ("FN (Fabrinet)", "MSFT Net debt/EBITDA")
+# does NOT match — those mentions stay eligible binding targets.
+# Unit is MANDATORY for non-$ numbers (reviewer probe: bare "MSFT 2026
+# guidance" / "MSFT 10-K" must not consume — every genuine inline-value
+# shape carries % / x / × or a $ amount).
+_CONSUMED_COMPARATOR_RE = re.compile(
+    r"^(?:['’]s)?\s*(?:at\s+|of\s+)?[:=(~≈]?\s*"
+    r"(?:[-−]?\$\d[\d.,]*\s*[BM]?|[-−]?\d[\d.,]*\s*[%x×])",
+    re.IGNORECASE,
+)
+
+
 def iter_peer_metric_spans(
     text: str,
     peer_tickers: set[str],
@@ -343,7 +359,37 @@ def iter_peer_metric_spans(
         ticker_matches = list(ticker_re.finditer(lookback_text))
         if not ticker_matches:
             continue
-        nearest = ticker_matches[-1].group("t").upper()
+
+        # Phase 9.2 (ORCL 2026-07-01 fix): consumed-comparator guard.
+        # A ticker mention immediately followed by its OWN inline value —
+        # "behind MSFT's 46.3%", "only IBM at 3.34x", "AMAT 31.9%" — is a
+        # comparator already bound to that value; it must not become the
+        # binding target for a LATER metric-value pair. Real FP: ORCL's
+        # "It ranks worst-but-one on leverage (Net debt/EBITDA 3.22x...)"
+        # bound 3.22x to MSFT because "MSFT's 46.3%" was the nearest
+        # surviving mention (SAP/CRM/IBM were slash-rejected and the
+        # subject sat outside the 300-char lookback). Walk back to the
+        # nearest UNCONSUMED ticker; if every mention is consumed, there
+        # is no credible owner in scope — skip the claim (deterministic
+        # blocks still validate subject figures).
+        nearest_m = None
+        for t in reversed(ticker_matches):
+            # The SUBJECT's mention is always eligible even when consumed
+            # ("ORCL's 3.22x leverage ... op margin 33.32%") — it must win
+            # the walk-back so the subject-skip below fires; otherwise the
+            # metric rebinds to an earlier peer and the corrector would
+            # overwrite a correct subject figure (reviewer mandatory fix).
+            if main_upper and t.group("t").upper() == main_upper:
+                nearest_m = t
+                break
+            follow = lookback_text[t.end():t.end() + 18]
+            if _CONSUMED_COMPARATOR_RE.match(follow):
+                continue
+            nearest_m = t
+            break
+        if nearest_m is None:
+            continue
+        nearest = nearest_m.group("t").upper()
 
         # Phase 7.3 v2.1: subject-attributed claims are out of Phase 7.3's
         # scope. Skip — Phase 6.4 deterministic block already verifies
@@ -377,7 +423,7 @@ def iter_peer_metric_spans(
             subject_in_lookback = any(
                 t.group("t").upper() == main_upper for t in ticker_matches
             )
-            nearest_offset = ticker_matches[-1].end()
+            nearest_offset = nearest_m.end()
             nearest_distance = len(lookback_text) - nearest_offset
             if (
                 subject_in_lookback

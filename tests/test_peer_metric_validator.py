@@ -928,3 +928,188 @@ def test_phase_9_1_post_vs_peer_value_still_checked_if_wrong(tmp_path):
         "Phase 9.1: wrong post-vs peer value 'ASX 99.9x' was NOT flagged; "
         f"violations={[(v.ticker, v.metric, v.claimed_value) for v in violations]}"
     )
+
+
+def test_phase_9_2_consumed_comparator_ticker_not_bound_orcl(tmp_path):
+    """ORCL 2026-07-01 false positive (the run's 6th MATERIAL blocker):
+    analyst_fundamentals.md line 33 —
+
+      "ORCL ranks #1 on revenue growth (20.6%, ahead of MSFT's 18.3% ...)
+       It ranks mid-pack on operating margin (33.32%, behind MSFT's 46.3%
+       but ahead of SAP/CRM/IBM) ... It ranks worst-but-one on leverage
+       (Net debt/EBITDA 3.22x, only IBM at 3.34x is worse)"
+
+    3.22x is the SUBJECT's (ORCL) ratio from the accounting-ratios block.
+    The lookback bound it to MSFT — the nearest surviving ticker mention,
+    because SAP/CRM/IBM are slash-rejected by the compound-word guard and
+    ORCL sits outside the 300-char window. But "MSFT's 46.3%" is a
+    comparator already CONSUMED by its own immediately-following value —
+    it must not become the binding target for a later metric."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-07-01",
+        "_unavailable": [],
+        "MSFT": {"latest_quarter_op_margin": 46.3, "nd_ebitda": 0.04,
+                 "ttm_pe": 22.89},
+        "CRM": {"latest_quarter_op_margin": 21.8, "nd_ebitda": 2.35},
+        "SAP": {"latest_quarter_op_margin": 28.8, "nd_ebitda": -0.19},
+        "IBM": {"latest_quarter_op_margin": 13.9, "nd_ebitda": 3.34},
+    }
+    peers = {t: {"ticker": t} for t in ("MSFT", "CRM", "SAP", "IBM")}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "**Reading it through the framing rules:** ORCL ranks #1 on revenue "
+        "growth (20.6%, ahead of MSFT's 18.3% and well ahead of SAP's 6.0%) "
+        "— direct evidence the OCI buildout is already lifting the blended "
+        "top line, not just the license base. It ranks mid-pack on operating "
+        "margin (33.32%, behind MSFT's 46.3% but ahead of SAP/CRM/IBM) "
+        "despite absorbing heavy OCI build-out costs. It ranks worst-but-one "
+        "on leverage (Net debt/EBITDA 3.22x, only IBM at 3.34x is worse) and "
+        "trades at a TTM P/E premium to the peer median."
+    )
+
+    violations = validate_peer_metrics(
+        text, "analyst_fundamentals.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="ORCL",
+    )
+    bad = [v for v in violations if v.claimed_value == "3.22x"]
+    assert bad == [], (
+        f"ORCL's own ND/EBITDA 3.22x bound to a consumed comparator: "
+        f"{[(v.ticker, v.metric, v.claimed_value) for v in violations]}"
+    )
+
+
+def test_phase_9_2_unconsumed_adjacent_peer_claim_still_bound(tmp_path):
+    """Guard: the consumed-comparator rule must not swallow a genuine peer
+    claim where the ticker directly precedes its metric ("MSFT Net
+    debt/EBITDA 9.99x" — wrong on purpose; must still flag)."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-07-01",
+        "_unavailable": [],
+        "MSFT": {"nd_ebitda": 0.04},
+    }
+    peers = {"MSFT": {"ticker": "MSFT"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    violations = validate_peer_metrics(
+        "MSFT Net debt/EBITDA 9.99x makes it the most levered peer.",
+        "analyst_fundamentals.md",
+        raw / "peer_ratios.json", raw / "peers.json",
+        main_ticker="ORCL",
+    )
+    assert any(v.ticker == "MSFT" and v.claimed_value == "9.99x"
+               for v in violations), f"genuine wrong peer claim missed: {violations}"
+
+
+def _p92_fixture(tmp_path, ratios):
+    raw = tmp_path / "raw"
+    raw.mkdir(exist_ok=True)
+    (raw / "peer_ratios.json").write_text(
+        json.dumps({"trade_date": "2026-07-01", "_unavailable": [], **ratios}),
+        encoding="utf-8")
+    (raw / "peers.json").write_text(
+        json.dumps({t: {"ticker": t} for t in ratios}), encoding="utf-8")
+    return raw / "peer_ratios.json", raw / "peers.json"
+
+
+def test_phase_9_2_consumed_subject_mention_stays_eligible(tmp_path):
+    """Reviewer mandatory fix: a SUBJECT mention followed by its own value
+    ("ORCL's 3.22x") must stay an eligible binding target so the existing
+    subject-skip fires — otherwise the walk-back consumes the subject and
+    rebinds its metric to an earlier peer (spurious MATERIAL + the corrector
+    would overwrite a correct subject figure)."""
+    from tradingagents.validators import validate_peer_metrics
+    pr, pe = _p92_fixture(tmp_path, {"MSFT": {"latest_quarter_op_margin": 46.3}})
+    text = ("MSFT is the closest comparator. ORCL's 3.22x leverage is "
+            "elevated; op margin 33.32% is mid-pack.")
+    violations = validate_peer_metrics(
+        text, "decision.md", pr, pe, main_ticker="ORCL")
+    assert violations == [], (
+        f"subject metric rebound to MSFT past a consumed ORCL mention: "
+        f"{[(v.ticker, v.metric, v.claimed_value) for v in violations]}")
+
+
+def test_phase_9_2_consumed_subject_no_corrector_mutation(tmp_path):
+    """Corrector twin of the mandatory fix: the subject's own (correct)
+    op margin must not be snapped to the peer's cell."""
+    from tradingagents.validators.peer_metric_corrector import (
+        correct_peer_metrics_text)
+    text = ("MSFT is the closest comparator. ORCL's 3.22x leverage is "
+            "elevated; op margin 33.32% is mid-pack.")
+    out, corrections = correct_peer_metrics_text(
+        text, {"MSFT": {"latest_quarter_op_margin": 46.3}}, {"MSFT"},
+        main_ticker="ORCL")
+    assert out == text and corrections == [], (
+        f"corrector mutated a subject figure: {corrections}")
+
+
+def test_phase_9_2_consumed_subject_bare_adjacent_stays_eligible(tmp_path):
+    from tradingagents.validators import validate_peer_metrics
+    pr, pe = _p92_fixture(tmp_path, {"MSFT": {"latest_quarter_op_margin": 46.3}})
+    text = ("MSFT sets the bar. ORCL 20.6% revenue growth leads the group, "
+            "and op margin 33.32% reflects OCI build costs.")
+    violations = validate_peer_metrics(
+        text, "decision.md", pr, pe, main_ticker="ORCL")
+    assert violations == [], (
+        f"{[(v.ticker, v.metric, v.claimed_value) for v in violations]}")
+
+
+def test_phase_9_2_non_metric_number_does_not_consume(tmp_path):
+    """Unit-mandatory tightening: bare numbers ("MSFT 2026 guidance",
+    "MSFT 10-K") must NOT consume the ticker — a wrong metric later in
+    the sentence still binds and flags."""
+    from tradingagents.validators import validate_peer_metrics
+    pr, pe = _p92_fixture(tmp_path, {"MSFT": {"latest_quarter_op_margin": 46.3}})
+    for text in (
+        "per MSFT 10-K disclosures, op margin 99.9% was restated.",
+        "MSFT 2026 guidance calls for continued strength; its op margin "
+        "99.9% screens best-in-class.",
+    ):
+        violations = validate_peer_metrics(
+            text, "analyst_fundamentals.md", pr, pe, main_ticker="ORCL")
+        assert any(v.ticker == "MSFT" and v.claimed_value == "99.9%"
+                   for v in violations), (
+            f"wrong MSFT op margin missed (ticker consumed by a bare "
+            f"number) in {text[:50]!r}: {violations}")
+
+
+def test_phase_9_2_table_and_bold_rows_remain_bound(tmp_path):
+    """Labeled-row forms must survive the consumed guard (pipe / bold+em-dash
+    are not value-consumption shapes)."""
+    from tradingagents.validators import validate_peer_metrics
+    pr, pe = _p92_fixture(tmp_path, {"MSFT": {"latest_quarter_op_margin": 46.3}})
+    for text in (
+        "| MSFT | op margin 99.9% | ND/EBITDA 0.04x |",
+        "**MSFT** — op margin 99.9%, TTM P/E 22.89x",
+    ):
+        violations = validate_peer_metrics(
+            text, "analyst_fundamentals.md", pr, pe, main_ticker="ORCL")
+        assert any(v.ticker == "MSFT" and v.claimed_value == "99.9%"
+                   for v in violations), (
+            f"labeled-row peer claim lost to the consumed guard in "
+            f"{text[:40]!r}: {violations}")
+
+
+def test_phase_9_2_known_gap_slash_listing_consumed(tmp_path):
+    """KNOWN GAP (documented, deliberate): "GOOGL 27.51x TTM valuation /
+    op margin 99.9%" — the ticker is consumed by its first (correct) value,
+    so the second (wrong) value in the same slash-listing has no binding
+    path and is NOT flagged. Accepted trade-off of the consumed-comparator
+    guard (Phase 9.2); flip this assertion if consumed-pair emission is
+    ever added."""
+    from tradingagents.validators import validate_peer_metrics
+    pr, pe = _p92_fixture(tmp_path, {"GOOGL": {"latest_quarter_op_margin": 32.5,
+                                               "ttm_pe": 27.51}})
+    violations = validate_peer_metrics(
+        "GOOGL 27.51x TTM valuation / op margin 99.9% per raw/peer_ratios.json.",
+        "analyst_fundamentals.md", pr, pe, main_ticker="ORCL")
+    assert not any(v.claimed_value == "99.9%" for v in violations)
