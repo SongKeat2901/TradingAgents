@@ -60,6 +60,19 @@ class AgentState(MessagesState):
     fundamentals_riskflags_report: Annotated[str, "Risk & Red-Flags role report"]
     fundamentals_catalysts_report: Annotated[str, "Catalysts & Ownership role report"]
     fundamentals_quality_report: Annotated[str, "Competitive-Quality role report"]
+    # Phase 4 per-role retry control (deterministic self-loop, cap 2)
+    fundamentals_financial_retries: int
+    fundamentals_financial_feedback: str
+    fundamentals_financial_passed: bool
+    fundamentals_riskflags_retries: int
+    fundamentals_riskflags_feedback: str
+    fundamentals_riskflags_passed: bool
+    fundamentals_catalysts_retries: int
+    fundamentals_catalysts_feedback: str
+    fundamentals_catalysts_passed: bool
+    fundamentals_quality_retries: int
+    fundamentals_quality_feedback: str
+    fundamentals_quality_passed: bool
 
     # researcher team discussion step
     investment_debate_state: Annotated[

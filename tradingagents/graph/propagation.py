@@ -68,6 +68,19 @@ class Propagator:
             "qc_passed": False,
             "qc_retries": 0,
             "qc_validator_retries": 0,
+            # Phase 4 per-role retry control
+            "fundamentals_financial_retries": 0,
+            "fundamentals_financial_feedback": "",
+            "fundamentals_financial_passed": False,
+            "fundamentals_riskflags_retries": 0,
+            "fundamentals_riskflags_feedback": "",
+            "fundamentals_riskflags_passed": False,
+            "fundamentals_catalysts_retries": 0,
+            "fundamentals_catalysts_feedback": "",
+            "fundamentals_catalysts_passed": False,
+            "fundamentals_quality_retries": 0,
+            "fundamentals_quality_feedback": "",
+            "fundamentals_quality_passed": False,
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:
