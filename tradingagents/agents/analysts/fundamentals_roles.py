@@ -120,6 +120,14 @@ Always include 3-5 rows. Flag ❌ on any ratio that looks implausible (e.g., \
 "likely excludes capitalized interest or convertibles"). Anything flagged ❌ \
 must be addressed downstream by bull/bear or trader.
 
+Price-target-grid discipline: when pm_brief.md carries a "## Forward-EPS \
+price-target grid" block, cite its projected-EPS path, the exit-multiple price \
+scenarios, and especially the "Implied P/E if price stays flat" compression row \
+VERBATIM in your valuation reasoning — the compression row answers "is the \
+growth already priced in?". Do NOT recompute, extend, or re-anchor the grid, \
+and do NOT invent price targets beyond it. If the block is marked unavailable, \
+cite no forward price targets at all.
+
 ## Segments & model-specific KPIs
 
 If raw/sec_filing.md reports business segments, give a brief sum-of-the-parts \
