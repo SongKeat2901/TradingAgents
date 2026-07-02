@@ -366,14 +366,18 @@ _INDEX_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession_no_dashes
 # capex/financing funding structure, and the exec quote paragraphs (the quote
 # text PRECEDES the "..., said <name>, Chief Executive Officer" attribution,
 # hence the larger `before` window used in fetch_earnings_release).
+# Order matters: excerpts are selected keyword-by-keyword against a shared
+# char budget, so the highest-value targets come first and the generic
+# "expect" catch-all last (MSFT live smoke: with "expect" second, its 3
+# windows exhausted the budget before the exec-quote keywords ran).
 RELEASE_EXCERPT_KEYWORDS = (
     "guidance",
-    "expect",  # expects / expected to grow / expectations
+    "chief executive officer",
+    "chief financial officer",
     "remaining performance obligation",
     "financing",
     "capital expenditure",
-    "chief executive officer",
-    "chief financial officer",
+    "expect",  # expects / expected to grow / expectations
 )
 
 _EX99_RE = re.compile(r"ex[-_]?99|99[._-]?1", re.IGNORECASE)

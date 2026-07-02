@@ -249,6 +249,18 @@ def test_release_keywords_cover_goal_topics():
         assert topic in kws
 
 
+def test_release_keywords_quotes_not_starved_by_generic_expect():
+    """Keywords are excerpted in tuple order against a shared char budget.
+    MSFT live smoke: 'expect' (3 windows) + the topics ahead of it exhausted
+    the budget before the CEO/CFO quote keywords ran, so exec quotes — a
+    primary goal target — never made the block. The generic 'expect'
+    catch-all must come AFTER both officer keywords."""
+    from tradingagents.agents.utils.sec_edgar import RELEASE_EXCERPT_KEYWORDS
+    order = list(RELEASE_EXCERPT_KEYWORDS)
+    assert order.index("chief executive officer") < order.index("expect")
+    assert order.index("chief financial officer") < order.index("expect")
+
+
 # ---------------------------------------------------------------- formatters
 
 def _happy_release():
