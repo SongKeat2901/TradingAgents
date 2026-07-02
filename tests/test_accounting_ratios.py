@@ -111,3 +111,21 @@ def test_block_has_values_and_header():
     assert "ROE" in block and "ROIC" in block and "Cash conversion cycle" in block
     assert "verbatim" in block  # anti-fabrication usage mandate present
     assert "21% statutory tax rate" in block  # ROIC tax assumption disclosed
+
+
+def test_cagr_and_operating_leverage():
+    from tradingagents.agents.utils.accounting_ratios import compute_accounting_ratios
+    fin = {"annual_series": {"revenue": [133.1, 121, 110, 100],
+                             "ebit": [120, 100, 90, 80],
+                             "diluted_eps": [3.3, 3.0, 2.7, 2.5],
+                             "fcf": [50, 45, 40, 35]}}
+    r = compute_accounting_ratios(fin)
+    assert r["revenue_cagr_pct"] == 10.0 and r["revenue_cagr_years"] == 3
+    # OL: ebit +20% / rev +10% = 2.0
+    assert r["operating_leverage"] == 2.0
+
+
+def test_cagr_na_on_bad_data():
+    from tradingagents.agents.utils.accounting_ratios import compute_accounting_ratios
+    r = compute_accounting_ratios({"annual_series": {"revenue": [100], "ebit": [], "diluted_eps": [], "fcf": []}})
+    assert r["revenue_cagr_pct"] is None and r["operating_leverage"] is None
