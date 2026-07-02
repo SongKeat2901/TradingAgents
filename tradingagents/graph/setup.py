@@ -10,6 +10,13 @@ from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
 from tradingagents.agents.managers.executive_pm import create_executive_pm_node
 from tradingagents.agents.managers.qc_agent import create_qc_agent_node
 from tradingagents.agents.analysts.ta_agent import create_ta_agent_node, create_ta_agent_v2_node
+from tradingagents.agents.analysts.fundamentals_roles import (
+    create_financial_statement_analyst,
+    create_risk_redflags_analyst,
+    create_catalysts_ownership_analyst,
+    create_competitive_quality_analyst,
+    create_fundamentals_aggregator,
+)
 from tradingagents.agents.researcher import fetch_research_pack
 
 from .conditional_logic import ConditionalLogic
@@ -66,10 +73,28 @@ class GraphSetup:
                 self.quick_thinking_llm
             )
 
+        # Fundamentals is split into 4 role-specific analyst nodes + a
+        # deterministic aggregator (FA-101 Phase 3), not a single node like
+        # market/social/news. Built separately from `analyst_nodes` below
+        # because it needs 5 distinct display names wired in a fixed
+        # sub-chain rather than the generic single-node-per-type pattern.
+        fundamentals_role_nodes = {}
         if "fundamentals" in selected_analysts:
-            analyst_nodes["fundamentals"] = create_fundamentals_analyst(
-                self.quick_thinking_llm
-            )
+            fundamentals_role_nodes = {
+                "Financial-Statement Analyst": create_financial_statement_analyst(
+                    self.quick_thinking_llm
+                ),
+                "Risk & Red-Flags Analyst": create_risk_redflags_analyst(
+                    self.quick_thinking_llm
+                ),
+                "Catalysts & Ownership Analyst": create_catalysts_ownership_analyst(
+                    self.quick_thinking_llm
+                ),
+                "Competitive-Quality Analyst": create_competitive_quality_analyst(
+                    self.quick_thinking_llm
+                ),
+                "Fundamentals Aggregator": create_fundamentals_aggregator(),
+            }
 
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
@@ -115,6 +140,11 @@ class GraphSetup:
         for analyst_type, node in analyst_nodes.items():
             workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
 
+        # Add the 5 fundamentals role/aggregator nodes under their exact
+        # display names (not the generic "Fundamentals Analyst" pattern).
+        for name, node in fundamentals_role_nodes.items():
+            workflow.add_node(name, node)
+
         # Add other nodes
         workflow.add_node("Bull Researcher", bull_researcher_node)
         workflow.add_node("Bear Researcher", bear_researcher_node)
@@ -130,18 +160,47 @@ class GraphSetup:
         workflow.add_edge(START, "PM Preflight")
         workflow.add_edge("PM Preflight", "Researcher")
         workflow.add_edge("Researcher", "TA Agent")
+
+        # The "fundamentals" slot expands to a fixed 5-node sub-chain
+        # (Financial-Statement → Risk & Red-Flags → Catalysts & Ownership →
+        # Competitive-Quality → Fundamentals Aggregator); every other
+        # analyst type is still a single node. `entry_node`/`exit_node`
+        # let the generic chain-building loop below treat both uniformly.
+        def entry_node(analyst_type):
+            if analyst_type == "fundamentals":
+                return "Financial-Statement Analyst"
+            return f"{analyst_type.capitalize()} Analyst"
+
+        def exit_node(analyst_type):
+            if analyst_type == "fundamentals":
+                return "Fundamentals Aggregator"
+            return f"{analyst_type.capitalize()} Analyst"
+
         first_analyst = selected_analysts[0]
-        workflow.add_edge("TA Agent", f"{first_analyst.capitalize()} Analyst")
+        workflow.add_edge("TA Agent", entry_node(first_analyst))
 
         # Connect analysts in sequence (no tool-loop conditional edges)
         for i, analyst_type in enumerate(selected_analysts):
-            current_analyst = f"{analyst_type.capitalize()} Analyst"
+            if analyst_type == "fundamentals":
+                workflow.add_edge(
+                    "Financial-Statement Analyst", "Risk & Red-Flags Analyst"
+                )
+                workflow.add_edge(
+                    "Risk & Red-Flags Analyst", "Catalysts & Ownership Analyst"
+                )
+                workflow.add_edge(
+                    "Catalysts & Ownership Analyst", "Competitive-Quality Analyst"
+                )
+                workflow.add_edge(
+                    "Competitive-Quality Analyst", "Fundamentals Aggregator"
+                )
 
+            current_exit = exit_node(analyst_type)
             if i < len(selected_analysts) - 1:
-                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
-                workflow.add_edge(current_analyst, next_analyst)
+                next_analyst = selected_analysts[i + 1]
+                workflow.add_edge(current_exit, entry_node(next_analyst))
             else:
-                workflow.add_edge(current_analyst, "TA Agent v2")
+                workflow.add_edge(current_exit, "TA Agent v2")
         workflow.add_edge("TA Agent v2", "Bull Researcher")
 
         # Add remaining edges
