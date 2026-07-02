@@ -24,7 +24,7 @@ Ticker order = runner order. ORCL run pre-existing (earlier 2026-07-02 audited p
 
 | # | Ticker | Run | QC | Promoted (final/ + Drive + manifest) |
 |---|--------|-----|----|--------------------------------------|
-| — | ORCL | ✓ (pre-existing) | A → hand-corrected → A+ re-verify in flight | – |
+| — | ORCL | ✓ (pre-existing) | **A+** (re-audit after hand-corrections; 0 issues) | ✓ final/wk 27 + Drive `1aUrPl21h5nIWJj9tn7mj7WvMo31k3nD5` + manifest |
 | 1 | AAOI | running | – | – |
 | 2 | AAPL | – | – | – |
 | 3 | AMKR | – | – | – |
@@ -47,12 +47,17 @@ Ticker order = runner order. ORCL run pre-existing (earlier 2026-07-02 audited p
 | 20 | VSH | – | – | – |
 | 21 | ON | – | – | – |
 
-Tally: 0/22 promoted.
+Tally: 1/22 promoted (ORCL).
 
 ## Phase 3 — sheets (blocked until all 22 promoted)
 
 - [ ] Trading Plan (`refresh_trading_plan.sh`, sheet `1ZLq9…`) — verify row per ticker, links, no #N/A.
 - [ ] Research Summary register (sheet `1VJow…`, update-summary skill).
+
+## Ops notes
+
+- gog v0.31.1 has no `drive trash` subcommand — use `gog drive delete <id> -y` (moves to trash). Publish helper: `~/tkresearch/publish-2026-07-01.sh <TICKER>` (trash-old-ID → upload → overwrite manifest row; creds read from the macrodaily plist at runtime).
+- REGISTER.md per-row table stopped at the 2026-05-29 cohort (recent weeks use section summaries); a "Week 27" section will be added once all 22 are promoted.
 
 ## Blockers / notes
 
