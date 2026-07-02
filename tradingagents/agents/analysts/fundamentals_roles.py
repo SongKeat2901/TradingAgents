@@ -217,6 +217,14 @@ material-event dates + item categories (a cluster of 8-Ks can flag a live \
 catalyst) and the latest DEF 14A proxy date verbatim; else "not reported". \
 These are filing dates/categories only — do NOT infer filing contents you \
 were not given.
+
+## Activist & large-stake ownership
+
+When pm_brief.md carries a "## Activist & large-stake filings (13D/13G)" block, \
+cite its filings verbatim, distinguishing 13D (activist intent) from 13G \
+(passive >5% holder) and naming the filer + date; a recent 13D is a potential \
+catalyst. Else "not reported". Do NOT infer the activist thesis or current \
+stake size — you have only the filing dates, types, and filers.
 """ + _FOOTER
 
 
