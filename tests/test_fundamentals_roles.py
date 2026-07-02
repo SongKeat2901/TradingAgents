@@ -8,7 +8,16 @@ def test_financial_prompt_and_files():
     assert "## Sanity check on reported numbers" in s
     assert "Revenue YoY" in s  # YoY pre-compute mandate moved here
     assert "restating a figure already shown" in s  # net-debt discipline preserved
-    assert set(fr._FILES_FINANCIAL) == {"pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md", "earnings_release.md"}
+    assert set(fr._FILES_FINANCIAL) == {"pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md", "earnings_release.md", "news.json"}
+
+def test_financial_files_include_news_for_takeaways_directive():
+    """ORCL 2026-07-01 wart: the Latest-quarter-takeaways directive says
+    management commentary comes ONLY from news.json, but the role's file
+    list didn't include news.json — the designed news-sourced call-color
+    path could never trigger (the run honestly wrote 'news.json was not
+    provided'). The directive and the file list must agree."""
+    assert "news.json items" in fr._SYSTEM_FINANCIAL
+    assert "news.json" in fr._FILES_FINANCIAL
 
 def test_financial_prompt_yoy_preamble():
     """Migrated from test_fundamentals_analyst.py::test_fundamentals_prompt_includes_yoy_preamble

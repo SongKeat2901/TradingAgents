@@ -48,7 +48,11 @@ Every numerical claim in your report must trace back to financials.json, \
 peers.json, news.json, reference.json, or insider.json. No invented numbers."""
 
 
-_FILES_FINANCIAL = ["pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md", "earnings_release.md"]
+# news.json included because the "Latest-quarter takeaways" directive sources
+# management call commentary from news.json items (ORCL 2026-07-01 wart: the
+# directive referenced a file the role never received, so the news-sourced
+# call-color path could never trigger).
+_FILES_FINANCIAL = ["pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md", "earnings_release.md", "news.json"]
 
 _SYSTEM_FINANCIAL = """\
 You are the Financial-Statement analyst writing that part of an equity \
