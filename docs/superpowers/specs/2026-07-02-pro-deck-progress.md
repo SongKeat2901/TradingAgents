@@ -3,7 +3,7 @@
 Owner-facing status for the PRO_DECK_GOAL.md work (benchmark ORCL vs Tiger
 Brokers deck pp. 63–70, then build techniques A–E). Updated after every step.
 
-## Status: Task 1 DONE · A, B DONE — building C
+## Status: Task 1 DONE · A, B, C DONE — building D
 
 | Step | State | Notes |
 |---|---|---|
@@ -12,7 +12,7 @@ Brokers deck pp. 63–70, then build techniques A–E). Updated after every step
 | Gap analysis doc | ✅ | `2026-07-02-pro-deck-gap-analysis.md` — 5 MISSING, 2 PARTIAL |
 | A. Forward-EPS × multiple grid | ✅ | `eps_scenario.py` (15 unit tests, TDD); wired in researcher + Financial-Statement role directive; live-smoked ORCL (compression 13.1x→5.2x) + MSFT |
 | B. RPO deep-dive | ✅ | `rpo_backlog.py` deterministic block (SEC XBRL): ORCL $638B, QoQ additions match deck (+317.5/+68/+29.3/+85.4B), RPO÷mcap 1.55x vs MSFT 0.24x/GOOGL 0.11x, AMZN honest n/a; + targeted-excerpt fix in `sec_edgar.py` (waterfall "12%/34%/34%" paragraph now survives truncation); + Financial-Statement RPO discipline. 18 unit tests, TDD |
-| C. Capex bridge + FCF inflection + dated catalyst | ⏳ | grounded directives |
+| C. Capex bridge + FCF inflection + dated catalyst | ✅ | 3 grounded directives: capex-funding-bridge + FCF-trajectory (Financial-Statement role) and a required "## Dated inflection to watch" section (Catalysts role, anchored to the calendar block's Next-expected date). Smoke: ORCL excerpts carry the fiscal-2027 capex-guidance + prepayment prose the directives quote. 5 unit tests, TDD |
 | D. Segment trends + call takeaways | ⏳ | directive + deterministic cash-flow QoQ block |
 | E. Bear-to-bull reframing voice | ⏳ | structural directive |
 | Re-benchmark ORCL + update gap analysis | ⏳ | |
