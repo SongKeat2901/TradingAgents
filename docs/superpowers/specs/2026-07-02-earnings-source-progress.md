@@ -8,8 +8,8 @@ management color), then optionally the FMP free-tier call transcript.
 
 | Step | State |
 |---|---|
-| 1. Fetcher: latest item-2.02 8-K → Ex-99.x → text + targeted excerpts | in progress (TDD) |
-| 2. Researcher wiring: raw/earnings_release.{json,md} + pm_brief block | pending |
+| 1. Fetcher: latest item-2.02 8-K → Ex-99.x → text + targeted excerpts | ✅ shipped (`80c05ca`) |
+| 2. Researcher wiring: raw/earnings_release.{json,md} + pm_brief block | in progress (TDD) |
 | 3. Role citations: Fin-Statement (guidance/funding) + Catalysts (mgmt quotes) | pending |
 | 4. Live smoke: ORCL ($40B financing, 27–29% guidance, RPO) + honest-n/a name | pending |
 | 5. Merge → main → push | pending |
@@ -17,7 +17,14 @@ management color), then optionally the FMP free-tier call transcript.
 
 ## Evidence log
 
-- (nothing yet)
+- **Fetcher shipped (`80c05ca`, TDD)**: `fetch_earnings_release` +
+  `format_earnings_release_block/md` in `sec_edgar.py`; 16 new unit tests
+  (doc picker, happy path, look-ahead guard, honest n/a for no-results-8-K
+  names, index/exhibit fail-soft, truncation-vs-excerpts contract, block
+  formatting). Full suite 947 passed.
+- Also fixed a pre-existing host-dependent test (`94d307c`):
+  `test_claude_cli_chat_model` cmd assertion depended on whether `claude`
+  was on the pytest env's PATH.
 
 ## FMP stretch verdict
 
