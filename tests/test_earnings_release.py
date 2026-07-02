@@ -307,3 +307,87 @@ def test_format_md_full_document():
 def test_format_md_empty_when_unavailable():
     from tradingagents.agents.utils.sec_edgar import format_earnings_release_md
     assert format_earnings_release_md({"unavailable": True, "reason": "x"}) == ""
+
+
+# ---------------------------------------------------------------- researcher wiring
+
+_OHLCV_STUB = (
+    "# Stock data for MSFT\n"
+    "Date,Open,High,Low,Close,Volume,Dividends,Stock Splits\n"
+    "2026-04-30,415.0,420.0,395.0,408.0,1000000,0.0,0.0\n"
+    "2026-05-01,408.0,425.0,379.0,410.0,1000000,0.0,0.0\n"
+)
+
+_INDICATOR_STUB = lambda val: (
+    f"## sample values from 2026-04-01 to 2026-05-01:\n\n2026-05-01: {val}\n"
+)
+
+
+def _stub_researcher_fetchers(monkeypatch, researcher):
+    monkeypatch.setattr(researcher, "_fetch_financials", lambda t, d: {"ticker": t, "revenue": 100})
+    monkeypatch.setattr(researcher, "_fetch_news", lambda t, d: {"items": []})
+    monkeypatch.setattr(researcher, "_fetch_insider", lambda t, d: {"items": []})
+    monkeypatch.setattr(researcher, "_fetch_social", lambda t, d: {"sentiment": 0.5})
+    monkeypatch.setattr(researcher, "_fetch_prices", lambda t, d: {"ohlcv": _OHLCV_STUB})
+    monkeypatch.setattr(researcher, "_fetch_indicators", lambda t, d: {
+        "close_50_sma": _INDICATOR_STUB(405.0), "close_200_sma": _INDICATOR_STUB(380.0),
+        "atr": _INDICATOR_STUB(4.2),
+    })
+
+
+def _run_pack(tmp_path, monkeypatch):
+    from pathlib import Path
+    from tradingagents.agents import researcher
+    _stub_researcher_fetchers(monkeypatch, researcher)
+    state = {"company_of_interest": "MSFT", "trade_date": "2026-05-01",
+             "peers": ["GOOG"], "raw_dir": str(tmp_path / "raw")}
+    raw = Path(state["raw_dir"])
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "pm_brief.md").write_text("# PM Pre-flight Brief\n", encoding="utf-8")
+    researcher.fetch_research_pack(state)
+    return raw
+
+
+def test_researcher_writes_release_json_md_and_pm_brief_block(tmp_path, monkeypatch):
+    from tradingagents.agents.utils import sec_edgar
+    monkeypatch.setattr(sec_edgar, "fetch_earnings_release",
+                        lambda t, d: _happy_release())
+    raw = _run_pack(tmp_path, monkeypatch)
+
+    assert (raw / "earnings_release.json").exists()
+    saved = json.loads((raw / "earnings_release.json").read_text(encoding="utf-8"))
+    assert saved["filing_date"] == "2026-06-10"
+    md = (raw / "earnings_release.md").read_text(encoding="utf-8")
+    assert "Total Revenues expected to grow 27% to 29%" in md
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Latest earnings release (SEC 8-K Ex-99.1)" in brief
+    assert "$40 billion debt and equity financing plan" in brief
+
+
+def test_researcher_release_unavailable_writes_honest_na(tmp_path, monkeypatch):
+    from tradingagents.agents.utils import sec_edgar
+    monkeypatch.setattr(sec_edgar, "fetch_earnings_release",
+                        lambda t, d: {"unavailable": True, "ticker": t,
+                                      "reason": "no item-2.02 (results) 8-K on/before trade_date"})
+    raw = _run_pack(tmp_path, monkeypatch)
+
+    # json records the miss; no md (nothing to quote); pm_brief carries n/a
+    assert (raw / "earnings_release.json").exists()
+    assert not (raw / "earnings_release.md").exists()
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Latest earnings release (SEC 8-K Ex-99.1) — n/a" in brief
+    assert "no item-2.02" in brief
+
+
+def test_researcher_release_fetch_raising_is_fail_open(tmp_path, monkeypatch):
+    from tradingagents.agents.utils import sec_edgar
+
+    def boom(t, d):
+        raise RuntimeError("edgar exploded")
+
+    monkeypatch.setattr(sec_edgar, "fetch_earnings_release", boom)
+    raw = _run_pack(tmp_path, monkeypatch)  # must not raise
+
+    brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Latest earnings release (SEC 8-K Ex-99.1) — unavailable" in brief
+    assert "edgar exploded" in brief
