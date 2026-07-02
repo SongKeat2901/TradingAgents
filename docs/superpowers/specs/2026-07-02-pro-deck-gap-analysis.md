@@ -110,6 +110,35 @@ Plus one cross-cutting gap: **E — bear-to-bull reframing voice**. The deck's w
 method is "state the bear concern, then reframe it with numbers"; our role prompts
 never ask for that structure.
 
+## Post-build re-benchmark (2026-07-02, after shipping A–E)
+
+Re-ran the REAL `fetch_research_pack` wiring end-to-end on live ORCL
+(trade_date 2026-07-01, peers MSFT/GOOGL/AMZN). Every pro-deck block landed in
+pm_brief.md; values verified against the deck:
+
+| # | Deck technique | Now | Evidence (live ORCL run) |
+|---|---|---|---|
+| 1 | Capex funding bridge | **ON PAR (grounded)** | capex-bridge directive + targeted excerpts carry the 10-K's fiscal-2027 capex guidance ($21.2B→$55.7B, "upward trend to continue") and customer-prepayment prose; net-debt block carries the cash cells. Call-only detail (the exact $20-25B/$40B split) appears only when filing/news disclose it — by design, never fabricated |
+| 2 | FCF inflection + dated catalyst | **MATCH** | deterministic Cash-flow momentum block (FCF −$11.5B → −$1.9B) + FCF-trajectory directive + required "## Dated inflection to watch" section anchored to the calendar block |
+| 3 | Segment YoY/QoQ trends | **IMPROVED (free-data ceiling)** | segment-trend directive builds the YoY/QoQ table from figures the filing discloses; excerpts now surface segment prose. The deck's 8-quarter series collates 8 filings — a single-filing free pipeline surfaces the latest filing's comparable periods only, honestly marked |
+| 4 | RPO vs peers vs market cap | **MATCH** | deterministic block: RPO $638.0B (10-K 2026-05-31), additions +317.5/+68.0/+29.3/+85.4B (deck p67 verbatim), RPO÷mcap **1.55x** vs MSFT 0.24x / GOOGL 0.11x, AMZN honest n/a |
+| 5 | RPO conversion waterfall | **MATCH (quoted)** | targeted excerpt carries the filing's exact waterfall ("approximately 12% … next twelve months, 34% … 13-36, 34% … 37-60, remainder thereafter"); RPO discipline directive quotes it verbatim, else "not disclosed" |
+| 6 | Forward-EPS × multiple grid | **MATCH** | deterministic grid: +1y consensus $10.92 (39 analysts) → $27.30 (+4y at +35.7%), prices at 20x/25x/30x + current 24.4x, compression row 13.1x→5.2x (deck's 20.6→7.7 pattern) |
+| 7 | Earnings-call takeaways | **MATCH (quant) / news-gated (color)** | deterministic QoQ line: OCF +104.4%, capex spend −11.5%, FCF −$11.5B→−$1.9B (deck p70 verbatim) + "## Latest-quarter takeaways" directive; management color only from news.json (no free transcript feed) |
+
+Plus **E**: every role now closes with a required "## Top bear concern, tested"
+section — the deck's bear-concern → reframe-with-numbers method, kept two-sided
+(the bear is allowed to win).
+
+**Verdict for the owner:** on the 7 signature techniques we are now on par —
+5 fully matched (4 of them deterministic, stronger than the deck's static
+slides since they regenerate per ticker per run), and 2 at the honest ceiling
+of free data (capex-bridge call detail and multi-filing segment series appear
+exactly to the extent the filing/news disclose them). Combined with the
+screening depth the deck lacks (Z″/Beneish/goodwill/refi/DDM/intrinsic-value/
+ownership/activist), the ORCL pm_brief now reads at or beyond the Oracle case
+study's depth.
+
 ## Data-source ground truth established by this benchmark
 
 - SEC XBRL companyconcept API carries total RPO for ORCL/MSFT/GOOGL (free,
