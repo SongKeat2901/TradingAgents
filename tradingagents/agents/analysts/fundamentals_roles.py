@@ -201,6 +201,14 @@ Three falsifiable hurdles. Each: specific metric or event + by-when + threshold.
 When pm_brief.md carries a "## Sentiment & consensus" block, cite its \
 short-interest %/days-to-cover and analyst rating + target upside verbatim; \
 else "not reported".
+
+## Institutional & insider ownership
+
+When pm_brief.md carries a "## Institutional & insider ownership" block, cite \
+its institutional ownership %, insider ownership %, and the notable top \
+institutional holders (with quarter-over-quarter stake change) verbatim as an \
+ownership-structure signal; else "not reported". Do NOT invent holders or \
+percentages the block does not state.
 """ + _FOOTER
 
 

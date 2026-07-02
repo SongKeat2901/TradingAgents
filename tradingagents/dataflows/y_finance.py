@@ -450,3 +450,49 @@ def get_insider_transactions(
         
     except Exception as e:
         return f"Error retrieving insider transactions for {ticker}: {str(e)}"
+
+def get_institutional_ownership(ticker: str) -> dict:
+    """13F-derived institutional & insider ownership from yfinance (FA-101 §8,
+    Phase 2b). Returns a raw dict consumed by
+    ``agents.utils.institutional_ownership.normalize_institutional_ownership``.
+    Fail-soft: any error / thin coverage -> empty fields (rendered "n/a"),
+    never raises. NaN sanitised to None so the block never shows 'nan%'."""
+    def _clean(v):
+        try:
+            return None if pd.isna(v) else v
+        except (TypeError, ValueError):
+            return v
+
+    out = {"pct_institutions": None, "pct_insiders": None,
+           "institutions_count": None, "holders": []}
+    try:
+        t = yf.Ticker(ticker.upper())
+        info = yf_retry(lambda: t.info) or {}
+        out["pct_institutions"] = _clean(info.get("heldPercentInstitutions"))
+        out["pct_insiders"] = _clean(info.get("heldPercentInsiders"))
+        try:
+            mh = yf_retry(lambda: t.major_holders)
+            if mh is not None and "institutionsCount" in mh.index:
+                c = _clean(mh.loc["institutionsCount"].iloc[0])
+                out["institutions_count"] = int(c) if c is not None else None
+        except Exception:
+            pass
+        try:
+            ih = yf_retry(lambda: t.institutional_holders)
+            if ih is not None and not ih.empty:
+                for _, row in ih.iterrows():
+                    val = _clean(row.get("Value"))
+                    d = row.get("Date Reported")
+                    out["holders"].append({
+                        "holder": _clean(row.get("Holder")),
+                        "pct_held": _clean(row.get("pctHeld")),
+                        "value": int(val) if val is not None else None,
+                        "pct_change": _clean(row.get("pctChange")),
+                        "date": (str(d.date()) if hasattr(d, "date")
+                                 else (str(d) if d is not None else None)),
+                    })
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return out
