@@ -304,3 +304,27 @@ def create_competitive_quality_analyst(llm):
         result, report = invoke_with_empty_retry(llm, messages, "Competitive-Quality Analyst", min_chars=1200)
         return {"messages": [result], "fundamentals_quality_report": report}
     return node
+
+
+_ROLE_SECTIONS = [
+    ("Financial-Statement", "fundamentals_financial_report"),
+    ("Risk & Red-Flags", "fundamentals_riskflags_report"),
+    ("Catalysts & Ownership", "fundamentals_catalysts_report"),
+    ("Competitive-Quality", "fundamentals_quality_report"),
+]
+
+
+def create_fundamentals_aggregator():
+    """Deterministic (no-LLM) node: concatenate the 4 role reports into the
+    existing ``fundamentals_report`` key so downstream consumers are unchanged."""
+
+    def node(state):
+        parts = ["# Fundamentals\n"]
+        for title, key in _ROLE_SECTIONS:
+            body = (state.get(key) or "").strip()
+            if not body:
+                body = f"_({title} section unavailable)_"
+            parts.append(f"## {title}\n\n{body}\n")
+        return {"fundamentals_report": "\n".join(parts)}
+
+    return node
