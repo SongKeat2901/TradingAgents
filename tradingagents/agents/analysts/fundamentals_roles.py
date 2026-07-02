@@ -27,7 +27,22 @@ from tradingagents.agents.utils.raw_data import format_for_prompt
 from tradingagents.agents.utils.structured import invoke_with_empty_retry
 
 
-_FOOTER = """\
+_BEAR_REFRAME = """\
+
+## Top bear concern, tested
+
+Close with the ONE bear concern most relevant to your role's scope (the \
+scariest number or fact a skeptic would lead with), then TEST it against the \
+deterministic numbers in front of you (pm_brief blocks, financials.json, the \
+filing's own figures). Two honest outcomes: (a) the data reframes it — show \
+the numbers that shrink or fund or contextualize the scary figure (e.g. "capex \
+$X looks unfundable, but the filing discloses prepayments $A + financing $B"); \
+or (b) the concern stands — say so plainly and quantify how bad it is. Never \
+spin: the reframe must be built ONLY from numbers already cited above, and if \
+the numbers side with the bear, your section says the concern stands.
+"""
+
+_FOOTER = _BEAR_REFRAME + """\
 
 Every numerical claim in your report must trace back to financials.json, \
 peers.json, news.json, reference.json, or insider.json. No invented numbers."""
@@ -372,13 +387,17 @@ general knowledge.
 
 ROLE_RETRY_CAP = 2
 
+_BEAR_REFRAME_HEADER = "## Top bear concern, tested"
+
 _REQUIRED_FINANCIAL = ["## Business-model framing", "## Peer comparison matrix",
-                       "## Capital-structure compare", "## Sanity check on reported numbers"]
-_REQUIRED_RISK = ["## Risk & red flags"]
+                       "## Capital-structure compare", "## Sanity check on reported numbers",
+                       _BEAR_REFRAME_HEADER]
+_REQUIRED_RISK = ["## Risk & red flags", _BEAR_REFRAME_HEADER]
 _REQUIRED_CATALYSTS = ["## Insider transactions", "## What management needs to prove",
-                       "## Dated inflection to watch", "## Sentiment & consensus"]
+                       "## Dated inflection to watch", "## Sentiment & consensus",
+                       _BEAR_REFRAME_HEADER]
 _REQUIRED_QUALITY = ["## Competitive position", "## Capital-allocation track record",
-                     "## Ownership & governance"]
+                     "## Ownership & governance", _BEAR_REFRAME_HEADER]
 
 
 def check_role_output(required_headers, report, min_chars=600):
