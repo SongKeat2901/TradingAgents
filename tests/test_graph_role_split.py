@@ -52,18 +52,28 @@ def test_role_nodes_registered_and_fundamentals_analyst_absent():
     assert "Fundamentals Analyst" not in node_names
 
 
+def _advance_target(wf, src):
+    """The 'advance' target of a role node's conditional (self-loop) branch.
+
+    FA-101 Phase 4 turned the role→role transitions into conditional edges
+    (retry=self / advance=next), so they live in ``wf.branches`` rather than
+    ``wf.edges``."""
+    return wf.branches[src]["router"].ends["advance"]
+
+
 def test_role_chain_wired_sequentially_and_aggregator_feeds_ta_v2():
     """Binding assertion: the edge into "TA Agent v2" originates from
     "Fundamentals Aggregator" ONLY — no individual role node has a direct
-    edge to TA Agent v2."""
+    edge to TA Agent v2. The role→role transitions are conditional (Phase 4),
+    so they are asserted via the branch 'advance' target."""
     wf = _build_workflow(["market", "social", "news", "fundamentals"])
     edges = wf.edges
 
     assert ("News Analyst", "Financial-Statement Analyst") in edges
-    assert ("Financial-Statement Analyst", "Risk & Red-Flags Analyst") in edges
-    assert ("Risk & Red-Flags Analyst", "Catalysts & Ownership Analyst") in edges
-    assert ("Catalysts & Ownership Analyst", "Competitive-Quality Analyst") in edges
-    assert ("Competitive-Quality Analyst", "Fundamentals Aggregator") in edges
+    assert _advance_target(wf, "Financial-Statement Analyst") == "Risk & Red-Flags Analyst"
+    assert _advance_target(wf, "Risk & Red-Flags Analyst") == "Catalysts & Ownership Analyst"
+    assert _advance_target(wf, "Catalysts & Ownership Analyst") == "Competitive-Quality Analyst"
+    assert _advance_target(wf, "Competitive-Quality Analyst") == "Fundamentals Aggregator"
     assert ("Fundamentals Aggregator", "TA Agent v2") in edges
 
     edges_into_ta_v2 = {src for (src, dst) in edges if dst == "TA Agent v2"}

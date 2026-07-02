@@ -16,10 +16,24 @@ from tradingagents.agents.analysts.fundamentals_roles import (
     create_catalysts_ownership_analyst,
     create_competitive_quality_analyst,
     create_fundamentals_aggregator,
+    ROLE_RETRY_CAP,
 )
 from tradingagents.agents.researcher import fetch_research_pack
 
 from .conditional_logic import ConditionalLogic
+
+
+def make_role_router(passed_key, retries_key, cap):
+    """Per-role self-loop router (FA-101 Phase 4): advance when the role's
+    deterministic self-check passed OR the retry cap is hit (fail-open); else
+    retry (self-loop) the node with its feedback."""
+
+    def router(state):
+        if state.get(passed_key) or state.get(retries_key, 0) >= cap:
+            return "advance"
+        return "retry"
+
+    return router
 
 
 class GraphSetup:
@@ -182,18 +196,21 @@ class GraphSetup:
         # Connect analysts in sequence (no tool-loop conditional edges)
         for i, analyst_type in enumerate(selected_analysts):
             if analyst_type == "fundamentals":
-                workflow.add_edge(
-                    "Financial-Statement Analyst", "Risk & Red-Flags Analyst"
-                )
-                workflow.add_edge(
-                    "Risk & Red-Flags Analyst", "Catalysts & Ownership Analyst"
-                )
-                workflow.add_edge(
-                    "Catalysts & Ownership Analyst", "Competitive-Quality Analyst"
-                )
-                workflow.add_edge(
-                    "Competitive-Quality Analyst", "Fundamentals Aggregator"
-                )
+                # Each role node self-loops on a failed deterministic self-check
+                # (retry the failed part, cap ROLE_RETRY_CAP) or advances to the
+                # next role; the last advances to the aggregator. FA-101 Phase 4.
+                role_chain = [
+                    ("Financial-Statement Analyst", "fundamentals_financial", "Risk & Red-Flags Analyst"),
+                    ("Risk & Red-Flags Analyst", "fundamentals_riskflags", "Catalysts & Ownership Analyst"),
+                    ("Catalysts & Ownership Analyst", "fundamentals_catalysts", "Competitive-Quality Analyst"),
+                    ("Competitive-Quality Analyst", "fundamentals_quality", "Fundamentals Aggregator"),
+                ]
+                for src, key, dst in role_chain:
+                    workflow.add_conditional_edges(
+                        src,
+                        make_role_router(f"{key}_passed", f"{key}_retries", ROLE_RETRY_CAP),
+                        {"retry": src, "advance": dst},
+                    )
 
             current_exit = exit_node(analyst_type)
             if i < len(selected_analysts) - 1:
