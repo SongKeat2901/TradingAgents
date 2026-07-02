@@ -73,6 +73,41 @@ launched 20:59 SGT, past the 04:00-SGT settlement bound; no telegram). Prior
 `2026-06-24-ORCL` archived to `.pre-freefinish-0702`. Log: `/tmp/orcl-prod-test.log`.
 Output expected at `~/tkresearch/preaudit/2026-07-01-ORCL/`.
 
-## Audit verdict
+## ORCL run result (2026-07-02)
 
-Not yet audited.
+Completed: `~/tkresearch/preaudit/2026-07-01-ORCL/` — QC passed (0 retries), 48-page
+branded PDF, all deterministic blocks populated, **debt-maturity ladder carries the
+real year-by-year 10-K schedule** (FY27 $7,210M / FY28 $10,145M / FY29 $5,500M /
+FY30 $7,250M / FY31 $9,750M / Thereafter $90,250M / Total $130,105M), rendered in
+pm_brief, the Risk role's ladder table, and the PDF.
+
+## Audit verdict (Phase 4) — **SATISFIED**
+
+Full audit in `2026-07-02-orcl-production-audit.md`. Summary:
+
+- **Pro-deck pp.63–70:** 7 of 8 dimensions MATCH (capex bridge grounded-match; FCF
+  inflection + 2026-09-09 catalyst; RPO-vs-peers-vs-mcap 1.55x centerpiece; RPO
+  12/34/34 waterfall quoted verbatim from the filing; forward-EPS grid with 13.1x→5.2x
+  compression row; call-takeaways quant verbatim + release-grounded color; debt ladder
+  independently re-verified against live sec.gov). Segment trends PARTIAL at the
+  free-data ceiling by prior design decision (acceleration conclusion matches the deck).
+  Bear-reframe voice present in all roles and allowed to *stand* where the data sides
+  with the bear.
+- **FA-101:** every section real + sourced or honest-n/a (DIO/CCC/FCF-CAGR absent
+  line-items; DDM correctly invalid; 13D/13G transient EDGAR outage, fetcher verified
+  healthy live).
+- **Anti-fabrication:** ladder, RPO waterfall, EV tie-out, ND/EBITDA discrepancy all
+  traced/reconciled; deck's own numbers reproduced from free sources.
+- **Defects found (outside the report), fixed same day with TDD:** (1) 6 spurious
+  MATERIAL blockers in validation_report.json — "Net Cash Outlay" capex term matched
+  the net-cash regex (5x) + a consumed-comparator peer misbinding (1x); both validator
+  guards fixed (Phase 9.2), adversarially reviewed, re-run on the real run: **6 → 0
+  violations**, report regenerated (original archived). (2) Financial-Statement role's
+  takeaways directive referenced news.json the role never received — news.json added
+  to `_FILES_FINANCIAL`. Unit suite 983 green. No full ORCL re-run: both fixes live
+  outside report-content generation; the loop's trigger (report deficiency vs the
+  benchmarks) did not fire.
+
+**Stopping: Phase 4 audit satisfied.** The ORCL production report is on-par-or-beyond
+the Oracle case study on every free-data-achievable dimension, every block sourced or
+honestly n/a, ladder real and verified.
