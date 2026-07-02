@@ -148,6 +148,12 @@ Manipulation screen discipline: when pm_brief.md's "## Manipulation screen \
 (elevated/normal) alongside the Z″ score in your risk & red-flags assessment — do \
 NOT compute your own M-score or invent a flag. If the block is marked "not \
 applicable" or "unavailable", do not cite an M-score at all.
+
+Goodwill screen discipline: when pm_brief.md's "## Goodwill / impairment screen" \
+block reports goodwill, cite its goodwill/equity and goodwill/assets ratios and \
+the flag (elevated/normal) verbatim as an impairment-risk note — do NOT compute \
+your own goodwill ratio. If the block says "no goodwill reported", state that the \
+name carries no goodwill (not a red flag) and cite no ratio.
 """ + _FOOTER
 
 
