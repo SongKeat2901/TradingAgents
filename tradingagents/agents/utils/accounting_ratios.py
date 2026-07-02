@@ -45,6 +45,38 @@ def _op_leverage(rev, ebit):
     return round(((et - ep) / abs(ep)) / rev_chg, 2)
 
 
+def _incremental_roic(fin):
+    """Incremental ROIC = ΔNOPAT / ΔInvested-Capital over the two most-recent
+    annual years (FA-101 Phase 5, §4). NOPAT = EBIT×(1−tax_rate); IC = total
+    debt + total equity. Returns (pct_or_None, rate_label, span_or_None).
+    Honest None on missing/degenerate inputs (needs a positive ΔIC and a
+    plausible result band — free-data year-deltas are noisy)."""
+    annual = fin.get("annual_series") or {}
+    ebit = annual.get("ebit") or []
+    debt = annual.get("total_debt") or []
+    eq = annual.get("total_equity") or []
+    if len(ebit) < 2 or len(debt) < 2 or len(eq) < 2:
+        return None, None, None
+    et, ep, dt, dp, qt, qp = ebit[0], ebit[1], debt[0], debt[1], eq[0], eq[1]
+    if None in (et, ep, dt, dp, qt, qp):
+        return None, None, None
+    # effective tax rate from latest annual pretax + tax provision, else 21%
+    pretax, taxp = fin.get("pretax_income_annual"), fin.get("tax_provision_annual")
+    if pretax and pretax > 0 and taxp is not None:
+        rate = min(max(taxp / pretax, 0.0), 0.35)
+        label = f"eff {round(rate * 100)}%"
+    else:
+        rate, label = 0.21, "default 21%"
+    ic_t, ic_p = dt + qt, dp + qp
+    d_ic = ic_t - ic_p
+    if d_ic <= 0 or ic_p <= 0:  # need positive invested-capital growth to interpret
+        return None, label, None
+    incr = ((et - ep) * (1 - rate)) / d_ic * 100
+    if incr < -100 or incr > 200:  # noisy free-data delta -> suppress
+        return None, label, None
+    return round(incr, 1), label, "1y"
+
+
 def compute_accounting_ratios(
     fin: dict[str, Any],
     wacc: float | None = None,
@@ -143,6 +175,7 @@ def compute_accounting_ratios(
     r["eps_cagr_pct"], _ = _cagr(annual.get("diluted_eps"))
     r["fcf_cagr_pct"], _ = _cagr(annual.get("fcf"))
     r["operating_leverage"] = _op_leverage(annual.get("revenue") or [], annual.get("ebit") or [])
+    r["incremental_roic_pct"], r["incremental_roic_rate"], r["incremental_roic_span"] = _incremental_roic(fin)
     return r
 
 
@@ -191,6 +224,8 @@ def format_accounting_ratios_block(
         ("EPS CAGR", _cell(r.get("eps_cagr_pct"), "%")),
         ("FCF CAGR", _cell(r.get("fcf_cagr_pct"), "%")),
         ("Operating leverage (ΔEBIT%/ΔRev%, latest yr)", _cell(r.get("operating_leverage"), "x")),
+        (f"Incremental ROIC (ΔNOPAT/ΔIC, {r.get('incremental_roic_span') or '?'}, tax {r.get('incremental_roic_rate') or 'n/a'})",
+         _cell(r.get("incremental_roic_pct"), "%")),
     ]
     body = "\n".join(f"| {k} | {v} |" for k, v in rows)
     return (
