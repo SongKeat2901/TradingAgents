@@ -154,6 +154,11 @@ block reports goodwill, cite its goodwill/equity and goodwill/assets ratios and 
 the flag (elevated/normal) verbatim as an impairment-risk note — do NOT compute \
 your own goodwill ratio. If the block says "no goodwill reported", state that the \
 name carries no goodwill (not a red flag) and cite no ratio.
+
+Commodity exposure discipline: cite pm_brief.md's "## Commodity input exposure" \
+block's exposure level (high/moderate/low) and primary inputs verbatim as an \
+input-cost / margin-risk note alongside cyclicality — do NOT invent a commodity \
+sensitivity the block does not state. A "low" exposure is a valid finding.
 """ + _FOOTER
 
 
