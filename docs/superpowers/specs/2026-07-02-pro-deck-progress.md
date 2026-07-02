@@ -3,15 +3,15 @@
 Owner-facing status for the PRO_DECK_GOAL.md work (benchmark ORCL vs Tiger
 Brokers deck pp. 63–70, then build techniques A–E). Updated after every step.
 
-## Status: Task 1 (benchmark) DONE — starting Task 2 (build A–E)
+## Status: Task 1 DONE · A DONE — building B
 
 | Step | State | Notes |
 |---|---|---|
 | Read pro deck pp. 63–70 | ✅ | via pypdf; 7 techniques catalogued |
 | ORCL benchmark (fast path) | ✅ | all deterministic blocks run live on ORCL 2026-07-01; sec_filing.md + role prompts inspected |
 | Gap analysis doc | ✅ | `2026-07-02-pro-deck-gap-analysis.md` — 5 MISSING, 2 PARTIAL |
-| A. Forward-EPS × multiple grid | ⏳ next | deterministic; yfinance earnings_estimate probe OK |
-| B. RPO deep-dive | ⏳ | deterministic via SEC XBRL (probe: ORCL $638B exact) + filing-excerpt fix |
+| A. Forward-EPS × multiple grid | ✅ | `eps_scenario.py` (15 unit tests, TDD); wired in researcher + Financial-Statement role directive; live-smoked ORCL (compression 13.1x→5.2x) + MSFT |
+| B. RPO deep-dive | ⏳ next | deterministic via SEC XBRL (probe: ORCL $638B exact) + filing-excerpt fix |
 | C. Capex bridge + FCF inflection + dated catalyst | ⏳ | grounded directives |
 | D. Segment trends + call takeaways | ⏳ | directive + deterministic cash-flow QoQ block |
 | E. Bear-to-bull reframing voice | ⏳ | structural directive |
@@ -34,3 +34,12 @@ Brokers deck pp. 63–70, then build techniques A–E). Updated after every step
 ## Blockers
 
 None.
+
+## Environment notes (dev clone)
+
+- `openpyxl` was missing from the dev `.venv` (collection error in
+  `test_update_research_summary.py`) — installed 2026-07-02.
+- Pre-existing, host-specific failure:
+  `test_claude_cli_chat_model.py::test_invoke_calls_claude_cli_and_returns_aimessage`
+  expects argv `["claude", ...]` but this host resolves the full nvm path.
+  Fails on a clean main checkout too — NOT caused by this work.

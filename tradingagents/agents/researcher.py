@@ -697,6 +697,28 @@ def fetch_research_pack(state: dict) -> None:
         with open(pm_brief_path, "a", encoding="utf-8") as f:
             f.write(f"\n\n## Sentiment & consensus — unavailable ({exc})\n\n*Do not cite figures.*\n")
 
+    # --- Forward-EPS price-target grid (pro-deck technique A, 2026-07-02) ---
+    # Consensus EPS path × exit multiples + the implied-P/E-compression view
+    # (Tiger 30-Jun FA Outlook p69). Deterministic: yfinance earnings_estimate
+    # + reference price; honest n/a when consensus is absent/non-positive.
+    try:
+        from tradingagents.agents.utils.eps_scenario import (
+            fetch_eps_estimates, compute_eps_scenario, format_eps_scenario_block,
+        )
+        est = fetch_eps_estimates(ticker)
+        grid = compute_eps_scenario(
+            reference.get("reference_price"), est,
+            trailing_eps=fin_parsed.get("eps"),
+            forward_eps=fin_parsed.get("forward_eps"))
+        (raw / "eps_scenario.json").write_text(
+            json.dumps(grid, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_eps_scenario_block(grid, date))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Forward-EPS price-target grid — unavailable ({exc})\n\n"
+                    "*Do not cite forward price targets.*\n")
+
     # --- Institutional & insider ownership (13F-derived, FA-101 Phase 2b §8) ---
     try:
         from tradingagents.dataflows.y_finance import get_institutional_ownership
