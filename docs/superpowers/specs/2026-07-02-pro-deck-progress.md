@@ -3,7 +3,7 @@
 Owner-facing status for the PRO_DECK_GOAL.md work (benchmark ORCL vs Tiger
 Brokers deck pp. 63–70, then build techniques A–E). Updated after every step.
 
-## Status: Task 1 DONE · A, B, C, D DONE — building E
+## Status: Task 1 DONE · A–E ALL BUILT — final re-benchmark next
 
 | Step | State | Notes |
 |---|---|---|
@@ -14,7 +14,7 @@ Brokers deck pp. 63–70, then build techniques A–E). Updated after every step
 | B. RPO deep-dive | ✅ | `rpo_backlog.py` deterministic block (SEC XBRL): ORCL $638B, QoQ additions match deck (+317.5/+68/+29.3/+85.4B), RPO÷mcap 1.55x vs MSFT 0.24x/GOOGL 0.11x, AMZN honest n/a; + targeted-excerpt fix in `sec_edgar.py` (waterfall "12%/34%/34%" paragraph now survives truncation); + Financial-Statement RPO discipline. 18 unit tests, TDD |
 | C. Capex bridge + FCF inflection + dated catalyst | ✅ | 3 grounded directives: capex-funding-bridge + FCF-trajectory (Financial-Statement role) and a required "## Dated inflection to watch" section (Catalysts role, anchored to the calendar block's Next-expected date). Smoke: ORCL excerpts carry the fiscal-2027 capex-guidance + prepayment prose the directives quote. 5 unit tests, TDD |
 | D. Segment trends + call takeaways | ✅ | `cashflow_momentum.py` deterministic QoQ block (live ORCL: OCF +104.4%, capex −11.5%, FCF −$11.5B→−$1.9B — deck p70 verbatim) + segment-trend directive (YoY/QoQ from disclosed figures only) + "## Latest-quarter takeaways" directive. 10 unit tests, TDD |
-| E. Bear-to-bull reframing voice | ⏳ | structural directive |
+| E. Bear-to-bull reframing voice | ✅ | shared required "## Top bear concern, tested" section in all 4 role prompts — state the scariest bear number, test it against the deterministic blocks, reframe with numbers OR honestly say the concern stands (two-sided; never spin). 4 unit tests, TDD |
 | Re-benchmark ORCL + update gap analysis | ⏳ | |
 
 ## Key findings so far
