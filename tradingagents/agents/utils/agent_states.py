@@ -56,6 +56,10 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    fundamentals_financial_report: Annotated[str, "Financial-Statement role report"]
+    fundamentals_riskflags_report: Annotated[str, "Risk & Red-Flags role report"]
+    fundamentals_catalysts_report: Annotated[str, "Catalysts & Ownership role report"]
+    fundamentals_quality_report: Annotated[str, "Competitive-Quality role report"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[
