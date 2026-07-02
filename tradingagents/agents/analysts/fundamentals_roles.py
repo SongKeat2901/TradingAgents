@@ -201,6 +201,22 @@ Three falsifiable hurdles. Each: specific metric or event + by-when + threshold.
 When pm_brief.md carries a "## Sentiment & consensus" block, cite its \
 short-interest %/days-to-cover and analyst rating + target upside verbatim; \
 else "not reported".
+
+## Institutional & insider ownership
+
+When pm_brief.md carries a "## Institutional & insider ownership" block, cite \
+its institutional ownership %, insider ownership %, and the notable top \
+institutional holders (with quarter-over-quarter stake change) verbatim as an \
+ownership-structure signal; else "not reported". Do NOT invent holders or \
+percentages the block does not state.
+
+## Recent SEC filings
+
+When pm_brief.md carries a "## SEC filing surface" block, cite its recent 8-K \
+material-event dates + item categories (a cluster of 8-Ks can flag a live \
+catalyst) and the latest DEF 14A proxy date verbatim; else "not reported". \
+These are filing dates/categories only — do NOT infer filing contents you \
+were not given.
 """ + _FOOTER
 
 

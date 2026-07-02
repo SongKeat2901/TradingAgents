@@ -665,3 +665,34 @@ def fetch_research_pack(state: dict) -> None:
     except Exception as exc:  # noqa: BLE001 - this block must never crash the run
         with open(pm_brief_path, "a", encoding="utf-8") as f:
             f.write(f"\n\n## Sentiment & consensus — unavailable ({exc})\n\n*Do not cite figures.*\n")
+
+    # --- Institutional & insider ownership (13F-derived, FA-101 Phase 2b §8) ---
+    try:
+        from tradingagents.dataflows.y_finance import get_institutional_ownership
+        from tradingagents.agents.utils.institutional_ownership import (
+            normalize_institutional_ownership, format_ownership_block,
+        )
+        own = normalize_institutional_ownership(get_institutional_ownership(ticker))
+        (raw / "institutional_ownership.json").write_text(
+            json.dumps(own, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_ownership_block(own))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Institutional & insider ownership — unavailable ({exc})\n\n"
+                    "*Do not cite ownership figures.*\n")
+
+    # --- SEC filing surface: 8-K events + latest proxy (FA-101 Phase 2b §9) ---
+    try:
+        from tradingagents.agents.utils.sec_edgar import (
+            fetch_filing_surface, format_filing_surface_block,
+        )
+        surface = fetch_filing_surface(ticker, state["trade_date"])
+        (raw / "filing_surface.json").write_text(
+            json.dumps(surface, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_filing_surface_block(surface))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## SEC filing surface (8-K + proxy) — unavailable ({exc})\n\n"
+                    "*Do not cite 8-K/proxy dates.*\n")
