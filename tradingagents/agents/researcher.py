@@ -797,6 +797,28 @@ def fetch_research_pack(state: dict) -> None:
             f.write(f"\n\n## SEC filing surface (8-K + proxy) — unavailable ({exc})\n\n"
                     "*Do not cite 8-K/proxy dates.*\n")
 
+    # --- Latest 8-K earnings press release, Ex-99.1 (EARNINGS_RELEASE_GOAL) ---
+    # Free SEC source for forward guidance, the capex/financing funding
+    # structure, RPO highlights, and CEO/CFO quotes — closes the pro-deck
+    # "call-only" gaps. Honest n/a when no item-2.02 8-K exists (foreign
+    # filers report via 6-K); the md is only written when there is release
+    # prose to quote.
+    try:
+        from tradingagents.agents.utils import sec_edgar as _sec_edgar
+        release = _sec_edgar.fetch_earnings_release(ticker, state["trade_date"])
+        (raw / "earnings_release.json").write_text(
+            json.dumps(release, indent=2, default=str), encoding="utf-8")
+        release_md = _sec_edgar.format_earnings_release_md(release)
+        if release_md:
+            (raw / "earnings_release.md").write_text(release_md, encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(_sec_edgar.format_earnings_release_block(release))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Latest earnings release (SEC 8-K Ex-99.1) — unavailable ({exc})\n\n"
+                    "*Do not cite forward guidance, capex-funding plans, or management "
+                    "quotes from an earnings release; write 'not disclosed'.*\n")
+
     # --- Activist & large-stake filings: 13D/13G detection (FA-101 Phase 2b §8) ---
     try:
         from tradingagents.agents.utils.sec_edgar import (
