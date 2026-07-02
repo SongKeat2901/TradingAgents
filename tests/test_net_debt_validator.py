@@ -1256,3 +1256,75 @@ def test_fn_obs_precedes_value_flags_subject_figure(tmp_path):
     assert 261_000_000_000.0 not in flagged_b, (
         f"$261B (OBS suffix) must still be skipped after positional narrowing: {drift_b}"
     )
+
+
+def test_phase_9_2_net_cash_outlay_capex_term_not_extracted():
+    """ORCL 2026-07-01 false positives (5 of the run's 6 MATERIAL blockers):
+    analyst_fundamentals.md quoted the 8-K Ex-99.1 supplemental table
+    "Net Cash Outlay for Capital Expenditures" verbatim, and the extractor
+    bound "net cash" to the surrounding dollar figures as balance-sheet
+    net-cash-position claims:
+
+      line 57:  "... $4,592 = Net Cash Outlay for Capital Expenditures ..."
+      line 59:  "... financing $3.3B + net cash outlay $47.7B ..."
+      line 59:  "The remaining ~$15.7B of net cash outlay is not itemized ..."
+      line 166: "... net cash outlay to $47,726M rather than ..."
+
+    "Net cash outlay" is a capex-funding term (GAAP-supplemental), never a
+    net-cash position — no claim should be extracted from any of these."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    lines = [
+        "> Capital Expenditures $(55,663) − Other Short-Term Financing Cash "
+        "Flow Related to Capital Expenditures $3,345 − Customer Prepayments "
+        "with Significant Financing Component for Capital Expenditures "
+        "$4,592 = Net Cash Outlay for Capital Expenditures $(47,726)",
+        "i.e., **guided capex $55.7B = customer prepayments $4.6B + "
+        "short-term capex-linked financing $3.3B + net cash outlay $47.7B**, "
+        "of which operating cash flow contributed $31,977M for the year. "
+        "The remaining ≈$15.7B of net cash outlay is not itemized by the "
+        "release as capex-specific",
+        "bringing the FY26 Q4 net cash outlay to $47,726M rather than the "
+        "headline $55,663M",
+    ]
+    for text in lines:
+        claims = extract_net_debt_claims(text)
+        assert claims == [], (
+            f"'net cash outlay' extracted as a net-cash claim: "
+            f"{[(c.label, c.value_raw) for c in claims]} in {text[:70]!r}"
+        )
+
+
+def test_phase_9_2_regression_plain_net_cash_still_extracted():
+    """Guard: the outlay lookahead must not swallow genuine net-cash claims."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    claims = extract_net_debt_claims(
+        "SAP carries a net cash position of $2.18B against ORCL's leverage."
+    )
+    assert len(claims) == 1 and claims[0].is_cash
+
+
+def test_phase_9_2_bold_outlay_and_outflow_not_extracted():
+    """Reviewer tightenings: word-level bold ("net cash **outlay**") and the
+    sibling GAAP flow term "outflow" are the same flow-vs-position class."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    for text in (
+        "The FY26 net cash **outlay** $47.7B for capex dwarfs OCF.",
+        "the quarter's net cash outflow of $47.7B reflects capex timing",
+    ):
+        claims = extract_net_debt_claims(text)
+        assert claims == [], (
+            f"flow term extracted as position claim: "
+            f"{[(c.label, c.value_raw) for c in claims]} in {text[:50]!r}")
+
+
+def test_phase_9_2_position_claim_next_to_outlay_still_extracted():
+    """Guard: a genuine position claim followed by a separate outlay clause
+    keeps extracting."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    claims = extract_net_debt_claims(
+        "ORCL holds $8.16B net cash; outlay for capex was $47.7B.")
+    assert [(c.value_raw, c.is_cash) for c in claims] == [("$8.16B", True)]

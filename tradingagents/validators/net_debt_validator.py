@@ -297,10 +297,18 @@ class NetDebtViolation:
 # excludes `;` so a value followed by a source citation (e.g.,
 # `... Cash $45.57B; source: yfinance Net Debt row`) doesn't get paired
 # with "Net Debt" from the citation. Symmetric with `_PATTERN_LABEL_FIRST`.
+#
+# Phase 9.2 (ORCL 2026-07-01 fix): `(?!\s+outlay)` after the label — the
+# 8-K supplemental table "Net Cash Outlay for Capital Expenditures" is a
+# capex-funding term, not a net-cash position; quoting it verbatim
+# produced 5 spurious MATERIAL definitional_drift blockers ("$4,592 =
+# Net Cash Outlay ...", "net cash outlay $47.7B", "$15.7B of net cash
+# outlay"). Same class of guard as the "net cash from operations"
+# lookahead in `_PATTERN_LABEL_FIRST`.
 _PATTERN_VALUE_FIRST = re.compile(
     r"(?<![A-Za-z])\$(?P<value>[\d,]+(?:\.\d+)?)\s*(?P<unit>[BM])?"
     r"(?P<bridge>[^\n.;|/÷×]{0,30}?)"
-    r"\s+(?P<label>net\s+(?:cash|debt))",
+    r"\s+(?P<label>net\s+(?:cash|debt))(?!\s+(?:\*\*)?out(?:lay|flow))",
     re.IGNORECASE,
 )
 _PATTERN_LABEL_FIRST = re.compile(
@@ -312,7 +320,11 @@ _PATTERN_LABEL_FIRST = re.compile(
     # "Net cash from operations $45,790M" got matched as a net-cash claim
     # vs canonical $49.34B; the LLM meant OCF, not net-cash position.
     r"(?P<label>net\s+(?:cash|debt))"
-    r"(?!\s+from\s+(?:operations|operating|ops))"
+    # Phase 9.2 (ORCL 2026-07-01): also exclude "net cash outlay" — the
+    # 8-K's supplemental capex-funding term, not a net-cash position —
+    # plus the sibling flow term "outflow" and word-level bold
+    # ("net cash **outlay**"), per adversarial review.
+    r"(?!\s+(?:from\s+(?:operations|operating|ops)|(?:\*\*)?out(?:lay|flow)))"
     # Tighter bridge (20 chars) to defend against pairings like
     # `"net cash" and stops; the data shows that $16.70B of lease
     # obligations` — that's 33 chars and pairs the wrong dollar
