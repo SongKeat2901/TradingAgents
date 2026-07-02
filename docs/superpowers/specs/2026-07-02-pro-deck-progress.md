@@ -9,8 +9,9 @@ Final re-benchmark (real `fetch_research_pack` on live ORCL 2026-07-01, peers
 MSFT/GOOGL/AMZN): all pro-deck blocks land in pm_brief.md — RPO $638B @ 1.55x
 market cap with peer table, EPS grid 13.1x→5.2x compression, cash-flow
 momentum OCF +104.4% QoQ. Gap analysis updated with the parity table
-(5 MATCH, 2 at the honest free-data ceiling). Suite: 934 unit tests passing
-(+55 added by this work), 1 pre-existing host-specific failure (see notes).
+(5 MATCH, 2 at the honest free-data ceiling). Suite: 930 unit tests passing
+(+52 added by this work: 15 A, 18 B, 5 C, 10 D, 4 E), 1 pre-existing
+host-specific failure (see notes).
 
 | Step | State | Notes |
 |---|---|---|
