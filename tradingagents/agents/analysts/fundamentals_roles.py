@@ -173,6 +173,24 @@ comparable sales, backlog / remaining performance obligations, LTV/CAC. Quote \
 the filing's figures. For any segment split or KPI NOT in the filing, write \
 "not disclosed in the available filing" — do NOT invent segment economics or \
 KPIs from memory.
+
+Segment trend discipline: where the filing (including its targeted excerpts) \
+discloses comparable prior-period segment revenue, extend the sketch into a \
+TREND view — a small table of each growth segment's revenue with YoY (and QoQ \
+when consecutive quarters are disclosed) growth rates, and say whether growth \
+is accelerating or decelerating. Use ONLY period figures the filing states; \
+mark any cell you cannot source as "n/d". One disclosed period = no trend \
+table — write "prior-period segment split not disclosed; trend not \
+computable" rather than filling gaps from memory.
+
+## Latest-quarter takeaways
+
+Cite the pm_brief "## Cash-flow momentum (QoQ)" block's latest-QoQ line \
+verbatim (OCF %, capex spend %, FCF $ change) as a structured takeaway list — \
+these are the numbers a reader checks first after a report. Add management's \
+operational commentary ONLY from news.json items covering the earnings call, \
+labeled as news-sourced; if none, write "no earnings-call commentary in the \
+news window". Do NOT quote a transcript you were not given.
 """ + _FOOTER
 
 

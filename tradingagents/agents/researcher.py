@@ -697,6 +697,23 @@ def fetch_research_pack(state: dict) -> None:
         with open(pm_brief_path, "a", encoding="utf-8") as f:
             f.write(f"\n\n## Sentiment & consensus — unavailable ({exc})\n\n*Do not cite figures.*\n")
 
+    # --- Cash-flow momentum QoQ (pro-deck technique D, 2026-07-02) ---
+    # Deterministic latest-quarter takeaways (deck p70 pattern): quarterly
+    # OCF/capex/FCF series + QoQ deltas, cited verbatim downstream.
+    try:
+        from tradingagents.agents.utils.cashflow_momentum import (
+            compute_cashflow_momentum, format_cashflow_momentum_block,
+        )
+        momentum = compute_cashflow_momentum(financials)
+        (raw / "cashflow_momentum.json").write_text(
+            json.dumps(momentum, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_cashflow_momentum_block(momentum, date))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Cash-flow momentum (QoQ) — unavailable ({exc})\n\n"
+                    "*Do not cite QoQ cash-flow deltas.*\n")
+
     # --- Forward-EPS price-target grid (pro-deck technique A, 2026-07-02) ---
     # Consensus EPS path × exit multiples + the implied-P/E-compression view
     # (Tiger 30-Jun FA Outlook p69). Deterministic: yfinance earnings_estimate
