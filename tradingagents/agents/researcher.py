@@ -475,6 +475,22 @@ def fetch_research_pack(state: dict) -> None:
     from tradingagents.agents.utils.financials_parser import parse_financials
     fin_parsed = parse_financials(financials)
 
+    # --- Dividend Discount Model (Gordon Growth, stable payers only; FA-101 §5) ---
+    try:
+        from tradingagents.agents.utils.dividend_discount import (
+            compute_ddm, format_ddm_block,
+        )
+        _coe = (iv or {}).get("inputs", {}).get("cost_of_equity") if isinstance(iv, dict) else None
+        ddm = compute_ddm(fin_parsed, _coe)
+        (raw / "dividend_discount.json").write_text(
+            json.dumps(ddm, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_ddm_block(ddm))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Dividend Discount Model (Gordon Growth) — unavailable ({exc})\n\n"
+                    "*Do not cite a DDM value.*\n")
+
     try:
         from tradingagents.agents.utils.accounting_ratios import (
             compute_accounting_ratios, format_accounting_ratios_block,
