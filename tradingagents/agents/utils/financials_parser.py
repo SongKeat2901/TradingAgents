@@ -167,10 +167,16 @@ def parse_financials(financials: Any) -> dict[str, Any]:
         "net_income_yoy_ago": _row_at(is_, 4, "Net Income", "Net Income Common Stockholders"),
         "diluted_eps_yoy_ago": _row_at(is_, 4, "Diluted EPS"),
         "beneish_inputs": beneish_inputs,
+        # latest annual pretax + tax provision -> effective tax rate for NOPAT
+        # (incremental-ROIC block, FA-101 Phase 5)
+        "pretax_income_annual": _row_at(is_a, 0, "Pretax Income"),
+        "tax_provision_annual": _row_at(is_a, 0, "Tax Provision"),
         "annual_series": {
             "revenue": _series(is_a, "Total Revenue", "Operating Revenue"),
             "diluted_eps": _series(is_a, "Diluted EPS"),
             "ebit": _series(is_a, "Operating Income", "EBIT"),
             "fcf": _fcf_series(cf_a),
+            "total_debt": _series(bs_a, "Total Debt"),
+            "total_equity": _series(bs_a, "Stockholders Equity", "Common Stock Equity"),
         },
     }

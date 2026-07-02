@@ -155,3 +155,49 @@ def format_beneish_block(result: dict[str, Any]) -> str:
         "earnings manipulation, not proof; it is unreliable for financials, recent IPOs, "
         "and heavy-M&A years.*\n"
     )
+
+
+# --- FA-101 Phase 5: goodwill-impairment risk flag (§7) ----------------------
+# Goodwill applies across sectors (banks carry acquisition goodwill too), so no
+# sector skip. A large goodwill cushion relative to equity is where an
+# impairment most threatens book value. Names carrying no goodwill are NOT a
+# red flag — that renders honestly as "no goodwill reported".
+
+def compute_goodwill_flag(fin: dict[str, Any]) -> dict[str, Any]:
+    fin = fin or {}
+    goodwill = fin.get("goodwill")
+    if goodwill is None:
+        return {"reported": False}
+    ta = fin.get("total_assets")
+    eq = fin.get("total_equity")
+    pct_assets = _div(goodwill * 100, ta)
+    pct_equity = _div(goodwill * 100, eq) if (eq is not None and eq > 0) else None
+    elevated = ((pct_equity is not None and pct_equity >= 50)
+                or (pct_assets is not None and pct_assets >= 30))
+    return {
+        "reported": True,
+        "goodwill": goodwill,
+        "pct_assets": None if pct_assets is None else round(pct_assets, 1),
+        "pct_equity": None if pct_equity is None else round(pct_equity, 1),
+        "flag": "elevated" if elevated else "normal",
+    }
+
+
+def format_goodwill_block(result: dict[str, Any]) -> str:
+    r = result or {}
+    if not r.get("reported"):
+        return ("\n\n## Goodwill / impairment screen — n/a (no goodwill reported)\n\n"
+                "*This name carries no goodwill on the latest balance sheet — not a "
+                "red flag. Do not cite a goodwill ratio for it.*\n")
+    pa = "n/a (data unavailable)" if r.get("pct_assets") is None else f"{r['pct_assets']}%"
+    pe = "n/a (data unavailable)" if r.get("pct_equity") is None else f"{r['pct_equity']}%"
+    return (
+        "\n\n## Goodwill / impairment screen (computed from raw/financials.json)\n\n"
+        "| Metric | Value |\n|---|---|\n"
+        f"| Goodwill (latest) | {r.get('goodwill')} |\n"
+        f"| Goodwill / total assets | {pa} |\n"
+        f"| Goodwill / book equity | {pe} |\n"
+        f"| **Flag** | **{r.get('flag')}** (elevated when ≥50% of equity or ≥30% of assets) |\n\n"
+        "*Use the flag and ratios verbatim; do not recompute. An elevated goodwill "
+        "cushion signals impairment RISK to book value, not an impairment itself.*\n"
+    )

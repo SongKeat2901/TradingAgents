@@ -535,6 +535,44 @@ def fetch_research_pack(state: dict) -> None:
             f.write(f"\n\n## Manipulation screen (Beneish M-score) — unavailable ({exc})\n\n"
                     "*Do not cite an M-score.*\n")
 
+    # --- Goodwill-impairment risk flag (FA-101 Phase 5, §7) ---
+    try:
+        from tradingagents.agents.utils.distress_screens import (
+            compute_goodwill_flag, format_goodwill_block,
+        )
+        gw = compute_goodwill_flag(fin_parsed)
+        _dscreens_path = raw / "distress_screens.json"
+        _dscreens = {}
+        if _dscreens_path.exists():
+            try:
+                _dscreens = json.loads(_dscreens_path.read_text(encoding="utf-8"))
+            except Exception:
+                _dscreens = {}
+        _dscreens["goodwill_flag"] = gw
+        _dscreens_path.write_text(
+            json.dumps(_dscreens, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_goodwill_block(gw))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Goodwill / impairment screen — unavailable ({exc})\n\n"
+                    "*Do not cite a goodwill ratio.*\n")
+
+    # --- Commodity input-exposure flag (FA-101 Phase 5, §7) ---
+    try:
+        from tradingagents.agents.utils.commodity_exposure import (
+            compute_commodity_exposure, format_commodity_block,
+        )
+        ce = compute_commodity_exposure(fin_parsed)
+        (raw / "commodity_exposure.json").write_text(
+            json.dumps(ce, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_commodity_block(ce))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Commodity input exposure — unavailable ({exc})\n\n"
+                    "*Do not cite a commodity exposure level.*\n")
+
     try:
         from tradingagents.agents.utils.relative_multiples import (
             compute_relative_multiples, format_relative_multiples_block,

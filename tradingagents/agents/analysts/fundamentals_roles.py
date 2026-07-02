@@ -148,6 +148,17 @@ Manipulation screen discipline: when pm_brief.md's "## Manipulation screen \
 (elevated/normal) alongside the Z″ score in your risk & red-flags assessment — do \
 NOT compute your own M-score or invent a flag. If the block is marked "not \
 applicable" or "unavailable", do not cite an M-score at all.
+
+Goodwill screen discipline: when pm_brief.md's "## Goodwill / impairment screen" \
+block reports goodwill, cite its goodwill/equity and goodwill/assets ratios and \
+the flag (elevated/normal) verbatim as an impairment-risk note — do NOT compute \
+your own goodwill ratio. If the block says "no goodwill reported", state that the \
+name carries no goodwill (not a red flag) and cite no ratio.
+
+Commodity exposure discipline: cite pm_brief.md's "## Commodity input exposure" \
+block's exposure level (high/moderate/low) and primary inputs verbatim as an \
+input-cost / margin-risk note alongside cyclicality — do NOT invent a commodity \
+sensitivity the block does not state. A "low" exposure is a valid finding.
 """ + _FOOTER
 
 
@@ -215,7 +226,8 @@ DURABILITY, plus disruption risk. Ground every claim in raw/sec_filing.md \
 
 Assess capital-allocation discipline: buybacks vs dividends vs M&A, and whether \
 reinvestment earns its cost of capital — cite the "## Accounting ratios" block's \
-ROIC and ROIC-WACC spread. Focus on the buyback/dividend/M&A record here; the \
+ROIC, ROIC-WACC spread, and Incremental ROIC (ΔNOPAT/ΔIC — reinvestment quality) \
+verbatim when present. Focus on the buyback/dividend/M&A record here; the \
 detailed insider-transaction analysis is owned by the catalysts & ownership \
 section — do not duplicate it.
 
