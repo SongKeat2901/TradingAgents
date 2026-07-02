@@ -661,6 +661,17 @@ def fetch_latest_filing(
         except Exception:  # noqa: BLE001 — excerpts must never block the fetch
             excerpts = []
 
+    # Debt-maturity ladder excerpts (FREE_FINISH Phase 1): the year-by-year
+    # ladder lives in the 10-K long-term-debt note. Extracted from the FULL
+    # text with a separate budget so the generic keywords above can never
+    # starve it (and vice versa). Always computed — even untruncated filings
+    # feed the dedicated pm_brief ladder block.
+    debt_maturity_excerpts: list[dict[str, Any]] = []
+    try:
+        debt_maturity_excerpts = extract_debt_maturity_excerpts(text)
+    except Exception:  # noqa: BLE001 — excerpts must never block the fetch
+        debt_maturity_excerpts = []
+
     if truncated:
         text = text[:max_text_chars]
 
@@ -674,6 +685,7 @@ def fetch_latest_filing(
         "content": text,
         "content_truncated": truncated,
         "excerpts": excerpts,
+        "debt_maturity_excerpts": debt_maturity_excerpts,
         "convertibles": convertibles,
         "source": "sec.gov",
     }
@@ -741,6 +753,126 @@ def extract_keyword_excerpts(
             last_pos = i
             count += 1
     return selected
+
+
+# --- Debt maturity ladder (FREE_FINISH_GOAL Phase 1, 2026-07-02) -----------
+# The refinancing block is only a current-vs-long-term PROXY; the real
+# year-by-year maturity ladder is free text in the 10-K long-term-debt note.
+# These keywords cover the common phrasings (ORCL: "future principal
+# payments"; MSFT: "maturities of long-term debt"; generic: "aggregate
+# maturities" / "scheduled maturities"). Excerpts are quoted VERBATIM — never
+# parsed into numbers, so there is no scale-misread or fabrication path.
+DEBT_MATURITY_EXCERPT_KEYWORDS = (
+    "maturities of long-term debt",
+    "maturities of our long-term debt",  # MSFT FY25 phrasing; NOT "our debt investments"
+    "aggregate maturities",
+    "future principal payments",
+    "scheduled maturities",
+    "principal payments on long-term debt",
+)
+
+
+def extract_debt_maturity_excerpts(text: str) -> list[dict[str, Any]]:
+    """Windowed verbatim excerpts around debt-maturity phrasings in the full
+    filing text. Separate budget from the generic MD&A keywords so neither
+    starves the other. Pure function; [] when nothing matches."""
+    return extract_keyword_excerpts(
+        text, DEBT_MATURITY_EXCERPT_KEYWORDS,
+        before=400, after=2600, max_per_keyword=2, min_gap=2000,
+        max_total_chars=9_000,
+    )
+
+
+def fetch_debt_maturity_note(ticker: str, trade_date: str) -> dict[str, Any]:
+    """Fetch the latest 10-K filed on/before trade_date and extract the debt
+    maturity-ladder excerpts from its FULL text.
+
+    Used when the latest 10-Q/10-K fetch didn't yield ladder excerpts (a 10-Q
+    rarely repeats the annual debt note). Returns {ticker, form, filing_date,
+    accession_number, url, excerpts, source}; a 10-K with no matching phrasing
+    returns excerpts=[] (the block renders an honest 'not located' n/a).
+    Fail-soft -> {"unavailable": True, "reason": ..., "ticker": ...}."""
+    try:
+        td = datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        return {"unavailable": True, "reason": f"invalid trade_date: {trade_date}", "ticker": ticker}
+    cik = _resolve_cik(ticker.upper())
+    if cik is None:
+        return {"unavailable": True, "reason": f"CIK not found for ticker {ticker}", "ticker": ticker}
+    body = _http_get(_SUBMISSIONS_URL.format(cik=cik))
+    if body is None:
+        return {"unavailable": True, "reason": "EDGAR submissions endpoint unreachable", "ticker": ticker}
+    try:
+        submissions = json.loads(body)
+    except json.JSONDecodeError:
+        return {"unavailable": True, "reason": "EDGAR submissions JSON decode failed", "ticker": ticker}
+    filing = _find_recent_filing(submissions, td, forms=("10-K",))
+    if filing is None:
+        return {"unavailable": True, "reason": "no 10-K filed on or before trade_date", "ticker": ticker}
+    accession_no_dashes = filing["accession_number"].replace("-", "")
+    url = _FILING_URL.format(cik=cik, accession_no_dashes=accession_no_dashes,
+                             primary_doc=filing["primary_document"])
+    html = _http_get(url)
+    if html is None:
+        return {"unavailable": True, "reason": "10-K document unreachable",
+                "ticker": ticker, "filing_date": filing["filing_date"]}
+    stripper = _HTMLStripper()
+    try:
+        stripper.feed(html.decode("utf-8", errors="replace"))
+    except Exception:  # noqa: BLE001 — malformed filing HTML must fail soft
+        return {"unavailable": True, "reason": "10-K HTML parse failed",
+                "ticker": ticker, "filing_date": filing["filing_date"]}
+    try:
+        excerpts = extract_debt_maturity_excerpts(stripper.text)
+    except Exception:  # noqa: BLE001 — excerpts must never block the fetch
+        excerpts = []
+    return {
+        "ticker": ticker,
+        "form": filing["form"],
+        "filing_date": filing["filing_date"],
+        "accession_number": filing["accession_number"],
+        "url": url,
+        "excerpts": excerpts,
+        "source": "sec.gov",
+    }
+
+
+_LADDER_HEADER = "## Debt maturity ladder (filing long-term-debt note, verbatim)"
+
+
+def format_debt_maturity_block(note: dict[str, Any] | None) -> str:
+    """pm_brief.md block: verbatim ladder excerpts + source, or honest n/a.
+    The n/a text anchors the Risk role's fallback directive ('full ladder not
+    disclosed' + use the refinancing proxy)."""
+    n = note or {"unavailable": True, "reason": "not fetched"}
+    if n.get("unavailable") or not n.get("excerpts"):
+        reason = n.get("reason") or "maturity ladder not located in the fetched 10-K text"
+        return (
+            f"\n\n{_LADDER_HEADER} — n/a ({reason})\n\n"
+            "*Full ladder not disclosed in the fetched filings. Use the "
+            "refinancing / maturity-wall PROXY block for near-term rollover "
+            "risk and write 'full ladder not disclosed' — do NOT invent "
+            "maturity years or amounts.*\n"
+        )
+    parts = [
+        f"\n\n{_LADDER_HEADER}\n\n"
+        f"**Source:** {n.get('ticker', '?')} {n.get('form', '10-K')} filed "
+        f"{n.get('filing_date', 'n/a')} (accession {n.get('accession_number') or 'n/a'})  \n"
+        f"**URL:** {n.get('url') or 'n/a'}\n\n"
+        "Verbatim excerpts from the filing's long-term-debt note (located by "
+        "full-text keyword search):\n"
+    ]
+    for e in n["excerpts"]:
+        parts.append(f"\n**[{e['keyword']}]**\n\n> …{e['text'].strip()}…\n")
+    parts.append(
+        "\n*Cite the year-by-year maturity amounts VERBATIM from these "
+        "excerpts, labelling each fiscal year exactly as the filing prints it "
+        "(the amount scale — millions/billions — is as the excerpt states). "
+        "If the excerpt does not readably show year-by-year amounts, fall "
+        "back to the refinancing proxy block and write 'full ladder not "
+        "disclosed'. NEVER invent maturity years, amounts, or totals.*\n"
+    )
+    return "".join(parts)
 
 
 _XBRL_SIGNATURES = ("us-gaap:", "iso4217:", "xbrli:", "<ix:")
