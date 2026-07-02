@@ -128,3 +128,17 @@ def test_factories_return_role_keys():
     ]:
         out = factory(_Stub())(state)
         assert key in out and len(out[key]) >= 1200
+
+
+def test_financial_covers_sotp_and_kpis():
+    s = fr._SYSTEM_FINANCIAL
+    assert "sum-of-the-parts" in s.lower()
+    assert "NRR" in s and "ARPU" in s and "same-store" in s.lower()
+    assert "not disclosed in the available filing" in s  # anti-fabrication
+
+
+def test_quality_covers_material_esg():
+    s = fr._SYSTEM_QUALITY
+    assert "Material ESG risks" in s
+    assert "no material ESG risk disclosed" in s
+    assert "do NOT import an ESG rating" in s  # anti-fabrication
