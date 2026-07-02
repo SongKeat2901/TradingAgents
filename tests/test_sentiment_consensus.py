@@ -51,3 +51,23 @@ def test_block_render():
     assert "strong_buy" in block and "verbatim" in block
     na = format_sentiment_block(compute_sentiment_consensus({"fundamentals": ""}))
     assert "unavailable" in na.lower() or "n/a" in na.lower()
+
+
+def test_num_malformed_token_does_not_crash():
+    blob = (
+        "# Fundamentals\nName: Acme\nCurrent Price: 100\n"
+        "Shares Short: 1.2.3\nShares Short Prior Month: 100\n"
+        "Short Ratio Days To Cover: 2.5\nShort Percent Of Float: 0.0128\n"
+    )
+    r = compute_sentiment_consensus({"fundamentals": blob})
+    assert r["short_mom_change_pct"] is None  # Shares Short unparseable -> degrades to None
+    assert r["days_to_cover"] == 2.5           # other valid fields still parse
+    assert r["short_pct_float"] == 1.28
+
+
+def test_target_upside_reference_price_fallback():
+    blob = "# Fundamentals\nName: Acme\nTarget Mean Price: 150\n"
+    r = compute_sentiment_consensus({"fundamentals": blob}, reference_price=100)
+    assert r["target_upside_pct"] == 50.0
+    r_no_ref = compute_sentiment_consensus({"fundamentals": blob})
+    assert r_no_ref["target_upside_pct"] is None

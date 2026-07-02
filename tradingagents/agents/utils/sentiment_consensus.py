@@ -10,7 +10,12 @@ from typing import Any
 
 def _num(t: str, label: str):
     m = re.search(rf"^{re.escape(label)}:\s*(-?[0-9.]+)", t, re.MULTILINE)
-    return float(m.group(1)) if m else None
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
 
 
 def _text(t: str, label: str):
@@ -22,7 +27,9 @@ def _r(x, nd=2):
     return None if x is None else round(x, nd)
 
 
-def compute_sentiment_consensus(financials: dict[str, Any]) -> dict[str, Any]:
+def compute_sentiment_consensus(
+    financials: dict[str, Any], reference_price: float | None = None
+) -> dict[str, Any]:
     t = financials.get("fundamentals", "") if isinstance(financials, dict) else ""
     shares_short = _num(t, "Shares Short")
     prior = _num(t, "Shares Short Prior Month")
@@ -30,6 +37,8 @@ def compute_sentiment_consensus(financials: dict[str, Any]) -> dict[str, Any]:
     n_analysts = _num(t, "Number Of Analyst Opinions")
     target_mean = _num(t, "Target Mean Price")
     current = _num(t, "Current Price")
+    if current is None and reference_price is not None and reference_price > 0:
+        current = reference_price
     return {
         "short_pct_float": _r(pct_float * 100) if pct_float is not None else None,
         "days_to_cover": _r(_num(t, "Short Ratio Days To Cover")),
