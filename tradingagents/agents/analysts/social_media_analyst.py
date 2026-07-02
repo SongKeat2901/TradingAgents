@@ -40,7 +40,13 @@ Disagreement is a signal. Cite specific conflicts.
 
 ## Risk to my read
 
-What sentiment signal would invalidate this analysis?"""
+What sentiment signal would invalidate this analysis?
+
+If pm_brief.md contains a "## Sentiment & consensus" block (short interest \
+%/days-to-cover, analyst rating, price-target upside), cite those figures \
+verbatim in your sentiment indicators table WHEN PRESENT (not "n/a"/"unavailable") \
+— do not recompute or restate them from memory. For any field marked n/a or \
+unavailable in that block, write "not reported" rather than guessing a number."""
 
 
 def create_social_media_analyst(llm):

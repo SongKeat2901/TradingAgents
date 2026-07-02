@@ -71,3 +71,12 @@ def test_target_upside_reference_price_fallback():
     assert r["target_upside_pct"] == 50.0
     r_no_ref = compute_sentiment_consensus({"fundamentals": blob})
     assert r_no_ref["target_upside_pct"] is None
+
+
+def test_block_composes(tmp_path):
+    from tradingagents.agents.utils.sentiment_consensus import compute_sentiment_consensus, format_sentiment_block
+    block = format_sentiment_block(compute_sentiment_consensus({"fundamentals": _BLOB}))
+    pm = tmp_path / "pm_brief.md"; pm.write_text("# b\n", encoding="utf-8")
+    with open(pm, "a", encoding="utf-8") as f:
+        f.write(block)
+    assert "## Sentiment & consensus" in pm.read_text(encoding="utf-8")

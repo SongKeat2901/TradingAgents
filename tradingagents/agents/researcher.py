@@ -612,3 +612,18 @@ def fetch_research_pack(state: dict) -> None:
 
     with (raw / "pm_brief.md").open("a", encoding="utf-8") as fh:
         fh.write(format_forward_block(forward_probabilities))
+
+    # --- Sentiment & consensus (short interest + analyst view, FA-101 WP5a) ---
+    try:
+        from tradingagents.agents.utils.sentiment_consensus import (
+            compute_sentiment_consensus, format_sentiment_block,
+        )
+        sc = compute_sentiment_consensus(
+            financials, reference_price=reference.get("reference_price"))
+        (raw / "sentiment_consensus.json").write_text(
+            json.dumps(sc, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_sentiment_block(sc))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Sentiment & consensus — unavailable ({exc})\n\n*Do not cite figures.*\n")
