@@ -577,13 +577,26 @@ def fetch_research_pack(state: dict) -> None:
     # --- Refinancing / maturity-wall proxy (FA-101 §2/§7) ---
     try:
         from tradingagents.agents.utils.distress_screens import (
-            compute_refinancing_pressure, format_refinancing_block,
+            compute_refinancing_pressure, debt_ladder_available,
+            format_refinancing_block,
         )
         refi = compute_refinancing_pressure(fin_parsed)
         (raw / "refinancing_pressure.json").write_text(
             json.dumps(refi, indent=2, default=str), encoding="utf-8")
+        # PM Pre-flight (which runs before the Researcher) writes
+        # raw/debt_maturity.json; when it carries verbatim 10-K ladder
+        # excerpts, the proxy block cross-references the full ladder instead
+        # of claiming the ladder is out of reach.
+        ladder = False
+        try:
+            _dm_path = raw / "debt_maturity.json"
+            if _dm_path.exists():
+                ladder = debt_ladder_available(
+                    json.loads(_dm_path.read_text(encoding="utf-8")))
+        except Exception:  # noqa: BLE001 - ladder awareness must never crash the block
+            ladder = False
         with open(pm_brief_path, "a", encoding="utf-8") as f:
-            f.write(format_refinancing_block(refi))
+            f.write(format_refinancing_block(refi, ladder_available=ladder))
     except Exception as exc:  # noqa: BLE001 - this block must never crash the run
         with open(pm_brief_path, "a", encoding="utf-8") as f:
             f.write(f"\n\n## Refinancing / maturity-wall proxy — unavailable ({exc})\n\n"

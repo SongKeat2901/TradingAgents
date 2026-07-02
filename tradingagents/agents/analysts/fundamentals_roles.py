@@ -259,13 +259,25 @@ name carries no goodwill (not a red flag) and cite no ratio.
 Refinancing discipline: when pm_brief.md's "## Refinancing / maturity-wall proxy" \
 block is applicable, cite its current-debt %, cash coverage, and the flag \
 (elevated/moderate/low) verbatim as a near-term rollover-risk note — do NOT invent \
-a maturity schedule. Note it is a proxy (current-vs-long-term split), not the full \
-10-K maturity ladder.
+a maturity schedule. It is a proxy (current-vs-long-term split); the full \
+year-by-year schedule, when disclosed, is in the "## Debt maturity ladder" \
+block and is owned by your "## Debt maturity ladder" section below.
 
 Commodity exposure discipline: cite pm_brief.md's "## Commodity input exposure" \
 block's exposure level (high/moderate/low) and primary inputs verbatim as an \
 input-cost / margin-risk note alongside cyclicality — do NOT invent a commodity \
 sensitivity the block does not state. A "low" exposure is a valid finding.
+
+## Debt maturity ladder
+
+When pm_brief.md's "## Debt maturity ladder" block carries verbatim filing \
+excerpts, quote the year-by-year maturity amounts \
+VERBATIM — each fiscal year labelled exactly as the filing prints it, with \
+the amount scale the excerpt states — and assess the heaviest single-year \
+wall against the cash / cash-coverage figures already cited above. When the \
+block is marked n/a, cite the refinancing proxy figures instead and write \
+"full ladder not disclosed" — do NOT invent maturity years, amounts, totals, \
+or a schedule the data does not state.
 """ + _FOOTER
 
 
@@ -418,7 +430,7 @@ _BEAR_REFRAME_HEADER = "## Top bear concern, tested"
 _REQUIRED_FINANCIAL = ["## Business-model framing", "## Peer comparison matrix",
                        "## Capital-structure compare", "## Sanity check on reported numbers",
                        _BEAR_REFRAME_HEADER]
-_REQUIRED_RISK = ["## Risk & red flags", _BEAR_REFRAME_HEADER]
+_REQUIRED_RISK = ["## Risk & red flags", "## Debt maturity ladder", _BEAR_REFRAME_HEADER]
 _REQUIRED_CATALYSTS = ["## Insider transactions", "## What management needs to prove",
                        "## Dated inflection to watch", "## Management color (earnings release)",
                        "## Sentiment & consensus", _BEAR_REFRAME_HEADER]

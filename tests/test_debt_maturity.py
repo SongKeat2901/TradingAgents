@@ -243,3 +243,180 @@ def test_format_debt_maturity_block_none_input():
     assert "n/a" in format_debt_maturity_block(None)
 
 
+# --- refinancing proxy block upgrade ----------------------------------------
+
+def test_refinancing_block_points_at_ladder_when_available():
+    from tradingagents.agents.utils.distress_screens import (
+        compute_refinancing_pressure, format_refinancing_block,
+    )
+    r = compute_refinancing_pressure(
+        {"total_debt": 100, "long_term_debt": 50, "cash_and_equivalents": 20})
+    block = format_refinancing_block(r, ladder_available=True)
+    assert "## Debt maturity ladder" in block  # cross-reference to the full ladder
+    assert "not disclosed" not in block.lower()
+
+
+def test_refinancing_block_default_keeps_proxy_caveat():
+    from tradingagents.agents.utils.distress_screens import (
+        compute_refinancing_pressure, format_refinancing_block,
+    )
+    r = compute_refinancing_pressure(
+        {"total_debt": 100, "long_term_debt": 50, "cash_and_equivalents": 20})
+    block = format_refinancing_block(r)  # backwards-compatible signature
+    assert "NOT the full year-by-year maturity ladder" in block
+
+
+def test_debt_ladder_available_helper():
+    from tradingagents.agents.utils.distress_screens import debt_ladder_available
+    assert debt_ladder_available(_happy_note()) is True
+    assert debt_ladder_available({"unavailable": True, "reason": "x"}) is False
+    note = _happy_note()
+    note["excerpts"] = []
+    assert debt_ladder_available(note) is False
+    assert debt_ladder_available(None) is False
+
+
+# --- PM Pre-flight wiring ----------------------------------------------------
+
+@pytest.fixture
+def _stub_network(monkeypatch):
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.calendar.compute_calendar",
+        lambda d, t: {"trade_date": d, "_unavailable": []},
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing",
+        lambda t, d: {"unavailable": True, "reason": "stubbed", "ticker": t},
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_debt_maturity_note",
+        lambda t, d: {"unavailable": True, "reason": "stubbed", "ticker": t},
+        raising=False,
+    )
+
+
+def _run_preflight(tmp_path):
+    from tests.test_pm_preflight import _VALID_BRIEF
+    from tradingagents.agents.managers.pm_preflight import create_pm_preflight_node
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=_VALID_BRIEF)
+    node = create_pm_preflight_node(fake_llm)
+    state = {"company_of_interest": "MSFT", "trade_date": "2026-05-01",
+             "raw_dir": str(tmp_path / "raw")}
+    return node(state)
+
+
+def test_pm_preflight_uses_10k_filing_excerpts_without_refetch(tmp_path, monkeypatch, _stub_network):
+    """Latest filing IS a 10-K carrying debt excerpts -> block quotes them and
+    fetch_debt_maturity_note is NOT called (no duplicate EDGAR fetch)."""
+    filing = {
+        "ticker": "MSFT", "form": "10-K", "filing_date": "2026-06-22",
+        "accession_number": "0001-26-1", "primary_document": "k.htm",
+        "url": "https://example.com/k.htm", "content": "text",
+        "content_truncated": True, "excerpts": [],
+        "debt_maturity_excerpts": _happy_note()["excerpts"],
+        "source": "sec.gov",
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing",
+        lambda t, d: filing)
+    called = []
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_debt_maturity_note",
+        lambda t, d: called.append(t))
+    _run_preflight(tmp_path)
+    assert called == []
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Debt maturity ladder" in brief
+    assert "fiscal 2027 $ 8,750" in brief
+    dm = json.loads((tmp_path / "raw" / "debt_maturity.json").read_text(encoding="utf-8"))
+    assert dm["form"] == "10-K"
+
+
+def test_pm_preflight_uses_10q_inline_excerpts_when_present(tmp_path, monkeypatch, _stub_network):
+    """Some issuers (MSFT) repeat the maturities table in the 10-Q's debt note.
+    Inline excerpts from the LATEST filing are fresher than last year's 10-K —
+    use them and skip the fallback fetch; the source line stays honest (10-Q)."""
+    filing = {
+        "ticker": "MSFT", "form": "10-Q", "filing_date": "2026-04-29",
+        "accession_number": "0001-26-2", "primary_document": "q.htm",
+        "url": "https://example.com/q.htm", "content": "text",
+        "content_truncated": True, "excerpts": [],
+        "debt_maturity_excerpts": [{"keyword": "maturities of our long-term debt",
+                                    "text": "Year Ending June 30, 2026 $ 3,000 2027 9,250"}],
+        "source": "sec.gov",
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing",
+        lambda t, d: filing)
+    called = []
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_debt_maturity_note",
+        lambda t, d: called.append(t))
+    _run_preflight(tmp_path)
+    assert called == []
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Debt maturity ladder" in brief
+    assert "2027 9,250" in brief
+    assert "10-Q filed 2026-04-29" in brief  # source stays honest
+    dm = json.loads((tmp_path / "raw" / "debt_maturity.json").read_text(encoding="utf-8"))
+    assert dm["form"] == "10-Q"
+
+
+def test_pm_preflight_falls_back_to_10k_note_when_latest_is_10q(tmp_path, monkeypatch, _stub_network):
+    filing = {
+        "ticker": "MSFT", "form": "10-Q", "filing_date": "2026-04-29",
+        "accession_number": "0001-26-2", "primary_document": "q.htm",
+        "url": "https://example.com/q.htm", "content": "text",
+        "content_truncated": False, "excerpts": [], "source": "sec.gov",
+    }
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_latest_filing",
+        lambda t, d: filing)
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_debt_maturity_note",
+        lambda t, d: _happy_note())
+    _run_preflight(tmp_path)
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Debt maturity ladder" in brief
+    assert "fiscal 2027 $ 8,750" in brief
+    dm = json.loads((tmp_path / "raw" / "debt_maturity.json").read_text(encoding="utf-8"))
+    assert dm["filing_date"] == "2026-06-22"
+
+
+def test_pm_preflight_debt_note_na_block_when_unavailable(tmp_path, _stub_network):
+    """Both the filing and the note fetch are stubbed unavailable -> the block
+    still lands, as an honest n/a (so the Risk role's fallback directive has an
+    anchor), and debt_maturity.json records the reason."""
+    _run_preflight(tmp_path)
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Debt maturity ladder" in brief
+    assert "full ladder not disclosed" in brief.lower()
+    dm = json.loads((tmp_path / "raw" / "debt_maturity.json").read_text(encoding="utf-8"))
+    assert dm["unavailable"] is True
+
+
+def test_pm_preflight_debt_note_exception_is_fail_open(tmp_path, monkeypatch, _stub_network):
+    def _raises(t, d):
+        raise RuntimeError("simulated EDGAR crash")
+    monkeypatch.setattr(
+        "tradingagents.agents.utils.sec_edgar.fetch_debt_maturity_note", _raises)
+    out = _run_preflight(tmp_path)  # MUST NOT raise
+    brief = (tmp_path / "raw" / "pm_brief.md").read_text(encoding="utf-8")
+    assert "## Debt maturity ladder" in brief and "n/a" in brief
+    assert out["pm_brief"] == brief
+
+
+# --- Risk & Red-Flags role directive ----------------------------------------
+
+def test_risk_role_has_debt_ladder_directive():
+    from tradingagents.agents.analysts import fundamentals_roles as fr
+    s = fr._SYSTEM_RISK.lower()
+    assert "## debt maturity ladder" in s
+    assert "verbatim" in s
+    assert "full ladder not disclosed" in s
+
+
+def test_risk_role_requires_debt_ladder_section():
+    from tradingagents.agents.analysts import fundamentals_roles as fr
+    assert "## Debt maturity ladder" in fr._REQUIRED_RISK

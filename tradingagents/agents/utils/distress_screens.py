@@ -206,7 +206,14 @@ def compute_refinancing_pressure(fin: dict[str, Any]) -> dict[str, Any]:
             "flag": flag}
 
 
-def format_refinancing_block(result: dict[str, Any]) -> str:
+def debt_ladder_available(note: dict[str, Any] | None) -> bool:
+    """True when raw/debt_maturity.json carries verbatim ladder excerpts
+    (the '## Debt maturity ladder' pm_brief block is quoting the 10-K note)."""
+    n = note or {}
+    return bool(not n.get("unavailable") and n.get("excerpts"))
+
+
+def format_refinancing_block(result: dict[str, Any], ladder_available: bool = False) -> str:
     r = result or {}
     if not r.get("applicable"):
         return (f"\n\n## Refinancing / maturity-wall proxy — n/a "
@@ -214,6 +221,19 @@ def format_refinancing_block(result: dict[str, Any]) -> str:
                 "*Current/long-term debt split unavailable; do not cite a maturity-wall figure.*\n")
     cc = r.get("cash_cover_current")
     cc_cell = "n/a" if cc is None else f"{cc}x"
+    if ladder_available:
+        footer = (
+            "*Use verbatim; do not recompute. This is a near-term proxy (current vs "
+            "long-term split). The full year-by-year schedule is in the '## Debt "
+            "maturity ladder' block — cite THAT, verbatim, for the maturity "
+            "schedule. A high near-term share with thin cash flags rollover risk.*\n"
+        )
+    else:
+        footer = (
+            "*Use verbatim; do not recompute. This is a near-term proxy (current vs "
+            "long-term split), NOT the full year-by-year maturity ladder — that requires "
+            "the 10-K debt note. A high near-term share with thin cash flags rollover risk.*\n"
+        )
     return (
         "\n\n## Refinancing / maturity-wall proxy (computed from raw/financials.json)\n\n"
         "| Metric | Value |\n|---|---|\n"
@@ -222,9 +242,7 @@ def format_refinancing_block(result: dict[str, Any]) -> str:
         f"| Cash coverage of current debt | {cc_cell} |\n"
         f"| **Refinancing-pressure flag** | **{r.get('flag')}** "
         "(elevated = ≥40% due near-term AND cash < it) |\n\n"
-        "*Use verbatim; do not recompute. This is a near-term proxy (current vs "
-        "long-term split), NOT the full year-by-year maturity ladder — that requires "
-        "the 10-K debt note. A high near-term share with thin cash flags rollover risk.*\n"
+        + footer
     )
 
 

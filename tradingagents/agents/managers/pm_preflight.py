@@ -525,6 +525,53 @@ def create_pm_preflight_node(llm):
                 f.write(convertibles_block)
             brief = brief + convertibles_block
 
+        # FREE_FINISH Phase 1: full debt maturity ladder from the 10-K
+        # long-term-debt note. The refinancing block (researcher.py) is only
+        # a current-vs-long-term PROXY; the real year-by-year ladder is free
+        # 10-K text. When the filing fetched above is already a 10-K carrying
+        # debt excerpts, reuse them (no duplicate EDGAR fetch); else fetch the
+        # latest 10-K's note directly. Verbatim excerpts only — never parsed
+        # into numbers. Fail-open: an honest-n/a block always lands so the
+        # Risk role's fallback directive has an anchor.
+        try:
+            from tradingagents.agents.utils.sec_edgar import (
+                fetch_debt_maturity_note, format_debt_maturity_block,
+            )
+            # Inline excerpts from the LATEST filing win (some issuers repeat
+            # the maturities table in the 10-Q debt note — fresher than last
+            # year's 10-K); otherwise fetch the latest 10-K's note.
+            if (isinstance(filing, dict) and not filing.get("unavailable")
+                    and filing.get("debt_maturity_excerpts")):
+                debt_note = {
+                    "ticker": filing["ticker"], "form": filing["form"],
+                    "filing_date": filing["filing_date"],
+                    "accession_number": filing.get("accession_number"),
+                    "url": filing.get("url"),
+                    "excerpts": filing["debt_maturity_excerpts"],
+                    "source": filing.get("source", "sec.gov"),
+                }
+            else:
+                debt_note = fetch_debt_maturity_note(ticker, date)
+                if not isinstance(debt_note, dict):
+                    debt_note = {"unavailable": True,
+                                 "reason": "note fetch returned no data",
+                                 "ticker": ticker}
+            (raw_dir / "debt_maturity.json").write_text(
+                _json.dumps(debt_note, indent=2, default=str), encoding="utf-8"
+            )
+            ladder_block = format_debt_maturity_block(debt_note)
+        except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+            ladder_block = (
+                f"\n\n## Debt maturity ladder (filing long-term-debt note, verbatim) — n/a ({exc})\n\n"
+                "*Full ladder not disclosed in the fetched filings. Use the "
+                "refinancing / maturity-wall PROXY block for near-term rollover "
+                "risk and write 'full ladder not disclosed' — do NOT invent "
+                "maturity years or amounts.*\n"
+            )
+        with open(raw_dir / "pm_brief.md", "a", encoding="utf-8") as f:
+            f.write(ladder_block)
+        brief = brief + ladder_block
+
         # NOTE: Phase 6.4 deterministic peer-ratios injection lives in
         # researcher.py (which writes peers.json). PM Pre-flight runs
         # BEFORE the Researcher, so peers.json doesn't exist here yet.
