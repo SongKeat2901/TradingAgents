@@ -151,6 +151,109 @@ def _find_recent_filing(
     return None
 
 
+def _collect_filings(submissions: dict, trade_date: datetime,
+                     forms: tuple[str, ...], limit: int) -> list[dict]:
+    """Most-recent-first list of up to `limit` filings of `forms` on/before
+    trade_date (metadata only: form, date, accession, primary doc, 8-K items)."""
+    recent = submissions.get("filings", {}).get("recent", {})
+    out: list[dict] = []
+    if not recent:
+        return out
+    items_arr = recent.get("items") or []
+    for i in range(len(recent.get("form", []))):
+        try:
+            if recent["form"][i] not in forms:
+                continue
+            fd = datetime.strptime(recent["filingDate"][i], "%Y-%m-%d")
+            if fd > trade_date:
+                continue
+            out.append({
+                "form": recent["form"][i],
+                "filing_date": recent["filingDate"][i],
+                "accession_number": recent["accessionNumber"][i],
+                "primary_document": recent["primaryDocument"][i],
+                "items": items_arr[i] if i < len(items_arr) and items_arr[i] else None,
+            })
+            if len(out) >= limit:
+                break
+        except (ValueError, KeyError, IndexError):
+            continue
+    return out
+
+
+def fetch_filing_surface(ticker: str, trade_date: str, max_8k: int = 5) -> dict[str, Any]:
+    """Metadata-level SEC filing surface (FA-101 Phase 2b §9): the most recent
+    8-K material events + the latest DEF 14A proxy filed on/before trade_date.
+    Dates/item-codes/links only — no content parsing. Fail-soft ->
+    {"unavailable": True, "reason": ...}."""
+    try:
+        td = datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        return {"unavailable": True, "reason": f"invalid trade_date: {trade_date}", "ticker": ticker}
+    cik = _resolve_cik(ticker.upper())
+    if cik is None:
+        return {"unavailable": True, "reason": f"CIK not found for ticker {ticker}", "ticker": ticker}
+    body = _http_get(_SUBMISSIONS_URL.format(cik=cik))
+    if body is None:
+        return {"unavailable": True, "reason": "EDGAR submissions endpoint unreachable", "ticker": ticker}
+    try:
+        submissions = json.loads(body)
+    except json.JSONDecodeError:
+        return {"unavailable": True, "reason": "EDGAR submissions JSON decode failed", "ticker": ticker}
+
+    def _url(f):
+        return _FILING_URL.format(cik=cik, accession_no_dashes=f["accession_number"].replace("-", ""),
+                                  primary_doc=f["primary_document"])
+    eights = _collect_filings(submissions, td, ("8-K",), max_8k)
+    proxies = _collect_filings(submissions, td, ("DEF 14A",), 1)
+    for f in eights:
+        f["url"] = _url(f)
+    latest_proxy = proxies[0] if proxies else None
+    if latest_proxy:
+        latest_proxy["url"] = _url(latest_proxy)
+    return {"ticker": ticker, "recent_8k": eights, "latest_def14a": latest_proxy, "source": "sec.gov"}
+
+
+# 8-K item-code legend (the material-event categories most cited in research)
+_8K_ITEMS = {
+    "1.01": "material agreement", "1.03": "bankruptcy", "2.01": "acquisition/disposition",
+    "2.02": "results of operations", "2.03": "new debt obligation", "3.01": "delisting notice",
+    "4.01": "auditor change", "5.02": "officer/director change", "5.03": "bylaw change",
+    "7.01": "Reg FD disclosure", "8.01": "other event", "9.01": "financial statements/exhibits",
+}
+
+
+def format_filing_surface_block(surface: dict[str, Any]) -> str:
+    s = surface or {}
+    if s.get("unavailable"):
+        return (f"\n\n## SEC filing surface (8-K + proxy) — n/a "
+                f"({s.get('reason', 'unavailable')})\n\n"
+                "*No EDGAR filing metadata; do not cite 8-K/proxy dates.*\n")
+    eights = s.get("recent_8k") or []
+    proxy = s.get("latest_def14a")
+    proxy_line = (f"filed {proxy['filing_date']} ([proxy]({proxy['url']}))"
+                  if proxy else "none found on/before trade date")
+    if not eights and not proxy:
+        return ("\n\n## SEC filing surface (8-K + proxy) — none reported\n\n"
+                "*No 8-K or DEF 14A on/before the trade date. Not a red flag.*\n")
+    rows = ""
+    for f in eights:
+        codes = [c.strip() for c in (f.get("items") or "").split(",") if c.strip()]
+        legend = ", ".join(f"{c} ({_8K_ITEMS.get(c, 'other')})" for c in codes) if codes else "—"
+        rows += f"| {f['filing_date']} | {legend} |\n"
+    block = (
+        "\n\n## SEC filing surface (8-K events + latest proxy, EDGAR metadata)\n\n"
+        f"**Latest DEF 14A (proxy — comp & governance):** {proxy_line}\n\n"
+    )
+    if eights:
+        block += ("Recent 8-K material events:\n\n"
+                  "| Date | Items |\n|---|---|\n" + rows)
+    return block + (
+        "\n*Dates/items/links only (not filing content). Cite verbatim; an 8-K "
+        "clustering can flag a live catalyst. Item codes are SEC-standard.*\n"
+    )
+
+
 def fetch_latest_filing(
     ticker: str, trade_date: str, max_text_chars: int = 60_000
 ) -> dict[str, Any]:
