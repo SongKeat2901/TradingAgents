@@ -120,6 +120,18 @@ Always include 3-5 rows. Flag ❌ on any ratio that looks implausible (e.g., \
 "likely excludes capitalized interest or convertibles"). Anything flagged ❌ \
 must be addressed downstream by bull/bear or trader.
 
+RPO / backlog discipline: when pm_brief.md carries a "## RPO / backlog deep-dive" \
+block, cite VERBATIM its total RPO, the QoQ-additions trend, RPO ÷ market cap \
+("how much contracted revenue the market is — or is not — paying for"), and the \
+peer backlog table. Then build the conversion waterfall ONLY from the filing's \
+own timing percentages (the "remaining performance obligation" targeted excerpt \
+in raw/sec_filing.md): quote the next-12-month / 13-36 / 37-60 / thereafter \
+splits verbatim if disclosed, else write "conversion timing not disclosed". A \
+long-duration backlog cuts execution risk (revenue already contracted) — frame \
+it that way when the data supports it. When the block says "Not applicable", \
+write "RPO: not applicable (not a contracted-backlog business)" — do NOT \
+fabricate backlog figures.
+
 Price-target-grid discipline: when pm_brief.md carries a "## Forward-EPS \
 price-target grid" block, cite its projected-EPS path, the exit-multiple price \
 scenarios, and especially the "Implied P/E if price stays flat" compression row \

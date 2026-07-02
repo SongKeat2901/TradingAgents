@@ -719,6 +719,36 @@ def fetch_research_pack(state: dict) -> None:
             f.write(f"\n\n## Forward-EPS price-target grid — unavailable ({exc})\n\n"
                     "*Do not cite forward price targets.*\n")
 
+    # --- RPO / backlog deep-dive (pro-deck technique B, 2026-07-02) ---
+    # SEC XBRL companyconcept total-RPO series + QoQ additions + RPO/market-cap
+    # + peer backlog comparison (deck pp67-68 pattern). Self-gating: names
+    # without a fresh RPO fact render "not applicable" — never fabricated.
+    try:
+        from tradingagents.agents.utils.intrinsic_value import parse_fundamentals as _pf
+        from tradingagents.agents.utils.rpo_backlog import (
+            fetch_rpo_facts, dedupe_rpo_facts, compute_rpo_backlog, format_rpo_block,
+        )
+        subject_facts = dedupe_rpo_facts(fetch_rpo_facts(ticker), date)
+        rpo_peers = []
+        if subject_facts:  # only spend peer HTTP calls when the subject reports RPO
+            for p in peers:
+                pdata = peers_data.get(p) if isinstance(peers_data, dict) else None
+                pmc = (_pf(pdata) or {}).get("market_cap") if isinstance(pdata, dict) else None
+                rpo_peers.append({"ticker": p, "facts": fetch_rpo_facts(p), "market_cap": pmc})
+        rpo = compute_rpo_backlog(
+            ticker, subject_facts, date,
+            market_cap=fin_parsed.get("market_cap"),
+            revenue_ttm=fin_parsed.get("revenue_ttm"),
+            peers=rpo_peers)
+        (raw / "rpo_backlog.json").write_text(
+            json.dumps(rpo, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_rpo_block(rpo, date))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## RPO / backlog deep-dive — unavailable ({exc})\n\n"
+                    "*Do not cite RPO/backlog figures.*\n")
+
     # --- Institutional & insider ownership (13F-derived, FA-101 Phase 2b §8) ---
     try:
         from tradingagents.dataflows.y_finance import get_institutional_ownership
