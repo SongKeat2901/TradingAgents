@@ -139,3 +139,31 @@ def test_beneish_inputs_missing_prior_year():
               "balance_sheet_annual": bs1, "income_statement_annual": "", "cashflow_annual": ""}
     bi = parse_financials(bundle)["beneish_inputs"]
     assert bi["prior"]["total_assets"] is None  # no prior column -> None
+
+
+_IS_A_SERIES = ("# IS annual\n\n,2025,2024,2023,2022\n"
+                "Total Revenue,133.1,121,110,100\nOperating Income,120,100,90,80\n"
+                "Diluted EPS,3.3,3.0,2.7,2.5\n")
+_CF_A_SERIES = ("# CF annual\n\n,2025,2024,2023,2022\n"
+                "Free Cash Flow,50,45,40,35\n")
+
+
+def test_annual_series_extracted():
+    from tradingagents.agents.utils.financials_parser import parse_financials
+    b = {"ticker": "ACME", "trade_date": "2026-01-01", "financial_currency": "USD",
+         "fundamentals": "# f\n", "balance_sheet": "", "cashflow": "", "income_statement": "",
+         "balance_sheet_annual": "", "income_statement_annual": _IS_A_SERIES, "cashflow_annual": _CF_A_SERIES}
+    a = parse_financials(b)["annual_series"]
+    assert a["revenue"] == [133.1, 121, 110, 100]
+    assert a["ebit"] == [120, 100, 90, 80]
+    assert a["diluted_eps"] == [3.3, 3.0, 2.7, 2.5]
+    assert a["fcf"] == [50, 45, 40, 35]
+
+
+def test_annual_series_absent_is_empty():
+    from tradingagents.agents.utils.financials_parser import parse_financials
+    b = {"ticker": "ACME", "trade_date": "2026-01-01", "financial_currency": "USD",
+         "fundamentals": "# f\n", "balance_sheet": "", "cashflow": "", "income_statement": "",
+         "balance_sheet_annual": "", "income_statement_annual": "", "cashflow_annual": ""}
+    a = parse_financials(b)["annual_series"]
+    assert a["revenue"] == [] and a["fcf"] == []
