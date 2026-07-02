@@ -303,6 +303,19 @@ def get_fundamentals(
             ("Current Ratio", info.get("currentRatio")),
             ("Book Value", info.get("bookValue")),
             ("Free Cash Flow", info.get("freeCashflow")),
+            # FA-101 WP5a: short interest + analyst consensus (parsed by sentiment_consensus.py)
+            ("Current Price", info.get("currentPrice")),
+            ("Shares Short", info.get("sharesShort")),
+            ("Shares Short Prior Month", info.get("sharesShortPriorMonth")),
+            ("Short Ratio Days To Cover", info.get("shortRatio")),
+            ("Short Percent Of Float", info.get("shortPercentOfFloat")),
+            ("Analyst Recommendation", info.get("recommendationKey")),
+            ("Analyst Recommendation Mean", info.get("recommendationMean")),
+            ("Number Of Analyst Opinions", info.get("numberOfAnalystOpinions")),
+            ("Target Mean Price", info.get("targetMeanPrice")),
+            ("Target Median Price", info.get("targetMedianPrice")),
+            ("Target High Price", info.get("targetHighPrice")),
+            ("Target Low Price", info.get("targetLowPrice")),
         ]
 
         lines = []
