@@ -119,6 +119,18 @@ Always include 3-5 rows. Flag ❌ on any ratio that looks implausible (e.g., \
 "interest expense $11M on $3.65B debt = 1.4% effective rate" → flag as \
 "likely excludes capitalized interest or convertibles"). Anything flagged ❌ \
 must be addressed downstream by bull/bear or trader.
+
+## Segments & model-specific KPIs
+
+If raw/sec_filing.md reports business segments, give a brief sum-of-the-parts \
+sketch: each segment's revenue and operating margin FROM THE FILING, which \
+segment drives value, and — for a multi-segment conglomerate — whether the \
+parts would plausibly be worth more separately. Then surface any model-specific \
+KPIs the filing discloses: net revenue retention (NRR), ARPU, same-store / \
+comparable sales, backlog / remaining performance obligations, LTV/CAC. Quote \
+the filing's figures. For any segment split or KPI NOT in the filing, write \
+"not disclosed in the available filing" — do NOT invent segment economics or \
+KPIs from memory.
 """ + _FOOTER
 
 
@@ -268,7 +280,17 @@ board independence, and customer/supplier concentration — each grounded in \
 raw/sec_filing.md / news.json, or explicitly "not disclosed in the available \
 filing" when absent.
 
-Qualitative-claim discipline: every claim in the three sections above must be \
+## Material ESG risks
+
+From raw/sec_filing.md's risk-factors section, flag any FINANCIALLY MATERIAL \
+environmental, social, or governance risk the company itself discloses \
+(climate/regulatory exposure, environmental liabilities, labor/safety, \
+data-privacy, product/consumer). Quote the filing. Free structured ESG scores \
+are unavailable (no reliable free feed), so assess ONLY what the filing \
+discloses — write "no material ESG risk disclosed in the available filing" if \
+none, and do NOT import an ESG rating, score, or controversy from memory.
+
+Qualitative-claim discipline: every claim in the four sections above must be \
 grounded in a named source (raw/sec_filing.md, news.json, or pm_brief.md). Where \
 the available free data does not support a claim, write "not determinable from \
 available free filings" — do NOT invent competitive dynamics, moats, governance / \
