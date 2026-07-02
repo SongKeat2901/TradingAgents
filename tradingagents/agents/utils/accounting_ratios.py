@@ -22,6 +22,29 @@ def _r(x, nd=2):
     return None if x is None else round(x, nd)
 
 
+def _cagr(series):
+    vals = [v for v in (series or []) if v is not None]
+    if len(vals) < 2:
+        return None, None
+    latest, oldest = vals[0], vals[-1]
+    if oldest is None or latest is None or oldest <= 0 or latest <= 0:
+        return None, None
+    years = len(vals) - 1
+    return round(((latest / oldest) ** (1 / years) - 1) * 100, 2), years
+
+
+def _op_leverage(rev, ebit):
+    if len(rev) < 2 or len(ebit) < 2:
+        return None
+    rt, rp, et, ep = rev[0], rev[1], ebit[0], ebit[1]
+    if None in (rt, rp, et, ep) or rp <= 0 or ep <= 0:
+        return None
+    rev_chg = (rt - rp) / abs(rp)
+    if rev_chg == 0:
+        return None
+    return round(((et - ep) / abs(ep)) / rev_chg, 2)
+
+
 def compute_accounting_ratios(
     fin: dict[str, Any],
     wacc: float | None = None,
@@ -102,9 +125,10 @@ def compute_accounting_ratios(
         r["total_shareholder_yield"] = None
 
     # growth & quality (single quarter vs the same quarter a year ago; multi-year
-    # CAGR deferred — needs annual data). Must NOT diff a TTM figure against a
-    # single-quarter one -- that mismatch inflated real-data growth ~4x (e.g.
-    # MSFT revenue_yoy_growth computed as 354% against a true ~18%).
+    # CAGR + operating leverage computed separately below from annual_series).
+    # Must NOT diff a TTM figure against a single-quarter one -- that mismatch
+    # inflated real-data growth ~4x (e.g. MSFT revenue_yoy_growth computed as
+    # 354% against a true ~18%).
     rq = fin.get("revenue_latest_q")
     ry = fin.get("revenue_yoy_ago")
     r["revenue_yoy_growth"] = _pct(_div(rq - ry, ry)) if (rq is not None and ry is not None and ry) else None
@@ -112,6 +136,13 @@ def compute_accounting_ratios(
     niy = fin.get("net_income_yoy_ago")
     r["net_income_yoy_growth"] = _pct(_div(nq - niy, niy)) if (nq is not None and niy is not None and niy) else None
     r["cfo_to_ni"] = _r(_div(fin.get("cfo_ttm"), ni))
+
+    # multi-year CAGRs + operating leverage from annual_series (most-recent-first)
+    annual = fin.get("annual_series") or {}
+    r["revenue_cagr_pct"], r["revenue_cagr_years"] = _cagr(annual.get("revenue"))
+    r["eps_cagr_pct"], _ = _cagr(annual.get("diluted_eps"))
+    r["fcf_cagr_pct"], _ = _cagr(annual.get("fcf"))
+    r["operating_leverage"] = _op_leverage(annual.get("revenue") or [], annual.get("ebit") or [])
     return r
 
 
@@ -156,6 +187,10 @@ def format_accounting_ratios_block(
         ("Revenue growth (latest Q, YoY)", _cell(r.get("revenue_yoy_growth"), "%")),
         ("Net income growth (latest Q, YoY)", _cell(r.get("net_income_yoy_growth"), "%")),
         ("CFO / net income (accruals quality)", _cell(r.get("cfo_to_ni"), "x")),
+        (f"Revenue CAGR ({r.get('revenue_cagr_years') or '?'}y)", _cell(r.get("revenue_cagr_pct"), "%")),
+        ("EPS CAGR", _cell(r.get("eps_cagr_pct"), "%")),
+        ("FCF CAGR", _cell(r.get("fcf_cagr_pct"), "%")),
+        ("Operating leverage (ΔEBIT%/ΔRev%, latest yr)", _cell(r.get("operating_leverage"), "x")),
     ]
     body = "\n".join(f"| {k} | {v} |" for k, v in rows)
     return (
@@ -164,8 +199,8 @@ def format_accounting_ratios_block(
         "| Metric | Value |\n|---|---|\n"
         f"{body}\n\n"
         "*Use these values verbatim; do not recompute or paraphrase. Growth compares "
-        "the latest reported quarter to the same quarter a year ago (multi-year CAGR "
-        "out of scope). Any "
+        "the latest reported quarter to the same quarter a year ago; CAGR rows use "
+        "multi-year annual series where available. Any "
         "`n/a (data unavailable)` means the source line-item was absent — do NOT "
         "substitute an estimate. ROIC uses a 21% statutory tax rate when the "
         "issuer's effective tax rate is unavailable.*\n"

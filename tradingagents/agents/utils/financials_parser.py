@@ -41,6 +41,27 @@ def _ttm(rows: dict, *aliases: str):
     return None
 
 
+def _series(rows: dict, *aliases: str):
+    """Full most-recent-first value list for the first matching row label, else []."""
+    for a in aliases:
+        vals = rows.get(a)
+        if vals:
+            return vals
+    return []
+
+
+def _fcf_series(cf_rows: dict):
+    fcf = _series(cf_rows, "Free Cash Flow")
+    if fcf:
+        return fcf
+    cfo = _series(cf_rows, "Operating Cash Flow", "Cash Flow From Continuing Operating Activities")
+    capex = _series(cf_rows, "Capital Expenditure")
+    if cfo and capex and len(cfo) == len(capex):
+        return [(c + x) if (c is not None and x is not None) else None
+                for c, x in zip(cfo, capex)]  # capex is negative in yfinance -> CFO + capex
+    return cfo or []
+
+
 def _avg2(rows: dict, *aliases: str):
     """Average of col0 and col1 (turnover average balance); col0 alone if only one; else None."""
     for a in aliases:
@@ -146,4 +167,10 @@ def parse_financials(financials: Any) -> dict[str, Any]:
         "net_income_yoy_ago": _row_at(is_, 4, "Net Income", "Net Income Common Stockholders"),
         "diluted_eps_yoy_ago": _row_at(is_, 4, "Diluted EPS"),
         "beneish_inputs": beneish_inputs,
+        "annual_series": {
+            "revenue": _series(is_a, "Total Revenue", "Operating Revenue"),
+            "diluted_eps": _series(is_a, "Diluted EPS"),
+            "ebit": _series(is_a, "Operating Income", "EBIT"),
+            "fcf": _fcf_series(cf_a),
+        },
     }
