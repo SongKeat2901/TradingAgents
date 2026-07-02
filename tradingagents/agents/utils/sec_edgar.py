@@ -440,6 +440,18 @@ def fetch_latest_filing(
         }
     text = stripper.text
     truncated = len(text) > max_text_chars
+
+    # Targeted excerpts come from the FULL text BEFORE truncation — this is
+    # the whole point (the truncated head of a big inline-XBRL 10-K is
+    # header metadata; the MD&A/RPO prose lives past the cut). Only attached
+    # when truncation actually dropped content. Fail-open.
+    excerpts: list[dict[str, Any]] = []
+    if truncated:
+        try:
+            excerpts = extract_keyword_excerpts(text)
+        except Exception:  # noqa: BLE001 — excerpts must never block the fetch
+            excerpts = []
+
     if truncated:
         text = text[:max_text_chars]
 
@@ -452,9 +464,74 @@ def fetch_latest_filing(
         "url": url,
         "content": text,
         "content_truncated": truncated,
+        "excerpts": excerpts,
         "convertibles": convertibles,
         "source": "sec.gov",
     }
+
+
+# --- Targeted keyword excerpts (pro-deck technique B, 2026-07-02) ---
+# The ORCL benchmark caught the 60K-char truncation silently dropping ALL
+# MD&A prose on large inline-XBRL 10-Ks (header metadata alone exceeds 60K),
+# so RPO / capex-guidance / prepayment / segment paragraphs never reached
+# sec_filing.md. Fix: search the FULL stripped text for these topics and
+# carry windowed excerpts past the truncation.
+DEFAULT_EXCERPT_KEYWORDS = (
+    "remaining performance obligation",
+    "customer prepayment",
+    "capital expenditure",
+    "reportable segment",
+    "operating segment",
+)
+
+
+def extract_keyword_excerpts(
+    text: str,
+    keywords: tuple[str, ...] = DEFAULT_EXCERPT_KEYWORDS,
+    *,
+    before: int = 300,
+    after: int = 1700,
+    max_per_keyword: int = 4,
+    min_gap: int = 2000,
+    max_total_chars: int = 32_000,
+) -> list[dict[str, Any]]:
+    """Windowed excerpts around keyword matches in the full filing text.
+
+    Case-insensitive. Per keyword, keeps at most `max_per_keyword` matches
+    that are at least `min_gap` chars apart; a match whose window overlaps an
+    already-selected window (any keyword) is skipped (dedupe). Stops once the
+    total excerpt budget `max_total_chars` is reached. Pure function.
+    """
+    if not text or not keywords:
+        return []
+    low = text.lower()
+    selected: list[dict[str, Any]] = []
+    windows: list[tuple[int, int]] = []
+    total = 0
+    for kw in keywords:
+        kw_low = kw.lower()
+        count = 0
+        last_pos: int | None = None
+        start = 0
+        while count < max_per_keyword:
+            i = low.find(kw_low, start)
+            if i == -1:
+                break
+            start = i + len(kw_low)
+            if last_pos is not None and i - last_pos < min_gap:
+                continue
+            w0, w1 = max(0, i - before), min(len(text), i + len(kw_low) + after)
+            if any(w0 < e and s < w1 for s, e in windows):
+                last_pos = i
+                continue
+            if total + (w1 - w0) > max_total_chars:
+                return selected
+            windows.append((w0, w1))
+            selected.append({"keyword": kw, "position": i, "text": text[w0:w1]})
+            total += w1 - w0
+            last_pos = i
+            count += 1
+    return selected
 
 
 _XBRL_SIGNATURES = ("us-gaap:", "iso4217:", "xbrli:", "<ix:")
@@ -508,6 +585,17 @@ def format_for_prompt(filing: dict[str, Any]) -> str:
         else ""
     )
     xbrl_warning = _XBRL_WARNING if _looks_like_xbrl(filing.get("content", "")) else ""
+    excerpts_section = ""
+    if filing.get("excerpts"):
+        parts = [
+            "\n\n---\n\n### Targeted excerpts (full-document keyword search)\n\n"
+            "The content above was truncated for prompt budget; these excerpts "
+            "were located by searching the COMPLETE filing text for key topics. "
+            "They are verbatim filing prose — quote them directly.\n"
+        ]
+        for e in filing["excerpts"]:
+            parts.append(f"\n**[{e['keyword']}]**\n\n> …{e['text'].strip()}…\n")
+        excerpts_section = "".join(parts)
     return (
         f"# SEC Filing — {filing['ticker']} {filing['form']} filed {filing['filing_date']}\n\n"
         f"**Accession:** {filing['accession_number']}  \n"
@@ -523,5 +611,6 @@ def format_for_prompt(filing: dict[str, Any]) -> str:
         f"{xbrl_warning}\n\n"
         "---\n\n"
         f"{filing['content']}"
-        f"{truncation_note}\n"
+        f"{truncation_note}"
+        f"{excerpts_section}\n"
     )
