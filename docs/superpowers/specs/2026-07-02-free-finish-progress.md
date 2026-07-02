@@ -104,7 +104,7 @@ Full audit in `2026-07-02-orcl-production-audit.md`. Summary:
   guards fixed (Phase 9.2), adversarially reviewed, re-run on the real run: **6 → 0
   violations**, report regenerated (original archived). (2) Financial-Statement role's
   takeaways directive referenced news.json the role never received — news.json added
-  to `_FILES_FINANCIAL`. Unit suite 983 green. No full ORCL re-run: both fixes live
+  to `_FILES_FINANCIAL`. Unit suite 991 green (incl. 10 new Phase-9.2 + role-wiring regression tests). No full ORCL re-run: both fixes live
   outside report-content generation; the loop's trigger (report deficiency vs the
   benchmarks) did not fire.
 
