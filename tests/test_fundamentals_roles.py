@@ -8,7 +8,7 @@ def test_financial_prompt_and_files():
     assert "## Sanity check on reported numbers" in s
     assert "Revenue YoY" in s  # YoY pre-compute mandate moved here
     assert "restating a figure already shown" in s  # net-debt discipline preserved
-    assert set(fr._FILES_FINANCIAL) == {"pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md"}
+    assert set(fr._FILES_FINANCIAL) == {"pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md", "earnings_release.md"}
 
 def test_financial_prompt_yoy_preamble():
     """Migrated from test_fundamentals_analyst.py::test_fundamentals_prompt_includes_yoy_preamble
@@ -85,7 +85,7 @@ def test_catalysts_prompt_and_files():
     assert "## Deal math" in s and "## Insider transactions" in s
     assert "## What management needs to prove" in s
     assert "Sentiment & consensus" in s
-    assert set(fr._FILES_CATALYSTS) == {"pm_brief.md", "reference.json", "news.json", "insider.json"}
+    assert set(fr._FILES_CATALYSTS) == {"pm_brief.md", "reference.json", "news.json", "insider.json", "earnings_release.md"}
 
 def test_catalysts_prompt_insider_citation_mandate():
     """Migrated from test_fundamentals_prompt.py::test_insider_section_and_citation_mandate
@@ -109,6 +109,37 @@ def test_quality_prompt_antifabrication_clause():
 def test_shared_footer_on_all():
     for s in (fr._SYSTEM_FINANCIAL, fr._SYSTEM_RISK, fr._SYSTEM_CATALYSTS, fr._SYSTEM_QUALITY):
         assert "No invented numbers." in s
+
+def test_financial_prompt_earnings_release_guidance_discipline():
+    """EARNINGS_RELEASE_GOAL step 3: the Financial-Statement role must cite
+    forward guidance + the capex/financing funding structure verbatim from the
+    8-K press release, or say 'not disclosed' — never invent them."""
+    s = fr._SYSTEM_FINANCIAL
+    assert "## Latest earnings release (SEC 8-K Ex-99.1)" in s
+    low = s.lower()
+    assert "not disclosed in the earnings release" in low
+    assert "do not invent guidance" in low
+    assert "earnings_release.md" in fr._FILES_FINANCIAL
+
+def test_financial_capex_bridge_upgraded_to_release_sourced():
+    """The capex funding bridge (pro-deck technique C) is no longer call-only:
+    the bridge paragraph must name the earnings release as a funding source."""
+    s = fr._SYSTEM_FINANCIAL.lower()
+    bridge = s.split("capex funding bridge discipline")[1].split("fcf trajectory discipline")[0]
+    assert "earnings release" in bridge
+
+def test_catalysts_prompt_management_color_section():
+    """EARNINGS_RELEASE_GOAL step 3: the Catalysts & Ownership role must quote
+    CEO/CFO management color verbatim from the release block, else 'not
+    disclosed' — and the section is structurally required (retry-checked)."""
+    s = fr._SYSTEM_CATALYSTS
+    assert "## Management color (earnings release)" in s
+    low = s.lower()
+    assert "cfo" in low
+    assert "verbatim" in low
+    assert "not disclosed in the earnings release" in low
+    assert "earnings_release.md" in fr._FILES_CATALYSTS
+    assert "## Management color (earnings release)" in fr._REQUIRED_CATALYSTS
 
 def test_factories_return_role_keys():
     # a stub llm whose invoke returns an object with .content

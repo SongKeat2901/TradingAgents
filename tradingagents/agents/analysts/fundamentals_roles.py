@@ -48,7 +48,7 @@ Every numerical claim in your report must trace back to financials.json, \
 peers.json, news.json, reference.json, or insider.json. No invented numbers."""
 
 
-_FILES_FINANCIAL = ["pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md"]
+_FILES_FINANCIAL = ["pm_brief.md", "reference.json", "financials.json", "peers.json", "sec_filing.md", "earnings_release.md"]
 
 _SYSTEM_FINANCIAL = """\
 You are the Financial-Statement analyst writing that part of an equity \
@@ -139,14 +139,28 @@ Capex funding bridge discipline: when capex is a live bear concern (heavy or \
 rising capex vs revenue), decompose HOW the forward spend is funded, using only \
 disclosed sources: quote the "capital expenditure" and "customer prepayment" \
 targeted excerpts in raw/sec_filing.md (capex guidance, prepayment funding, \
-financing plans) plus the pm_brief "## Net debt" cash cells and operating cash \
-flow from financials.json. Present it as a bridge — e.g. "guided capex $X = \
-customer prepayments $A + announced financing $B + OCF/cash $C" — ONLY from \
-figures the filing/news actually disclose; for any missing piece write "funding \
-split not disclosed". Do NOT invent guidance numbers, prepayment shares, or \
-financing plans from memory. A large capex number funded by customer \
-prepayments and pre-arranged financing is a different risk than one funded \
-from thin cash — say which one the data shows.
+financing plans), the earnings release's financing/funding excerpts \
+(raw/earnings_release.md or the pm_brief release block — announced debt/equity \
+financing plans, ATM equity programs), plus the pm_brief "## Net debt" cash \
+cells and operating cash flow from financials.json. Present it as a bridge — \
+e.g. "guided capex $X = customer prepayments $A + announced financing $B + \
+OCF/cash $C" — ONLY from figures the filing/release/news actually disclose; \
+for any missing piece write "funding split not disclosed". Do NOT invent \
+guidance numbers, prepayment shares, or financing plans from memory. A large \
+capex number funded by customer prepayments and pre-arranged financing is a \
+different risk than one funded from thin cash — say which one the data shows.
+
+Guidance & funding-structure discipline: when pm_brief.md carries a "## Latest \
+earnings release (SEC 8-K Ex-99.1)" block (raw/earnings_release.md is the full \
+text), cite the company's forward GUIDANCE (revenue/EPS/segment growth ranges \
+for the next quarter/year) and the capex/financing FUNDING STRUCTURE (announced \
+debt+equity financing plans, at-the-market equity programs, customer \
+prepayments) VERBATIM from the release — this is the sourced version of what \
+was previously call-only. Quote the release's own numbers and wording; for \
+anything it does not state write "not disclosed in the earnings release". Do \
+NOT invent guidance ranges or funding plans, and do NOT attribute to the \
+release anything it does not contain. If the block is marked n/a, cite no \
+release-sourced guidance at all.
 
 FCF trajectory discipline: state the free-cash-flow trajectory over the last \
 4-5 quarters using the quarterly Operating Cash Flow and Capital Expenditure \
@@ -255,7 +269,7 @@ sensitivity the block does not state. A "low" exposure is a valid finding.
 """ + _FOOTER
 
 
-_FILES_CATALYSTS = ["pm_brief.md", "reference.json", "news.json", "insider.json"]
+_FILES_CATALYSTS = ["pm_brief.md", "reference.json", "news.json", "insider.json", "earnings_release.md"]
 
 _SYSTEM_CATALYSTS = """\
 You are the Catalysts & Ownership analyst writing that part of an equity \
@@ -299,6 +313,18 @@ refute the current thesis, with the threshold that separates the two (e.g. \
 another >$5B burn refutes it"). Use the block's date verbatim; if no dated \
 event is available, write "no dated catalyst available in the data" — do not \
 invent a date.
+
+## Management color (earnings release)
+
+When pm_brief.md carries a "## Latest earnings release (SEC 8-K Ex-99.1)" \
+block (raw/earnings_release.md is the full text), quote the CEO/CFO statements \
+and strategic color VERBATIM — attributed quotes ("..." said <name>, <title>), \
+demand/supply commentary, and any strategic framing of the quarter — as the \
+management-narrative signal. Use ONLY quotes the release actually prints, with \
+the speaker named; for color the release does not carry write "not disclosed \
+in the earnings release". Do NOT invent, embellish, or paraphrase-as-quote, \
+and do NOT import call commentary you were not given. If the block is marked \
+n/a, write "no earnings release available on/before the trade date".
 
 ## Sentiment & consensus
 
@@ -394,8 +420,8 @@ _REQUIRED_FINANCIAL = ["## Business-model framing", "## Peer comparison matrix",
                        _BEAR_REFRAME_HEADER]
 _REQUIRED_RISK = ["## Risk & red flags", _BEAR_REFRAME_HEADER]
 _REQUIRED_CATALYSTS = ["## Insider transactions", "## What management needs to prove",
-                       "## Dated inflection to watch", "## Sentiment & consensus",
-                       _BEAR_REFRAME_HEADER]
+                       "## Dated inflection to watch", "## Management color (earnings release)",
+                       "## Sentiment & consensus", _BEAR_REFRAME_HEADER]
 _REQUIRED_QUALITY = ["## Competitive position", "## Capital-allocation track record",
                      "## Ownership & governance", _BEAR_REFRAME_HEADER]
 
