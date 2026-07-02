@@ -65,6 +65,13 @@ def test_num_malformed_token_does_not_crash():
     assert r["short_pct_float"] == 1.28
 
 
+def test_scientific_notation_short_pct():
+    # a tiny short-% of float str-formats as "8e-05"; parse to 0.008%, not 800%
+    blob = "# Fundamentals\nCurrent Price: 100\nShort Percent Of Float: 8e-05\n"
+    r = compute_sentiment_consensus({"fundamentals": blob})
+    assert r["short_pct_float"] == 0.01  # 8e-05*100 = 0.008 -> round(2) = 0.01
+
+
 def test_target_upside_reference_price_fallback():
     blob = "# Fundamentals\nName: Acme\nTarget Mean Price: 150\n"
     r = compute_sentiment_consensus({"fundamentals": blob}, reference_price=100)

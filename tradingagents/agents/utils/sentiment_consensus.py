@@ -9,7 +9,11 @@ from typing import Any
 
 
 def _num(t: str, label: str):
-    m = re.search(rf"^{re.escape(label)}:\s*(-?[0-9.]+)", t, re.MULTILINE)
+    # allow scientific notation (e.g. "8e-05" for a tiny short-% of float) so a
+    # cite-verbatim figure is never truncated to a wrong magnitude ("8" -> 800%).
+    m = re.search(
+        rf"^{re.escape(label)}:\s*(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)", t, re.MULTILINE
+    )
     if not m:
         return None
     try:
