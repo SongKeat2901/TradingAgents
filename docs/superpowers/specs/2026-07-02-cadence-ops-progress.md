@@ -24,7 +24,7 @@ Ticker order = runner order. ORCL run pre-existing (earlier 2026-07-02 audited p
 
 | # | Ticker | Run | QC | Promoted (final/ + Drive + manifest) |
 |---|--------|-----|----|--------------------------------------|
-| — | ORCL | ✓ (pre-existing) | pending re-audit | – |
+| — | ORCL | ✓ (pre-existing) | A → hand-corrected → A+ re-verify in flight | – |
 | 1 | AAOI | running | – | – |
 | 2 | AAPL | – | – | – |
 | 3 | AMKR | – | – | – |
@@ -56,4 +56,4 @@ Tally: 0/22 promoted.
 
 ## Blockers / notes
 
-(none yet)
+- ORCL first audit (report-auditor): grade **A**, UNDERWEIGHT, ref $142.50, EV $142.41 (−0.06%), all tiers PASS, data record fully reproducible. Two prose nits blocked A+: (1) decision.md L55 labelled the 11.27% WACC as "cost-of-equity hurdle (~11%)"; (2) Reconciliation #1 called the RM's 3.22× ND/EBITDA "not reproducible" when it is the accounting-ratios block figure on the yfinance TTM-EBITDA scalar ($30.49B). Both hand-corrected per cadence-run step 6 (edit → re-run phase-7 validators → regenerate PDF): validation_report.json 0/0, PDF rebuilt 00:14 SGT. A+ re-verification dispatched.
