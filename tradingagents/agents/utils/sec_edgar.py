@@ -353,6 +353,211 @@ def format_activist_block(result: dict[str, Any]) -> str:
     )
 
 
+# --- 8-K earnings press release (Exhibit 99.x) ---------------------------
+# EARNINGS_RELEASE_GOAL.md (2026-07-02): the pro-deck gap analysis marked the
+# capex-funding split and forward guidance "call-only", but both are in the
+# free 8-K earnings press release (item 2.02 results, Ex-99.1) — verified on
+# ORCL's 2026-06-10 8-K (Q1-FY27 guidance, the $40B debt+equity financing
+# plan, RPO $455B→$638B, CEO/CFO quotes).
+
+_INDEX_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession_no_dashes}/index.json"
+
+# Excerpt targets for a press release: guidance language, backlog, the
+# capex/financing funding structure, and the exec quote paragraphs (the quote
+# text PRECEDES the "..., said <name>, Chief Executive Officer" attribution,
+# hence the larger `before` window used in fetch_earnings_release).
+RELEASE_EXCERPT_KEYWORDS = (
+    "guidance",
+    "expect",  # expects / expected to grow / expectations
+    "remaining performance obligation",
+    "financing",
+    "capital expenditure",
+    "chief executive officer",
+    "chief financial officer",
+)
+
+_EX99_RE = re.compile(r"ex[-_]?99|99[._-]?1", re.IGNORECASE)
+_EX99_FIRST_RE = re.compile(r"99[._d-]?1", re.IGNORECASE)
+
+
+def _pick_ex99_document(names: list[str]) -> str | None:
+    """Pick the press-release exhibit (Ex-99.x) from a filing-index file list.
+    Prefers .htm/.html over .txt, and a 99.1-numbered exhibit over 99.2+.
+    Returns None when the filing carries no Ex-99 document."""
+    def _is_ex99(n: str) -> bool:
+        return bool(_EX99_RE.search(n))
+
+    cands = [n for n in names if _is_ex99(n) and n.lower().endswith((".htm", ".html"))]
+    if not cands:
+        cands = [n for n in names if _is_ex99(n) and n.lower().endswith(".txt")]
+    if not cands:
+        return None
+    # 99.1 before 99.2+, then stable by name for determinism.
+    cands.sort(key=lambda n: (0 if _EX99_FIRST_RE.search(n) else 1, n.lower()))
+    return cands[0]
+
+
+def fetch_earnings_release(
+    ticker: str, trade_date: str, max_text_chars: int = 18_000
+) -> dict[str, Any]:
+    """Fetch the latest 8-K earnings press release (item 2.02, Exhibit 99.x)
+    filed on or before trade_date.
+
+    Returns {ticker, form, filing_date, accession_number, exhibit, url, items,
+    content, content_truncated, excerpts, source} or fail-soft
+    {"unavailable": True, "reason": ..., "ticker": ...}. Excerpts are always
+    computed from the FULL stripped text (they feed the pm_brief block), using
+    the same targeted-keyword approach as the 10-K truncation fix."""
+    try:
+        td = datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        return {"unavailable": True, "reason": f"invalid trade_date: {trade_date}", "ticker": ticker}
+    cik = _resolve_cik(ticker.upper())
+    if cik is None:
+        return {"unavailable": True, "reason": f"CIK not found for ticker {ticker}", "ticker": ticker}
+    body = _http_get(_SUBMISSIONS_URL.format(cik=cik))
+    if body is None:
+        return {"unavailable": True, "reason": "EDGAR submissions endpoint unreachable", "ticker": ticker}
+    try:
+        submissions = json.loads(body)
+    except json.JSONDecodeError:
+        return {"unavailable": True, "reason": "EDGAR submissions JSON decode failed", "ticker": ticker}
+
+    eights = _collect_filings(submissions, td, ("8-K",), limit=12)
+    filing = next((f for f in eights if "2.02" in (f.get("items") or "")), None)
+    if filing is None:
+        return {"unavailable": True,
+                "reason": "no item-2.02 (results) 8-K on/before trade_date",
+                "ticker": ticker}
+
+    accession_no_dashes = filing["accession_number"].replace("-", "")
+    index_body = _http_get(_INDEX_URL.format(cik=cik, accession_no_dashes=accession_no_dashes))
+    if index_body is None:
+        return {"unavailable": True, "reason": "8-K filing index unreachable",
+                "ticker": ticker, "filing_date": filing["filing_date"]}
+    try:
+        index = json.loads(index_body)
+    except json.JSONDecodeError:
+        return {"unavailable": True, "reason": "8-K filing index JSON decode failed",
+                "ticker": ticker, "filing_date": filing["filing_date"]}
+    names = [i.get("name", "") for i in index.get("directory", {}).get("item", [])]
+    exhibit = _pick_ex99_document(names)
+    if exhibit is None:
+        return {"unavailable": True, "reason": "no Ex-99 press-release exhibit in the 8-K index",
+                "ticker": ticker, "filing_date": filing["filing_date"]}
+
+    url = _FILING_URL.format(cik=cik, accession_no_dashes=accession_no_dashes, primary_doc=exhibit)
+    html = _http_get(url)
+    if html is None:
+        return {"unavailable": True, "reason": "press-release exhibit unreachable",
+                "ticker": ticker, "filing_date": filing["filing_date"]}
+    stripper = _HTMLStripper()
+    try:
+        stripper.feed(html.decode("utf-8", errors="replace"))
+    except Exception:  # noqa: BLE001 — malformed exhibit HTML must fail soft
+        return {"unavailable": True, "reason": "press-release HTML parse failed",
+                "ticker": ticker, "filing_date": filing["filing_date"]}
+    text = stripper.text
+
+    excerpts: list[dict[str, Any]] = []
+    try:
+        excerpts = extract_keyword_excerpts(
+            text, RELEASE_EXCERPT_KEYWORDS,
+            before=800, after=1400, max_per_keyword=3, min_gap=1500,
+            max_total_chars=14_000,
+        )
+    except Exception:  # noqa: BLE001 — excerpts must never block the fetch
+        excerpts = []
+
+    truncated = len(text) > max_text_chars
+    if truncated:
+        text = text[:max_text_chars]
+
+    return {
+        "ticker": ticker,
+        "form": filing["form"],
+        "filing_date": filing["filing_date"],
+        "accession_number": filing["accession_number"],
+        "exhibit": exhibit,
+        "url": url,
+        "items": filing.get("items"),
+        "content": text,
+        "content_truncated": truncated,
+        "excerpts": excerpts,
+        "source": "sec.gov",
+    }
+
+
+_RELEASE_HEADER = "## Latest earnings release (SEC 8-K Ex-99.1)"
+
+
+def format_earnings_release_block(release: dict[str, Any] | None,
+                                  max_head_chars: int = 1_500) -> str:
+    """pm_brief.md block: filing metadata + head snippet + targeted excerpts.
+    Honest n/a when unavailable — with an explicit do-not-fabricate directive."""
+    r = release or {"unavailable": True, "reason": "not fetched"}
+    if r.get("unavailable"):
+        return (
+            f"\n\n{_RELEASE_HEADER} — n/a ({r.get('reason', 'unavailable')})\n\n"
+            "*No earnings press release available. Do not cite forward guidance, "
+            "capex-funding plans, or management quotes from an earnings release — "
+            "write 'not disclosed' instead of inventing them.*\n"
+        )
+    head = (r.get("content") or "").strip()[:max_head_chars]
+    parts = [
+        f"\n\n{_RELEASE_HEADER}\n\n"
+        f"**Filed:** {r['filing_date']} (8-K item {r.get('items') or '2.02'})  \n"
+        f"**Exhibit:** {r['exhibit']}  \n"
+        f"**URL:** {r['url']}\n\n"
+        "Verbatim press-release prose (public as of the trade date). Opening:\n\n"
+        f"> {head}…\n"
+    ]
+    if r.get("excerpts"):
+        parts.append("\nKey excerpts (full-text keyword search):\n")
+        for e in r["excerpts"]:
+            parts.append(f"\n**[{e['keyword']}]**\n\n> …{e['text'].strip()}…\n")
+    parts.append(
+        "\n*Quote forward guidance, the capex/financing funding structure, and "
+        "management quotes from this release verbatim; anything the release does "
+        "not state is 'not disclosed' — never paraphrase numbers or fill gaps "
+        "from memory.*\n"
+    )
+    return "".join(parts)
+
+
+def format_earnings_release_md(release: dict[str, Any]) -> str:
+    """Render the full release dict as raw/earnings_release.md (same contract
+    as format_for_prompt for the 10-Q/10-K). Returns "" when unavailable."""
+    if not release or release.get("unavailable"):
+        return ""
+    truncation_note = (
+        "\n\n*Content truncated for prompt budget; see exhibit URL for the full release.*"
+        if release.get("content_truncated") else ""
+    )
+    excerpts_section = ""
+    if release.get("excerpts"):
+        parts = ["\n\n---\n\n### Targeted excerpts (full-document keyword search)\n"]
+        for e in release["excerpts"]:
+            parts.append(f"\n**[{e['keyword']}]**\n\n> …{e['text'].strip()}…\n")
+        excerpts_section = "".join(parts)
+    return (
+        f"# Earnings press release — {release['ticker']} {release['form']} "
+        f"filed {release['filing_date']} (Exhibit {release['exhibit']})\n\n"
+        f"**Accession:** {release['accession_number']}  \n"
+        f"**URL:** {release['url']}\n\n"
+        "This is the verbatim text of the company's latest earnings press "
+        "release (SEC 8-K item 2.02, Exhibit 99.x), public as of the trade "
+        "date. It is the authoritative source for forward guidance, the "
+        "capex/financing funding structure, RPO/backlog highlights, and "
+        "management (CEO/CFO) quotes — quote it verbatim; never treat its "
+        "contents as 'awaiting the call'.\n\n"
+        "---\n\n"
+        f"{release['content']}"
+        f"{truncation_note}"
+        f"{excerpts_section}\n"
+    )
+
+
 def fetch_latest_filing(
     ticker: str, trade_date: str, max_text_chars: int = 60_000
 ) -> dict[str, Any]:
