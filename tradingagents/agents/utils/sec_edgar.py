@@ -254,6 +254,105 @@ def format_filing_surface_block(surface: dict[str, Any]) -> str:
     )
 
 
+_EFTS_URL = "https://efts.sec.gov/LATEST/search-index?q={q}&forms={forms}"
+_ACTIVIST_FORMS = "SC 13D,SC 13G,SC 13D/A,SC 13G/A"
+
+
+def _parse_activist_hits(data: dict, cik10: str, td: datetime, company: str,
+                         limit: int) -> list[dict]:
+    """Pure: filter efts hits to 13D/13G naming this SUBJECT cik, on/before td,
+    newest-first, deduped. Detection only — no thesis interpretation."""
+    hits = (data or {}).get("hits", {}).get("hits", [])
+    rows = []
+    for h in hits:
+        s = h.get("_source", {})
+        if cik10 not in (s.get("ciks") or []):
+            continue  # keep only filings where this company is a named party (a stake IN it)
+        fd = s.get("file_date")
+        try:
+            if datetime.strptime(fd, "%Y-%m-%d") > td:
+                continue
+        except (ValueError, TypeError):
+            continue
+        forms = s.get("root_forms") or []
+        form = forms[0] if forms else "SC 13"
+        names = s.get("display_names") or []
+        filers = [n for n in names if company.upper() not in (n or "").upper()] or names
+        rows.append({"date": fd, "form": form, "activist": form.startswith("SC 13D"),
+                     "filers": filers})
+    rows.sort(key=lambda r: r["date"], reverse=True)
+    out, seen = [], set()
+    for r in rows:
+        key = (r["date"], r["form"], tuple(r["filers"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def fetch_activist_filings(ticker: str, trade_date: str, limit: int = 6) -> dict[str, Any]:
+    """Detect recent 13D (activist) / 13G (passive >5%) filings naming this
+    company, via EDGAR full-text search filtered by the subject CIK (FA-101
+    Phase 2b §8). Detection only — dates/filers/type, not the filing thesis.
+    Fail-soft -> {"unavailable": True, "reason": ...}."""
+    try:
+        td = datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        return {"unavailable": True, "reason": f"invalid trade_date: {trade_date}", "ticker": ticker}
+    cik = _resolve_cik(ticker.upper())
+    if cik is None:
+        return {"unavailable": True, "reason": f"CIK not found for ticker {ticker}", "ticker": ticker}
+    cik10 = f"{cik:010d}"
+    sub_body = _http_get(_SUBMISSIONS_URL.format(cik=cik))
+    company = ticker
+    if sub_body is not None:
+        try:
+            company = json.loads(sub_body).get("name") or ticker
+        except json.JSONDecodeError:
+            pass
+    import urllib.parse
+    url = _EFTS_URL.format(q=urllib.parse.quote(f'"{company}"'),
+                           forms=urllib.parse.quote(_ACTIVIST_FORMS))
+    body = _http_get(url)
+    if body is None:
+        return {"unavailable": True, "reason": "EDGAR full-text search unreachable", "ticker": ticker}
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return {"unavailable": True, "reason": "efts JSON decode failed", "ticker": ticker}
+    return {"ticker": ticker, "company": company,
+            "filings": _parse_activist_hits(data, cik10, td, company, limit),
+            "source": "sec.gov/efts"}
+
+
+def format_activist_block(result: dict[str, Any]) -> str:
+    r = result or {}
+    if r.get("unavailable"):
+        return (f"\n\n## Activist & large-stake filings (13D/13G) — n/a "
+                f"({r.get('reason', 'unavailable')})\n\n"
+                "*No EDGAR 13D/13G search result; do not cite activist stakes.*\n")
+    filings = r.get("filings") or []
+    if not filings:
+        return ("\n\n## Activist & large-stake filings (13D/13G) — none reported\n\n"
+                "*No 13D/13G filings naming this company on/before the trade date. "
+                "Not a red flag (most names have none).*\n")
+    rows = "".join(
+        f"| {f['date']} | {f['form']} ({'activist' if f['activist'] else 'passive'}) | "
+        f"{'; '.join(f['filers']) or 'n/a'} |\n"
+        for f in filings
+    )
+    return (
+        "\n\n## Activist & large-stake filings (13D/13G, EDGAR full-text)\n\n"
+        "| Date | Type | Filer(s) |\n|---|---|---|\n" + rows +
+        "\n*13D = >5% holder with activist intent; 13G = passive >5% holder. "
+        "Dates/filers/type from EDGAR only — do NOT infer the filing's thesis or "
+        "the current stake size (holdings change between amendments).*\n"
+    )
+
+
 def fetch_latest_filing(
     ticker: str, trade_date: str, max_text_chars: int = 60_000
 ) -> dict[str, Any]:

@@ -696,3 +696,18 @@ def fetch_research_pack(state: dict) -> None:
         with open(pm_brief_path, "a", encoding="utf-8") as f:
             f.write(f"\n\n## SEC filing surface (8-K + proxy) — unavailable ({exc})\n\n"
                     "*Do not cite 8-K/proxy dates.*\n")
+
+    # --- Activist & large-stake filings: 13D/13G detection (FA-101 Phase 2b §8) ---
+    try:
+        from tradingagents.agents.utils.sec_edgar import (
+            fetch_activist_filings, format_activist_block,
+        )
+        activist = fetch_activist_filings(ticker, state["trade_date"])
+        (raw / "activist_filings.json").write_text(
+            json.dumps(activist, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_activist_block(activist))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Activist & large-stake filings (13D/13G) — unavailable ({exc})\n\n"
+                    "*Do not cite activist stakes.*\n")
