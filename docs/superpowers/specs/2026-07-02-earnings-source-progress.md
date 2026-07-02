@@ -12,8 +12,8 @@ management color), then optionally the FMP free-tier call transcript.
 | 2. Researcher wiring: raw/earnings_release.{json,md} + pm_brief block | ✅ shipped (`ee1588d`) |
 | 3. Role citations: Fin-Statement (guidance/funding) + Catalysts (mgmt quotes) | ✅ shipped |
 | 4. Live smoke: ORCL ($40B financing, 27–29% guidance, RPO) + honest-n/a name | ✅ passed |
-| 5. Merge → main → push | in progress |
-| 6. STRETCH: FMP free-tier earnings-call transcript | pending |
+| 5. Merge → main → push | ✅ done (`e2ae396` on main) |
+| 6. STRETCH: FMP free-tier earnings-call transcript | ❌ skipped — needs a paid feed (see verdict) |
 
 ## Evidence log
 
@@ -52,6 +52,37 @@ management color), then optionally the FMP free-tier call transcript.
   `test_claude_cli_chat_model` cmd assertion depended on whether `claude`
   was on the pytest env's PATH.
 
-## FMP stretch verdict
+## FMP stretch verdict — needs a paid feed
 
-- (not yet attempted)
+Two independent blockers (2026-07-02):
+
+1. **No `FMP_API_KEY` in the environment** — the goal says skip rather than
+   block (and never hardcode/commit a key). Nothing was wired.
+2. **The free tier doesn't include transcripts anyway.** FMP's current
+   packaging puts earnings-call transcripts on the **Ultimate tier
+   (~$149/mo)**; the free plan is a 250-requests/day EOD sandbox, and
+   Starter/Premium don't carry transcripts either (per FMP's pricing docs
+   and third-party review, findmymoat.com — FMP's own pricing page 403s
+   robots). So even with a free key, `/api/v3/earning_call_transcript` would
+   not serve the full Q&A.
+
+**Conclusion: full call-transcript Q&A needs a paid feed.** Not scraping
+Motley Fool / Seeking Alpha (ToS). Mitigation shipped in this same unit: the
+8-K press release now covers guidance, funding structure, RPO, and (where
+printed) management quotes for free — the remaining uncovered slice is the
+analyst Q&A back-and-forth only.
+
+## What shipped (summary for the phone)
+
+- `sec_edgar.fetch_earnings_release()` — latest item-2.02 8-K → Ex-99.1 →
+  stripped text + targeted excerpts (guidance / CEO+CFO quotes / RPO /
+  financing / capex / expects). Fail-soft n/a everywhere.
+- Researcher writes `raw/earnings_release.{json,md}` + a `## Latest earnings
+  release (SEC 8-K Ex-99.1)` pm_brief block (fail-open).
+- Financial-Statement role: guidance + capex/financing funding structure
+  quoted verbatim-or-'not disclosed' (capex bridge now release-sourced).
+  Catalysts role: required `## Management color (earnings release)` section
+  (attributed quotes only).
+- Live-smoked ORCL ($40B financing + $20B ATM, 27–29% guidance, RPO
+  $553B→$638B), MSFT (Nadella quote verbatim — smoke caught + fixed an
+  excerpt-budget bug), BABA (honest n/a). Unit suite: 954 passed.
