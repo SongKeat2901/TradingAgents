@@ -8,8 +8,8 @@ Tracking doc for `FREE_FINISH_GOAL.md`. Resume from here if interrupted.
 |---|---|
 | 1. Debt maturity ladder (fetch + block + role directive + refi upgrade), TDD + live smoke | ✅ shipped (`13e2b5a` + `9c50b79`) |
 | 1b. Other free gaps (only if Phase-4 audit flags them) | ⬜ not started |
-| 2. Promote main → production `~/tradingagents` (safety-gated) | ⬜ not started |
-| 3. ORCL run on production | ⬜ not started |
+| 2. Promote main → production `~/tradingagents` (safety-gated) | ✅ done (prod at `e9b21e5`, 978 unit tests green on prod install) |
+| 3. ORCL run on production | 🔄 running (started 2026-07-02 20:59 SGT) |
 | 4. Audit vs FA-101 + pro-deck; loop until SATISFIED | ⬜ not started |
 
 ## Phase 1 design (decided 2026-07-02)
@@ -61,11 +61,17 @@ Tracking doc for `FREE_FINISH_GOAL.md`. Resume from here if interrupted.
 
 ## Prod promote status
 
-Not yet promoted.
+Promoted 2026-07-02 ~20:57 SGT: no run in flight (pgrep clean), prod tree clean on
+main, pulled `7c1c2e3` → `e9b21e5`, `pip install -e .` OK, prod unit suite
+**978 passed**.
 
 ## ORCL run status
 
-Not yet run.
+Started 2026-07-02 20:59 SGT on production: `TK_RESEARCH_BASE=$HOME/tkresearch
+tradingresearch --ticker ORCL --date 2026-07-01` (2026-07-01 close is settled —
+launched 20:59 SGT, past the 04:00-SGT settlement bound; no telegram). Prior
+`2026-06-24-ORCL` archived to `.pre-freefinish-0702`. Log: `/tmp/orcl-prod-test.log`.
+Output expected at `~/tkresearch/preaudit/2026-07-01-ORCL/`.
 
 ## Audit verdict
 
