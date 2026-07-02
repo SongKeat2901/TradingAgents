@@ -247,76 +247,106 @@ general knowledge.
 """ + _FOOTER
 
 
-def create_financial_statement_analyst(llm):
+ROLE_RETRY_CAP = 2
+
+_REQUIRED_FINANCIAL = ["## Business-model framing", "## Peer comparison matrix",
+                       "## Capital-structure compare", "## Sanity check on reported numbers"]
+_REQUIRED_RISK = ["## Risk & red flags"]
+_REQUIRED_CATALYSTS = ["## Insider transactions", "## What management needs to prove",
+                       "## Sentiment & consensus"]
+_REQUIRED_QUALITY = ["## Competitive position", "## Capital-allocation track record",
+                     "## Ownership & governance"]
+
+
+def check_role_output(required_headers, report, min_chars=600):
+    """Deterministic structural check: every required header present + a length
+    floor. Returns human-readable issues; empty list == passed. No LLM, no file
+    materialization — cheap enough to run on every role invocation."""
+    text = report or ""
+    issues = [f"missing required section: {h}" for h in required_headers if h not in text]
+    if len(text.strip()) < min_chars:
+        issues.append(f"report too short ({len(text.strip())} chars < {min_chars})")
+    return issues
+
+
+def format_role_feedback(issues):
+    lines = "\n".join(f"- {i}" for i in issues)
+    return ("Your previous draft was incomplete. Fix these before rewriting the "
+            "full section:\n" + lines)
+
+
+def _make_role_node(llm, *, system, files, name, write_verb, required_headers,
+                    report_key, passed_key, feedback_key, retries_key):
+    """Shared role-node body: build the role prompt (injecting any prior retry
+    feedback), invoke, then run the deterministic self-check. On a failed check
+    with retries left, returns passed=False + feedback + incremented retries so
+    the graph's per-role conditional edge can self-loop this node (Phase 4)."""
+
     def node(state):
         ticker = state["company_of_interest"]
         date = state["trade_date"]
         raw_dir = state["raw_dir"]
         instrument_context = build_instrument_context(ticker)
-        context = format_for_prompt(raw_dir, files=_FILES_FINANCIAL)
+        context = format_for_prompt(raw_dir, files=files)
+        human = (f"For your reference: {instrument_context}\n\n{context}\n\n"
+                 f"Write the {write_verb}.")
+        prior_fb = state.get(feedback_key, "")
+        if prior_fb:
+            human += f"\n\n{prior_fb}"
         messages = [
-            SystemMessage(content=_SYSTEM_FINANCIAL.replace("$TICKER", ticker).replace("$DATE", date)
+            SystemMessage(content=system.replace("$TICKER", ticker).replace("$DATE", date)
                           + "\n" + get_language_instruction()),
-            HumanMessage(content=f"For your reference: {instrument_context}\n\n{context}\n\n"
-                         f"Write the financial-statement analysis."),
+            HumanMessage(content=human),
         ]
-        result, report = invoke_with_empty_retry(llm, messages, "Financial-Statement Analyst", min_chars=1200)
-        return {"messages": [result], "fundamentals_financial_report": report}
+        result, report = invoke_with_empty_retry(llm, messages, name, min_chars=1200)
+        issues = check_role_output(required_headers, report)
+        passed = not issues
+        prior = state.get(retries_key, 0)
+        return {
+            "messages": [result],
+            report_key: report,
+            passed_key: passed,
+            feedback_key: "" if passed else format_role_feedback(issues),
+            retries_key: prior if passed else prior + 1,
+        }
+
     return node
+
+
+def create_financial_statement_analyst(llm):
+    return _make_role_node(
+        llm, system=_SYSTEM_FINANCIAL, files=_FILES_FINANCIAL,
+        name="Financial-Statement Analyst", write_verb="financial-statement analysis",
+        required_headers=_REQUIRED_FINANCIAL,
+        report_key="fundamentals_financial_report", passed_key="fundamentals_financial_passed",
+        feedback_key="fundamentals_financial_feedback", retries_key="fundamentals_financial_retries")
 
 
 def create_risk_redflags_analyst(llm):
-    def node(state):
-        ticker = state["company_of_interest"]
-        date = state["trade_date"]
-        raw_dir = state["raw_dir"]
-        instrument_context = build_instrument_context(ticker)
-        context = format_for_prompt(raw_dir, files=_FILES_RISK)
-        messages = [
-            SystemMessage(content=_SYSTEM_RISK.replace("$TICKER", ticker).replace("$DATE", date)
-                          + "\n" + get_language_instruction()),
-            HumanMessage(content=f"For your reference: {instrument_context}\n\n{context}\n\n"
-                         f"Write the risk & red-flags analysis."),
-        ]
-        result, report = invoke_with_empty_retry(llm, messages, "Risk & Red-Flags Analyst", min_chars=1200)
-        return {"messages": [result], "fundamentals_riskflags_report": report}
-    return node
+    return _make_role_node(
+        llm, system=_SYSTEM_RISK, files=_FILES_RISK,
+        name="Risk & Red-Flags Analyst", write_verb="risk & red-flags analysis",
+        required_headers=_REQUIRED_RISK,
+        report_key="fundamentals_riskflags_report", passed_key="fundamentals_riskflags_passed",
+        feedback_key="fundamentals_riskflags_feedback", retries_key="fundamentals_riskflags_retries")
 
 
 def create_catalysts_ownership_analyst(llm):
-    def node(state):
-        ticker = state["company_of_interest"]
-        date = state["trade_date"]
-        raw_dir = state["raw_dir"]
-        instrument_context = build_instrument_context(ticker)
-        context = format_for_prompt(raw_dir, files=_FILES_CATALYSTS)
-        messages = [
-            SystemMessage(content=_SYSTEM_CATALYSTS.replace("$TICKER", ticker).replace("$DATE", date)
-                          + "\n" + get_language_instruction()),
-            HumanMessage(content=f"For your reference: {instrument_context}\n\n{context}\n\n"
-                         f"Write the catalysts & ownership analysis."),
-        ]
-        result, report = invoke_with_empty_retry(llm, messages, "Catalysts & Ownership Analyst", min_chars=1200)
-        return {"messages": [result], "fundamentals_catalysts_report": report}
-    return node
+    return _make_role_node(
+        llm, system=_SYSTEM_CATALYSTS, files=_FILES_CATALYSTS,
+        name="Catalysts & Ownership Analyst", write_verb="catalysts & ownership analysis",
+        required_headers=_REQUIRED_CATALYSTS,
+        report_key="fundamentals_catalysts_report", passed_key="fundamentals_catalysts_passed",
+        feedback_key="fundamentals_catalysts_feedback", retries_key="fundamentals_catalysts_retries")
 
 
 def create_competitive_quality_analyst(llm):
-    def node(state):
-        ticker = state["company_of_interest"]
-        date = state["trade_date"]
-        raw_dir = state["raw_dir"]
-        instrument_context = build_instrument_context(ticker)
-        context = format_for_prompt(raw_dir, files=_FILES_QUALITY)
-        messages = [
-            SystemMessage(content=_SYSTEM_QUALITY.replace("$TICKER", ticker).replace("$DATE", date)
-                          + "\n" + get_language_instruction()),
-            HumanMessage(content=f"For your reference: {instrument_context}\n\n{context}\n\n"
-                         f"Write the competitive-quality analysis."),
-        ]
-        result, report = invoke_with_empty_retry(llm, messages, "Competitive-Quality Analyst", min_chars=1200)
-        return {"messages": [result], "fundamentals_quality_report": report}
-    return node
+    return _make_role_node(
+        llm, system=_SYSTEM_QUALITY, files=_FILES_QUALITY,
+        name="Competitive-Quality Analyst", write_verb="competitive-quality analysis",
+        required_headers=_REQUIRED_QUALITY,
+        report_key="fundamentals_quality_report", passed_key="fundamentals_quality_passed",
+        feedback_key="fundamentals_quality_feedback", retries_key="fundamentals_quality_retries")
 
 
 _ROLE_SECTIONS = [
