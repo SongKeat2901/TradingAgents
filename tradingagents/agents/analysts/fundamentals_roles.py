@@ -155,6 +155,12 @@ the flag (elevated/normal) verbatim as an impairment-risk note — do NOT comput
 your own goodwill ratio. If the block says "no goodwill reported", state that the \
 name carries no goodwill (not a red flag) and cite no ratio.
 
+Refinancing discipline: when pm_brief.md's "## Refinancing / maturity-wall proxy" \
+block is applicable, cite its current-debt %, cash coverage, and the flag \
+(elevated/moderate/low) verbatim as a near-term rollover-risk note — do NOT invent \
+a maturity schedule. Note it is a proxy (current-vs-long-term split), not the full \
+10-K maturity ladder.
+
 Commodity exposure discipline: cite pm_brief.md's "## Commodity input exposure" \
 block's exposure level (high/moderate/low) and primary inputs verbatim as an \
 input-cost / margin-risk note alongside cyclicality — do NOT invent a commodity \

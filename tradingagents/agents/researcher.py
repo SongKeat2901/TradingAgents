@@ -574,6 +574,21 @@ def fetch_research_pack(state: dict) -> None:
             f.write(f"\n\n## Goodwill / impairment screen — unavailable ({exc})\n\n"
                     "*Do not cite a goodwill ratio.*\n")
 
+    # --- Refinancing / maturity-wall proxy (FA-101 §2/§7) ---
+    try:
+        from tradingagents.agents.utils.distress_screens import (
+            compute_refinancing_pressure, format_refinancing_block,
+        )
+        refi = compute_refinancing_pressure(fin_parsed)
+        (raw / "refinancing_pressure.json").write_text(
+            json.dumps(refi, indent=2, default=str), encoding="utf-8")
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(format_refinancing_block(refi))
+    except Exception as exc:  # noqa: BLE001 - this block must never crash the run
+        with open(pm_brief_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n## Refinancing / maturity-wall proxy — unavailable ({exc})\n\n"
+                    "*Do not cite a maturity-wall figure.*\n")
+
     # --- Commodity input-exposure flag (FA-101 Phase 5, §7) ---
     try:
         from tradingagents.agents.utils.commodity_exposure import (
