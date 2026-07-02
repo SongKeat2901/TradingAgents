@@ -120,6 +120,28 @@ Always include 3-5 rows. Flag ❌ on any ratio that looks implausible (e.g., \
 "likely excludes capitalized interest or convertibles"). Anything flagged ❌ \
 must be addressed downstream by bull/bear or trader.
 
+Capex funding bridge discipline: when capex is a live bear concern (heavy or \
+rising capex vs revenue), decompose HOW the forward spend is funded, using only \
+disclosed sources: quote the "capital expenditure" and "customer prepayment" \
+targeted excerpts in raw/sec_filing.md (capex guidance, prepayment funding, \
+financing plans) plus the pm_brief "## Net debt" cash cells and operating cash \
+flow from financials.json. Present it as a bridge — e.g. "guided capex $X = \
+customer prepayments $A + announced financing $B + OCF/cash $C" — ONLY from \
+figures the filing/news actually disclose; for any missing piece write "funding \
+split not disclosed". Do NOT invent guidance numbers, prepayment shares, or \
+financing plans from memory. A large capex number funded by customer \
+prepayments and pre-arranged financing is a different risk than one funded \
+from thin cash — say which one the data shows.
+
+FCF trajectory discipline: state the free-cash-flow trajectory over the last \
+4-5 quarters using the quarterly Operating Cash Flow and Capital Expenditure \
+columns in financials.json (or the pm_brief "## Cash-flow momentum (QoQ)" \
+block verbatim when present — prefer it). If the trend shows FCF approaching \
+an inflection (losses narrowing quarter over quarter, or turning positive), \
+say so explicitly and name the quarter the data points to; if FCF is stable \
+or deteriorating, say that instead. Never extrapolate an inflection the \
+quarterly columns do not show.
+
 RPO / backlog discipline: when pm_brief.md carries a "## RPO / backlog deep-dive" \
 block, cite VERBATIM its total RPO, the QoQ-additions trend, RPO ÷ market cap \
 ("how much contracted revenue the market is — or is not — paying for"), and the \
@@ -234,6 +256,17 @@ raw/insider.json. If raw/insider.json's `transactions` list is empty, state \
 
 Three falsifiable hurdles. Each: specific metric or event + by-when + threshold.
 
+## Dated inflection to watch
+
+Name the single next DATED event (from the pm_brief "## Reporting status" \
+block's "Next expected" column, or a dated event in news.json) and state what \
+specifically to watch there: the ONE metric whose print would confirm or \
+refute the current thesis, with the threshold that separates the two (e.g. \
+"next earnings <date>: FCF turning positive would confirm the inflection; \
+another >$5B burn refutes it"). Use the block's date verbatim; if no dated \
+event is available, write "no dated catalyst available in the data" — do not \
+invent a date.
+
 ## Sentiment & consensus
 
 When pm_brief.md carries a "## Sentiment & consensus" block, cite its \
@@ -325,7 +358,7 @@ _REQUIRED_FINANCIAL = ["## Business-model framing", "## Peer comparison matrix",
                        "## Capital-structure compare", "## Sanity check on reported numbers"]
 _REQUIRED_RISK = ["## Risk & red flags"]
 _REQUIRED_CATALYSTS = ["## Insider transactions", "## What management needs to prove",
-                       "## Sentiment & consensus"]
+                       "## Dated inflection to watch", "## Sentiment & consensus"]
 _REQUIRED_QUALITY = ["## Competitive position", "## Capital-allocation track record",
                      "## Ownership & governance"]
 
