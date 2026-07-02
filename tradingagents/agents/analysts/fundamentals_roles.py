@@ -235,6 +235,34 @@ general knowledge.
 """ + _FOOTER
 
 
+ROLE_RETRY_CAP = 2
+
+_REQUIRED_FINANCIAL = ["## Business-model framing", "## Peer comparison matrix",
+                       "## Capital-structure compare", "## Sanity check on reported numbers"]
+_REQUIRED_RISK = ["## Risk & red flags"]
+_REQUIRED_CATALYSTS = ["## Insider transactions", "## What management needs to prove",
+                       "## Sentiment & consensus"]
+_REQUIRED_QUALITY = ["## Competitive position", "## Capital-allocation track record",
+                     "## Ownership & governance"]
+
+
+def check_role_output(required_headers, report, min_chars=600):
+    """Deterministic structural check: every required header present + a length
+    floor. Returns human-readable issues; empty list == passed. No LLM, no file
+    materialization — cheap enough to run on every role invocation."""
+    text = report or ""
+    issues = [f"missing required section: {h}" for h in required_headers if h not in text]
+    if len(text.strip()) < min_chars:
+        issues.append(f"report too short ({len(text.strip())} chars < {min_chars})")
+    return issues
+
+
+def format_role_feedback(issues):
+    lines = "\n".join(f"- {i}" for i in issues)
+    return ("Your previous draft was incomplete. Fix these before rewriting the "
+            "full section:\n" + lines)
+
+
 def create_financial_statement_analyst(llm):
     def node(state):
         ticker = state["company_of_interest"]
