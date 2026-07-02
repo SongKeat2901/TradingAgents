@@ -183,6 +183,51 @@ def compute_goodwill_flag(fin: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def compute_refinancing_pressure(fin: dict[str, Any]) -> dict[str, Any]:
+    """Near-term refinancing / maturity-wall proxy (FA-101 §2/§7). Current debt =
+    Total Debt − Long-Term Debt; its share of total + whether cash covers it is
+    the key near-term signal. NOT the full year-by-year 10-K maturity ladder —
+    labelled as a proxy. Missing inputs -> n/a; never fabricated."""
+    fin = fin or {}
+    td = fin.get("total_debt")
+    ltd = fin.get("long_term_debt")
+    cash = fin.get("cash_and_equivalents")
+    if td is None or ltd is None or td <= 0 or ltd < 0 or ltd > td:
+        return {"applicable": False, "reason": "current/long-term debt split not available"}
+    current_debt = td - ltd
+    pct_current = current_debt / td * 100
+    cash_cover = (cash / current_debt) if (cash is not None and current_debt > 0) else None
+    elevated = pct_current >= 40 and (cash_cover is not None and cash_cover < 1.0)
+    moderate = (pct_current >= 40) or (cash_cover is not None and cash_cover < 1.0)
+    flag = "elevated" if elevated else ("moderate" if moderate else "low")
+    return {"applicable": True, "current_debt": current_debt,
+            "pct_current_of_total": round(pct_current, 1),
+            "cash_cover_current": None if cash_cover is None else round(cash_cover, 2),
+            "flag": flag}
+
+
+def format_refinancing_block(result: dict[str, Any]) -> str:
+    r = result or {}
+    if not r.get("applicable"):
+        return (f"\n\n## Refinancing / maturity-wall proxy — n/a "
+                f"({r.get('reason', 'unavailable')})\n\n"
+                "*Current/long-term debt split unavailable; do not cite a maturity-wall figure.*\n")
+    cc = r.get("cash_cover_current")
+    cc_cell = "n/a" if cc is None else f"{cc}x"
+    return (
+        "\n\n## Refinancing / maturity-wall proxy (computed from raw/financials.json)\n\n"
+        "| Metric | Value |\n|---|---|\n"
+        f"| Current (near-term) debt | {r.get('current_debt')} |\n"
+        f"| Current debt / total debt | {r.get('pct_current_of_total')}% |\n"
+        f"| Cash coverage of current debt | {cc_cell} |\n"
+        f"| **Refinancing-pressure flag** | **{r.get('flag')}** "
+        "(elevated = ≥40% due near-term AND cash < it) |\n\n"
+        "*Use verbatim; do not recompute. This is a near-term proxy (current vs "
+        "long-term split), NOT the full year-by-year maturity ladder — that requires "
+        "the 10-K debt note. A high near-term share with thin cash flags rollover risk.*\n"
+    )
+
+
 def format_goodwill_block(result: dict[str, Any]) -> str:
     r = result or {}
     if not r.get("reported"):
