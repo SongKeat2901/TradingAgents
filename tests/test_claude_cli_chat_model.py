@@ -54,6 +54,11 @@ def test_invoke_calls_claude_cli_and_returns_aimessage(monkeypatch):
         return MagicMock(stdout="**HOLD**\n\nReason here.\n", stderr="", returncode=0)
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    # Pin PATH lookup: with 'claude' resolvable, the bare cli_path is kept.
+    # Without this the assertion is host-dependent (a pytest env without
+    # claude on PATH triggers _discover_claude_cli and cmd[0] becomes the
+    # discovered absolute path).
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/fake/bin/claude")
 
     llm = mod.ClaudeCliChatModel(model="claude-opus-4-6", timeout_seconds=42.0)
     result = llm.invoke([
