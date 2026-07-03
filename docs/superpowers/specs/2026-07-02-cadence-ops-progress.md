@@ -35,7 +35,7 @@ Forensic audits: report-auditor per ticker (same rigor as ORCL).
 | 4 | ASX | ✓ | B → corrected → **re-verified A+** | ✓✓ local final/wk 27 + Drive `1qGGf27DQB67GQahf4vXMKpkewk6qQOt_` + manifest (2026-07-03) |
 | 5 | COIN | ✓ | B → corrected (stablecoin vs total S&S −13.5%) → debate residual fixed; final verify in flight | – |
 | 6 | GOOGL | ✓ | B → corrected (58.7→58.6% ×7, IV provenance, −42.1/−40.2 attribution); final verify in flight | – |
-| 7 | IFNNY | ✓ | B → corrected (surprise +11.83→+11.22, all copies incl. debates + state); final verify in flight | – |
+| 7 | IFNNY | ✓ | B → corrected → re-audit **A+** (0 issues; surprise history verified everywhere incl. ~20 state.json copies) | ✓✓ local final/wk 27 + Drive `1nnl5LL41TWDFj7m_deAYUjtdFftlPrvu` + manifest (2026-07-03) |
 | 8 | INTC | ✓ | B (22.46→22.45% ×6, cols 0/4, 36-mo HVN label) → corrected; final verify in flight | – |
 | 9 | MARA | ✓ | A → corrected → re-audit **A+** (0 issues; −104.46% independently reconstructed as TTM op-margin) | ✓✓ local final/wk 27 + Drive `1nmk4s8gqDLptvSVMondGaNYBa969oSxi` + manifest (2026-07-03) |
 | 10 | MRVL | ✓ | **C** (falsely denied relative_multiples.json; EV $239.11B vs authoritative $215.70B; fwd P/E 44.0x vs 38.88x) → **re-run `--reuse-raw` in flight** | – |
