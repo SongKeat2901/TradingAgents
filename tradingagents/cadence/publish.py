@@ -13,7 +13,7 @@ def _run_default(args, **kw):
     return subprocess.run(args, capture_output=True, text=True, **kw)
 
 
-def gog_token_valid(account: str = "trueknotsg@gmail.com", run=_run_default) -> bool:
+def gog_token_valid(account: str = "shianpin@trueknot.sg", run=_run_default) -> bool:
     proc = run([GOG, "auth", "list"])
     out = f"{getattr(proc, 'stdout', '')}{getattr(proc, 'stderr', '')}"
     if "invalid_grant" in out:
@@ -50,7 +50,8 @@ def publish_pdf(ticker: str, pdf: Path, manifest: Path, *, parent: str,
     rows[ticker] = file_id
     _write_manifest(manifest, rows)
     if old and old != file_id:
-        run([GOG, "drive", "trash", old, "-a", account])
+        # gog v0.31 has no `drive trash` subcommand; `drive delete` moves to trash.
+        run([GOG, "drive", "delete", old, "-y", "-a", account])
     return file_id
 
 

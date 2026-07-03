@@ -12,7 +12,7 @@ class FakeProc:
 
 
 def test_token_valid_true_when_grep_hits():
-    runner = lambda args, **kw: FakeProc(out="trueknotsg@gmail.com  valid")
+    runner = lambda args, **kw: FakeProc(out="shianpin@trueknot.sg  valid")
     assert publish.gog_token_valid(run=runner) is True
 
 
@@ -41,12 +41,15 @@ def test_publish_pdf_replaces_when_present(tmp_path):
     manifest.write_text("BBB\tOLD_ID\n")
     seen = []
     def runner(args, **kw):
-        seen.append(args[:3])
+        seen.append(args)
         return FakeProc(out=json.dumps({"file": {"id": "REPL_ID"}}))
     fid = publish.publish_pdf("BBB", tmp_path / "b.pdf", manifest,
                               parent="PARENT", account="acct", run=runner)
     assert fid == "REPL_ID"
-    assert any("trash" in " ".join(a) for a in seen)
+    # gog v0.31 has no `drive trash`; trash-old must be `drive delete <id> -y`
+    assert not any("trash" in a for a in seen)
+    deletes = [a for a in seen if "delete" in a]
+    assert deletes and "OLD_ID" in deletes[0] and "-y" in deletes[0]
     rows = dict(l.split("\t") for l in manifest.read_text().splitlines())
     assert rows["BBB"] == "REPL_ID"
 
@@ -68,15 +71,15 @@ def test_publish_pdf_upload_failure_preserves_old(tmp_path):
     manifest.write_text("BBB\tOLD_ID\n")
     seen = []
     def runner(args, **kw):
-        seen.append(args[:3])
+        seen.append(args)
         if "upload" in args:
             return FakeProc(out="ERROR not json")   # upload fails -> bad JSON
         return FakeProc(out="{}")
     with pytest.raises(Exception):
         publish.publish_pdf("BBB", tmp_path / "b.pdf", manifest,
                             parent="P", account="a", run=runner)
-    # old file NOT trashed, manifest unchanged
-    assert not any("trash" in " ".join(a) for a in seen)
+    # old file NOT trashed (gog: `drive delete`), manifest unchanged
+    assert not any("delete" in a or "trash" in a for a in seen)
     rows = dict(l.split("\t") for l in manifest.read_text().splitlines())
     assert rows["BBB"] == "OLD_ID"
 
