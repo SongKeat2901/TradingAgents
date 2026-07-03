@@ -20,10 +20,12 @@ from tradingagents.cadence import publish as pub
 DEFAULT_PREAUDIT = Path.home() / "tkresearch" / "preaudit"
 PDF_PARENT = "1-sX6LyPafUFKMdy9sNZh-7wh6YT-5wXs"
 MANIFEST = Path.home() / "gsheet-tool" / "pdf_ids.tsv"
-ACCOUNT = "trueknotsg@gmail.com"
-FINAL_BASE = (Path.home() / "Library/CloudStorage"
-              / "GoogleDrive-trueknotsg@gmail.com"
-              / "My Drive/True Knot/TK Research/final")
+ACCOUNT = "shianpin@trueknot.sg"
+# Canonical published store is LOCAL: the GUI-session-tied Google Drive for
+# Desktop mount (~/Library/CloudStorage/GoogleDrive-…) unmounts whenever the
+# shared mini's GUI switches user, so promote/publish must never touch it.
+# Drive copies of the PDFs go via the gog API by file-ID (publish_pdf).
+FINAL_BASE = Path.home() / "tkresearch" / "final"
 VENV_PY = str(Path.home() / "tradingagents" / ".venv" / "bin" / "python")
 SUMMARY_SCRIPT = str(Path.home() / "gsheet-tool" / "update_summary.py")
 TRADING_PLAN_SCRIPT = str(Path.home() / "gsheet-tool" / "refresh_trading_plan.sh")

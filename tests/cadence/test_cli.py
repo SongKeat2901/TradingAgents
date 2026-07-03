@@ -27,6 +27,15 @@ def _mk_run(pre, name, validation, with_pdf=False):
     return rd
 
 
+def test_final_base_is_local_and_mount_independent():
+    # Canonical published store is LOCAL (decouple from the GUI-session-tied
+    # Google Drive for Desktop mount, which unmounts when the mini GUI switches
+    # user). Drive copies go via the gog API by file-ID only.
+    assert cf.FINAL_BASE == Path.home() / "tkresearch" / "final"
+    assert "CloudStorage" not in str(cf.FINAL_BASE)
+    assert cf.ACCOUNT == "shianpin@trueknot.sg"
+
+
 def test_no_write_emits_contract(tmp_path, capsys):
     pre = tmp_path / "preaudit"
     _mk_run(pre, "2026-06-05-AAA", BUYBACK_FP)
