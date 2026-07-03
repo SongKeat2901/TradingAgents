@@ -39,7 +39,7 @@ Forensic audits: report-auditor per ticker (same rigor as ORCL).
 | 8 | INTC | ✓ | B → corrected → re-audit **A** (2 prose labels: $4,070M restructuring misattributed to income_statement col 0 [it's 10-Q-only]; AMD mislabeled cheapest-margin peer [GFS 11.0%]) → both fixed incl. state variants, validators 0/0, PDF regen, sweep clean → **A+** | ✓✓ local final/wk 27 + Drive `1Ewk9O58Mh7eCluAl46A-t8H9UdalA_ce` + manifest (2026-07-03) |
 | 9 | MARA | ✓ | A → corrected → re-audit **A+** (0 issues; −104.46% independently reconstructed as TTM op-margin) | ✓✓ local final/wk 27 + Drive `1nmk4s8gqDLptvSVMondGaNYBa969oSxi` + manifest (2026-07-03) |
 | 10 | MRVL | ✓ | C → re-run #1 (20:15) audited **C again**: repeated the rel-mult denial verbatim (self-built EV $239.1B vs authoritative $215.70B; fwd P/E fixed), qc_passed=false (died at QC: claude CLI exited 1 ×3 ≈ OAuth 8h expiry, NOT a QC verdict), stale Overweight exec vs fresh Underweight decision → **re-run #2 `--reuse-raw` started 22:13 (07-03, pid 56913, fresh OAuth)**; regenerated pm_brief.md verified to carry all deterministic blocks incl. rel-mult | – |
-| 11 | MSFT | ✓ | **C** (false "conclusive filesystem check" claim; leaked meta) → re-run `--reuse-raw` (21:33) **completed 22:10, qc_passed=true, validators 0/0**. Deterministic sweep clean: ref $384.28 = fresh yfinance close exactly; exec Hold = decision HOLD; no leaked meta. New §D statement is ACCURATE (verified vs prod portfolio_manager.py ~L352: PM prompt injects only Peer-ratios/Net-debt/12-mo-scenario/Volume-profile sections; accounting-ratios + rel-mult blocks exist in raw/pm_brief.md but are not injected by design — PM correctly declined to fabricate). **Forensic report-auditor audit in flight** | – |
+| 11 | MSFT | ✓ | **C** (false "conclusive filesystem check" claim; leaked meta) → re-run `--reuse-raw` (21:33) completed 22:10, qc_passed=true (0 retries), validators 0/0 → **forensic re-audit A+** (all 16 tiers PASS, 0 issues; §D verdict TRUE — prompt-scoped and accurate per portfolio_manager.py ~L352 4-section injection; DCF base $330.92 + CoE 9.815% independently recomputed; market cap matches to the dollar; ref $384.28 = fresh settled close) | ✓✓ local final/wk 27 + Drive `1sBLBXxW6332MwUbXHhYGwpI-C_AzYCTT` + manifest (2026-07-03; old `1m55cX…` trashed) |
 | 12 | NOW | ✓ | A → corrected → **re-verified A+** | ✓✓ local final/wk 27 + Drive `1yfL8VRBuIpK_5kY3qmLstvlzIyVL6OCr` + manifest (2026-07-03) |
 | 13 | ONDS | ✓ | **A+** (0 issues) | ✓✓ local final/wk 27 + Drive `1zr3lSQxnfqDeZJLxbgREtEZQArmsAbiL` + manifest (2026-07-03) |
 | 14 | RKLB | ✓ | **A+** (0 issues) | ✓✓ local final/wk 27 + Drive `1r5rYZHDy_AaArerlDy4hXtguWpOA1Zzh` + manifest (2026-07-03) |
@@ -58,14 +58,13 @@ state.json synced for all corrected tickers (`.past_context` + historical QC-rou
 as immutable history). A deterministic residual sweep (md + state.json + extracted PDF text per
 stale token) is CLEAN for all 9 hand-corrected tickers.
 
-Tally (2026-07-03 22:30 SGT): **20/22 FULLY published** (local final + Drive-by-ID + manifest).
+Tally (2026-07-03 22:45 SGT): **21/22 FULLY published** (local final + Drive-by-ID + manifest).
 The earlier 12 run dirs were reconciled off the (temporarily re-mounted) shianpin Drive into
 `~/tkresearch/final/wk 27 2026/` (file-count-verified vs source; a 520-file stray `Users/…` tree
 nested inside VSH — byte-identical duplicates of 11 already-promoted dirs from the stalled
-promote — was removed from both copies). Remaining 2: **MSFT** re-run complete 22:10
-(qc_passed=true, validators 0/0, deterministic sweep clean; forensic audit in flight) and
-**MRVL** re-run #2 in flight (started 22:13 with fresh OAuth — re-run #1's death was CLI
-exit-1 ×3 at the QC node ≈ OAuth expiry, so #2 is expected to reach QC).
+promote — was removed from both copies). MSFT promoted+published 22:45 after its A+ re-audit.
+Remaining 1: **MRVL** re-run #2 in flight (started 22:13 with fresh OAuth — re-run #1's death
+was CLI exit-1 ×3 at the QC node ≈ OAuth expiry, so #2 is expected to reach QC).
 
 ## Phase 3 — sheets (after all 22 promoted; gog is VALID again)
 
