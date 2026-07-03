@@ -12,7 +12,10 @@ root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 # sk-ant-… (Anthropic), GOCSPX-… (Google client secret), 1//… (Google refresh
 # token), real FRED key assignment, gog keyring password assigned to a real value.
-PATTERNS='sk-ant-[A-Za-z0-9_-]{20}|GOCSPX-[A-Za-z0-9_-]{10}|1//[0-9A-Za-z_-]{30}|FRED_API_KEY[[:space:]]*=[[:space:]]*[0-9a-f]{20}|GOG_KEYRING_PASSWORD[[:space:]]*=[[:space:]]*[^R[:space:]"'"'"']'
+# The pw char class exempts placeholders (REPLACE_WITH_*, <pw>) and shell
+# expansions ($VAR / "$k=$(…)") — those are exactly how the real value is kept
+# OUT of the repo, and they were false-positive-blocking doc edits.
+PATTERNS='sk-ant-[A-Za-z0-9_-]{20}|GOCSPX-[A-Za-z0-9_-]{10}|1//[0-9A-Za-z_-]{30}|FRED_API_KEY[[:space:]]*=[[:space:]]*[0-9a-f]{20}|GOG_KEYRING_PASSWORD[[:space:]]*=[[:space:]]*[^R<$[:space:]"'"'"']'
 
 tool=$(printf '%s' "$input" | python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("tool_name",""))
