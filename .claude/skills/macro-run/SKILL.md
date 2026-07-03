@@ -27,13 +27,13 @@ the plan to published (manifest) tickers so every row links. gog needs the accou
 ```bash
 ssh macmini-trueknot 'export PATH=/opt/homebrew/bin:$PATH
   export GOG_KEYRING_PASSWORD=<keyring pw>   # never commit this; it lives on the mini
-  export GOG_ACCOUNT=trueknotsg@gmail.com
+  export GOG_ACCOUNT=shianpin@trueknot.sg
   FRED_API_KEY=<fred key> ~/tradingagents/.venv/bin/tradingmacro \
     --manifest-scope \
+    --reports-dir ~/tkresearch \
     --reports-dir ~/research-staging-2026-06-02 \
     --reports-dir ~/tkruns-rerun-2026-06-02 \
     --reports-dir ~/tkruns-fix-2026-06-02 \
-    --reports-dir ~/tkresearch \
     --reports-dir ~/.openclaw/data/research \
     --sheet-id 1ZLq9HuyU0AAzREECpBGpamDBVpbbjq9V8joHqQHp-cw \
     --manifest ~/gsheet-tool/pdf_ids.tsv'
@@ -41,8 +41,10 @@ ssh macmini-trueknot 'export PATH=/opt/homebrew/bin:$PATH
 
 - Add `--no-write` to compute + print the regime only (no sheet write) — good for a
   sanity check first; expect `Regime: … | gate=… | N names`.
-- **New cadences land in NEW dated dirs** — add them to the `--reports-dir` list (or
-  consolidate). The dated bases above are the wk23 (2026-06-02/03) cohort.
+- **`~/tkresearch` is the canonical base** (rglob is recursive: covers `preaudit/`
+  AND the local published store `final/wk NN YYYY/`). The dated bases are the wk23
+  (2026-06-02/03) cohort, kept for history; never point at a
+  `~/Library/CloudStorage` mount (GUI-session-tied, unmounts on user switch).
 - The secrets (`FRED_API_KEY`, `GOG_KEYRING_PASSWORD`) are on the mini only — read
   them from the live launchd plist `~/Library/LaunchAgents/com.trueknot.macrodaily.plist`
   if you need the current values; do not hardcode them here.
@@ -60,5 +62,5 @@ ssh macmini-trueknot 'export PATH=/opt/homebrew/bin:$PATH
    so this is only needed after a fresh sheet.
 
 ## Verify
-Read back: `gog sheets get <sheet-id> "A1:A27" -a trueknotsg@gmail.com -p` (regime row
+Read back: `gog sheets get <sheet-id> "A1:A27" -a shianpin@trueknot.sg -p` (regime row
 + tickers). Expect the regime banner in A1 and one row per published ticker.

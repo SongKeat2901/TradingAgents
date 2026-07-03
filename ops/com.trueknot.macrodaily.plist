@@ -29,7 +29,7 @@
     <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>FRED_API_KEY</key><string>REPLACE_WITH_FRED_KEY</string>
     <!-- gog Sheets write: account + keyring password (gog reads both natively). -->
-    <key>GOG_ACCOUNT</key><string>trueknotsg@gmail.com</string>
+    <key>GOG_ACCOUNT</key><string>shianpin@trueknot.sg</string>
     <key>GOG_KEYRING_PASSWORD</key><string>REPLACE_WITH_GOG_KEYRING_PASSWORD</string>
     <key>MACRO_CACHE_DIR</key><string>/Users/trueknot/.cache/tradingagents-macro</string>
   </dict>

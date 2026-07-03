@@ -13,7 +13,14 @@ disable-model-invocation: true
 Enforces the **no-duplicates** rule (publish by known file ID, never name-search —
 search is broken on this account). See `feedback_no_duplicates_idempotent_publish`
 and `project_macro_regime_engine_deployed` memories. All ops on macmini-trueknot as
-`trueknotsg@gmail.com`; gog needs `GOG_KEYRING_PASSWORD` in env (value on the mini).
+`shianpin@trueknot.sg`; gog needs `GOG_KEYRING_PASSWORD` in env (value in the
+macrodaily plist on the mini).
+
+**MOUNT-INDEPENDENT (2026-07-03):** the flow must NEVER touch
+`~/Library/CloudStorage/GoogleDrive-…` — that Google Drive for Desktop mount is
+tied to the mini's GUI login and unmounts when the shared Mac switches user.
+The **canonical published store is LOCAL**: `~/tkresearch/final/wk NN YYYY/<date>-<TICKER>/`.
+The Drive copy is the PDF only, uploaded via the gog API by file-ID.
 
 Key IDs:
 - Shared **pdf/** folder (PDFs now live flat here): `1-sX6LyPafUFKMdy9sNZh-7wh6YT-5wXs`
@@ -22,16 +29,20 @@ Key IDs:
 
 ## Steps
 
-1. **Locate the run** + its PDF: e.g. `~/tkresearch/preaudit/<date>-<TICKER>/research-<date>-<TICKER>.pdf`.
+1. **Locate the run** + its PDF: `~/tkresearch/final/wk NN YYYY/<date>-<TICKER>/research-<date>-<TICKER>.pdf`
+   (already promoted) or `~/tkresearch/preaudit/<date>-<TICKER>/…` (promote first).
    Confirm `decision.md` + the PDF exist (a finished run).
 
 2. **Publish idempotently** (per ticker):
-   - If the ticker is **already** in the manifest: trash the old file
-     (`gog drive trash <oldId> -a trueknotsg@gmail.com`), upload the new PDF, capture
-     the NEW id, and **overwrite** the manifest row.
-   - If **absent**: `gog drive upload <pdf> --parent 1-sX6LyPafUFKMdy9sNZh-7wh6YT-5wXs -a trueknotsg@gmail.com -j`,
+   - If the ticker is **already** in the manifest: upload the new PDF FIRST, capture
+     the NEW id, **overwrite** the manifest row, THEN trash the old file
+     (`gog drive delete <oldId> -y -a shianpin@trueknot.sg` — gog ≥0.31 has no
+     `trash` subcommand; `delete` moves to trash).
+   - If **absent**: `gog drive upload <pdf> --parent 1-sX6LyPafUFKMdy9sNZh-7wh6YT-5wXs -a shianpin@trueknot.sg -j`,
      capture `file.id`, and **append** `printf 'TICKER\tID\n' >> ~/gsheet-tool/pdf_ids.tsv`.
    - Parse the manifest in Python (never `IFS=$"\t"` / `grep -P` — broken on macOS).
+   - Or just run the deterministic helper: `tradingagents.cadence.publish.publish_pdf`
+     (upload-before-trash, manifest overwrite, same ID discipline).
 
 3. **Regenerate intrinsic** for the new ticker (so it uses the current guarded code):
    `ssh macmini-trueknot '.venv/bin/python /tmp/regen_intrinsic.py'`.
@@ -41,7 +52,7 @@ Key IDs:
 
 5. **Verify**: read the sheet's ticker + Research columns and confirm the new row is
    present and linked:
-   `gog sheets get <sheet-id> "A6:Q30" -a trueknotsg@gmail.com -p` → row exists, col Q is a `drive.google` link.
+   `gog sheets get <sheet-id> "A6:Q30" -a shianpin@trueknot.sg -p` → row exists, col Q is a `drive.google` link.
 
 ## Notes
 - New PDFs go to the **pdf/ root** (the folder was flattened so colleagues see them
