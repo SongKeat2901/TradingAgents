@@ -30,14 +30,14 @@ Forensic audits: report-auditor per ticker (same rigor as ORCL).
 |---|--------|-----|----|--------------------------------------|
 | — | ORCL | ✓ (pre-existing) | **A+** | ✓✓ local final/wk 27 + Drive `1aUrPl21h5nIWJj9tn7mj7WvMo31k3nD5` + manifest |
 | 1 | AAOI | ✓ | C → corrected (convertible-maturity misattribution, unsourced 5.25% coupon, POC/HVN label, leaked meta) → residuals fixed (af102 + state mirrors); final verify in flight | – |
-| 2 | AAPL | ✓ | A → corrected (CoE 8%→9.9%, provenance, DCF/blend labels) → residuals fixed (exec + debates + state); final verify in flight | – |
+| 2 | AAPL | ✓ | A → corrected → re-audit **B** (3 residual "8% hurdle" phrasings in debates + state mirrors; all numbers traced flawless) → residuals fixed, validators 0/0, PDF regen, token sweep clean → **A+** | ✓✓ local final/wk 27 + Drive `1MUnrkoPKfYV3IzGJTaxemirbQrV2699J` + manifest (2026-07-03) |
 | 3 | AMKR | ✓ | F (fabricated ROE 9.15% vs cell 9.62 ×3 + leaked preamble; ALL else A+-clean) → corrected; final verify in flight | – |
 | 4 | ASX | ✓ | B → corrected → **re-verified A+** | ✓✓ local final/wk 27 + Drive `1qGGf27DQB67GQahf4vXMKpkewk6qQOt_` + manifest (2026-07-03) |
 | 5 | COIN | ✓ | B → corrected (stablecoin vs total S&S −13.5%) → debate residual fixed; final verify in flight | – |
 | 6 | GOOGL | ✓ | B → corrected (58.7→58.6% ×7, IV provenance, −42.1/−40.2 attribution); final verify in flight | – |
 | 7 | IFNNY | ✓ | B → corrected (surprise +11.83→+11.22, all copies incl. debates + state); final verify in flight | – |
 | 8 | INTC | ✓ | B (22.46→22.45% ×6, cols 0/4, 36-mo HVN label) → corrected; final verify in flight | – |
-| 9 | MARA | ✓ | A (−104.46% "not reconstructible" claim false — it's the TTM op-margin cell; rel-mult attribution) → corrected; final verify in flight | – |
+| 9 | MARA | ✓ | A → corrected → re-audit **A+** (0 issues; −104.46% independently reconstructed as TTM op-margin) | ✓✓ local final/wk 27 + Drive `1nmk4s8gqDLptvSVMondGaNYBa969oSxi` + manifest (2026-07-03) |
 | 10 | MRVL | ✓ | **C** (falsely denied relative_multiples.json; EV $239.11B vs authoritative $215.70B; fwd P/E 44.0x vs 38.88x) → **re-run `--reuse-raw` in flight** | – |
 | 11 | MSFT | ✓ | **C** (false "conclusive filesystem check — no accounting-ratios/rel-mult/IV artifacts" claim; all 3 exist; leaked meta) → **re-run `--reuse-raw` queued behind MRVL** | – |
 | 12 | NOW | ✓ | A → corrected → **re-verified A+** | ✓✓ local final/wk 27 + Drive `1yfL8VRBuIpK_5kY3qmLstvlzIyVL6OCr` + manifest (2026-07-03) |
