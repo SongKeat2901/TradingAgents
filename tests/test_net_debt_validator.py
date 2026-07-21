@@ -1432,3 +1432,48 @@ def test_wk29_skips_googl_net_debt_issuance_financing_flow(tmp_path):
     assert not any("31.4" in v.claimed_value for v in viols), (
         f"net debt-issuance financing flow must not be flagged; got {[v.claimed_value for v in viols]}"
     )
+
+
+def test_wk29_skips_orcl_funding_gap(tmp_path):
+    """ORCL 2026-07-17: '~$24B annual funding gap — pushing net debt/EBITDA
+    to 3.22x' — $24B is an FCF funding gap, not a net-debt position."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd = _write_net_debt(tmp_path, data=_TXN_NET_DEBT_JSON)  # any USD canonical
+    text = ("Oracle burned $23.686B of free cash flow while spending $55.663B on "
+            "capex against only $31.977B of operating cash flow — a ~$24B annual "
+            "funding gap — pushing net debt/EBITDA to 3.22x.")
+    claims = _with_file(extract_net_debt_claims(text), "analyst_fundamentals.md")
+    viols = validate_net_debt_claims(claims, nd, main_ticker="ORCL")
+    assert not any("24" in v.claimed_value and v.claimed_dollars > 20e9 for v in viols), (
+        f"$24B funding gap must not be flagged as net debt; got {[v.claimed_value for v in viols]}"
+    )
+
+
+def test_wk29_skips_echo_contractual_obligations(tmp_path):
+    """ECHO 2026-07-17: a '2026 contractual-obligations figure (debt + interest
+    + leases + purchase obligations) of $13.21B' is a maturity/obligations
+    total, not the net-debt position."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd = _write_net_debt(tmp_path, data=_TXN_NET_DEBT_JSON)
+    text = ("The debt-maturity-ladder table shows $7.28B of long-term debt "
+            "obligations maturing in fiscal-year 2026, against a total 2026 "
+            "contractual-obligations figure (debt + interest + leases) of $13.21B "
+            "versus net debt.")
+    claims = _with_file(extract_net_debt_claims(text), "analyst_fundamentals.md")
+    viols = validate_net_debt_claims(claims, nd, main_ticker="ECHO")
+    assert not any("13.21" in v.claimed_value for v in viols), (
+        f"$13.21B contractual-obligations total must not be flagged; got {[v.claimed_value for v in viols]}"
+    )
+
+
+def test_wk29_obligations_guard_still_flags_real_net_debt_near_maturing(tmp_path):
+    """Defense: a fabricated net-debt position sitting near 'maturing' (but
+    NOT introduced by an obligations 'of $') must still be flagged."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd = _write_net_debt(tmp_path, data=_TXN_NET_DEBT_JSON)
+    text = "With $5B maturing in 2026, the balance sheet still carries net debt of $99B."
+    claims = _with_file(extract_net_debt_claims(text), "decision.md")
+    viols = validate_net_debt_claims(claims, nd, main_ticker="TXN")
+    assert any("99" in v.claimed_value for v in viols), (
+        "fabricated $99B net debt near 'maturing' (no obligations 'of') must still flag"
+    )

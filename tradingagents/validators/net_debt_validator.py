@@ -147,6 +147,43 @@ def _is_competing_metric_prefixed(match_text: str, value_raw: str) -> bool:
     return bool(_COMPETING_METRIC_PREFIX_RE.search(prefix))
 
 
+# wk29 not-a-position descriptors, checked positionally around the value:
+#  - TAIL: "$24B annual funding gap" (ORCL) — the value IS the funding gap.
+#  - PREFIX: "contractual-obligations figure (...) of $13.21B" (ECHO) — the
+#    value is a maturity/obligations total, not the net-debt position.
+_FUNDING_GAP_TAIL_RE = re.compile(
+    r"^[^$\d]{0,15}(?:annual\s+|)funding\s+(?:gap|shortfall|need)"
+    r"|^[^$\d]{0,15}cash\s+shortfall",
+    re.IGNORECASE,
+)
+# Descriptor ... "of" immediately before the value. Requires an UNAMBIGUOUS
+# obligations-total phrase ("contractual obligations", "obligations figure/
+# total/table/schedule") — NOT bare "maturing"/"maturity", which appears near
+# legitimate net-debt positions ("$5B maturing in 2026 … net debt of $99B")
+# and would over-suppress. The [^$]*? tolerates a parenthetical breakdown
+# between the descriptor and the introducing "of $"; the trailing "\bof\s+$"
+# keeps it precise (value must be introduced by that obligations total).
+_OBLIGATIONS_PREFIX_RE = re.compile(
+    r"(?:contractual[- ]obligation"
+    r"|obligations?\s+(?:figure|total|table|schedule))"
+    r"[^$]*?\bof\s+$",
+    re.IGNORECASE,
+)
+
+
+def _is_non_position_descriptor(match_text: str, value_raw: str) -> bool:
+    """True when the value is a funding gap (tail) or a maturity/contractual-
+    obligations total (prefix) — neither is a net-debt position."""
+    pos = match_text.find(value_raw)
+    if pos < 0:
+        return False
+    tail = match_text[pos + len(value_raw):]
+    if _FUNDING_GAP_TAIL_RE.search(tail):
+        return True
+    prefix = match_text[max(0, pos - 120): pos]
+    return bool(_OBLIGATIONS_PREFIX_RE.search(prefix))
+
+
 def _context_window(match_text: str, value_raw: str) -> str:
     """Return the ±GUARD_WINDOW-char window around value_raw in match_text.
 
@@ -722,6 +759,11 @@ def validate_net_debt_claims(
         # Guard 6 (wk29 financing-flow): "net debt-issuance proceeds" is a
         # financing cash flow, not a net-debt position.
         if _FINANCING_FLOW_RE.search(window):
+            continue
+
+        # Guard 7 (wk29 not-a-position): funding gap (tail) or a maturity /
+        # contractual-obligations total (prefix) — neither is net debt.
+        if _is_non_position_descriptor(claim.match_text, claim.value_raw):
             continue
 
         # Find closest canonical derivation
