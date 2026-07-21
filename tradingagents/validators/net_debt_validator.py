@@ -130,9 +130,14 @@ _COMPETING_METRIC_PREFIX_RE = re.compile(
 # cash flow, not a net-debt position (GOOGL 2026-07-17: "$31.4B of net
 # debt-issuance proceeds"). The bridge/tail delta guards miss it because
 # 'issuance' sits AFTER the label ("net debt-issuance"), not in the bridge.
+# Also: "financing activities were net cash-negative $X" (MU 2026-07-17) — a
+# cash-flow-statement direction, not a position. "cash-negative"/"cash-positive"
+# always describes a flow; a position is "net cash OF $X". Optional markdown
+# emphasis (net cash-*negative*, net cash-**negative**) tolerated.
 _FINANCING_FLOW_RE = re.compile(
     r"debt[-\s]issuance|issuance\s+proceeds|proceeds\s+from\s+(?:the\s+)?issuance"
-    r"|debt[-\s]rais(?:e|ing)",
+    r"|debt[-\s]rais(?:e|ing)"
+    r"|cash[-\s]\*{0,2}(?:negative|positive)",
     re.IGNORECASE,
 )
 

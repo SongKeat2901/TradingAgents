@@ -1482,3 +1482,35 @@ def test_wk29_obligations_guard_still_flags_real_net_debt_near_maturing(tmp_path
     assert any("99" in v.claimed_value for v in viols), (
         "fabricated $99B net debt near 'maturing' (no obligations 'of') must still flag"
     )
+
+
+# MU-style: real position is NET CASH $19.65B (net_debt −19.646B); the report
+# also says "financing activities were net cash-negative $10.646B" (a cash flow).
+_MU_NET_DEBT_JSON = {
+    "trade_date": "2026-07-17", "financial_currency": "USD",
+    "net_debt": -19_646_000_000.0, "net_debt_source": "yfinance",
+    "total_debt": 6_376_000_000.0, "long_term_debt": 3_052_000_000.0,
+    "current_debt": None, "capital_lease_obligations": 3_324_000_000.0,
+    "cash_and_equivalents": 24_995_000_000.0, "short_term_investments": None,
+    "other_short_term_investments": None,
+    "cash_plus_short_term_investments": 26_022_000_000.0, "unavailable": False,
+}
+
+
+def test_wk29_skips_mu_financing_net_cash_negative_flow(tmp_path):
+    """MU 2026-07-17: 'financing activities were net cash-*negative* $10.646B'
+    is a financing cash flow, not a net-cash position (real position: net cash
+    $19.65B). $10.646B matches no canonical and was falsely flagged 3x."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd = _write_net_debt(tmp_path, data=_MU_NET_DEBT_JSON)
+    for text in (
+        "Total debt fell to $6.376B, funded by operating cash flow — financing "
+        "activities were net cash-*negative* $10.646B. Net cash is $19.65B.",
+        "financing was net cash-**negative** $10.646B. Net cash $19.65B.",
+    ):
+        claims = _with_file(extract_net_debt_claims(text), "debate_bull_bear.md")
+        viols = validate_net_debt_claims(claims, nd, main_ticker="MU")
+        assert not any("10.646" in v.claimed_value for v in viols), (
+            f"financing net cash-negative $10.646B must not flag; got "
+            f"{[v.claimed_value for v in viols]} in {text!r}"
+        )
