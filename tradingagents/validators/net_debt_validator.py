@@ -111,6 +111,42 @@ _HIST_OTHER_RE = re.compile(
 )
 
 
+# wk29 whose-number guard: a dollar figure whose IMMEDIATE antecedent is a
+# DIFFERENT financial metric (market cap / enterprise value) belongs to THAT
+# metric, not net debt — even when "net debt" appears later in the same
+# sentence via a bridge ("+ net debt", "and net debt of").  Real cases:
+#   TXN 2026-07-17: "(market cap $258.53B + net debt $10.50B)"
+#   MARA 2026-07-17: "market cap of only $4.45B and net debt of $1.90B"
+# The [^$\d]{0,20} tail keeps it positional (metric label within ~20 chars of
+# the value, no intervening dollar/number) so the real net-debt value that
+# follows ("net debt of $1.90B") is still extracted and validated.
+_COMPETING_METRIC_PREFIX_RE = re.compile(
+    r"(?:market\s+cap(?:italization)?|mkt\s+cap|market\s+value"
+    r"|enterprise\s+value|\bEV\b)[^$\d]{0,20}$",
+    re.IGNORECASE,
+)
+
+# wk29 financing-flow guard: "net debt-issuance proceeds" is a Q1 financing
+# cash flow, not a net-debt position (GOOGL 2026-07-17: "$31.4B of net
+# debt-issuance proceeds"). The bridge/tail delta guards miss it because
+# 'issuance' sits AFTER the label ("net debt-issuance"), not in the bridge.
+_FINANCING_FLOW_RE = re.compile(
+    r"debt[-\s]issuance|issuance\s+proceeds|proceeds\s+from\s+(?:the\s+)?issuance"
+    r"|debt[-\s]rais(?:e|ing)",
+    re.IGNORECASE,
+)
+
+
+def _is_competing_metric_prefixed(match_text: str, value_raw: str) -> bool:
+    """True when the value's immediate antecedent is market cap / EV, so the
+    figure belongs to that metric, not net debt."""
+    pos = match_text.find(value_raw)
+    if pos <= 0:
+        return False
+    prefix = match_text[max(0, pos - 40): pos]
+    return bool(_COMPETING_METRIC_PREFIX_RE.search(prefix))
+
+
 def _context_window(match_text: str, value_raw: str) -> str:
     """Return the ±GUARD_WINDOW-char window around value_raw in match_text.
 
@@ -422,8 +458,10 @@ _DELTA_BRIDGE_RE = re.compile(
     # Phase 9 (GOOGL 2026-05-26 fix): debt-flow words (raise/raised, issuance/
     # issued, repaid/repayment, drawn) mean the value is a financing CASH FLOW
     # (e.g. "$29.9B net debt raise" = Q1 debt issuance), not a net-debt position.
+    # wk29 (ORCL 2026-07-17): "net debt grew $16.47B in one year" — 'grew' is a
+    # YoY-change verb; $16.47B is the delta, not the position. Add grow/grew/grown.
     r"\b(?:increas|decreas|chang|swing|delta|rose|risen|fell|fallen"
-    r"|rais|issu|repaid|repay|repaym|drawn|drew|borrow)"
+    r"|rais|issu|repaid|repay|repaym|drawn|drew|borrow|grew|grow|grown)"
     # Full words (require closing \b)
     r"|\b(?:higher|lower|above|below|more|less|over|under|plus)\b"
     # Bare additive operator (with whitespace either side)
@@ -673,6 +711,17 @@ def validate_net_debt_claims(
         if _is_peer_attributed_with_full_ticker_list(
             claim.match_text, claim.value_raw, main_ticker, _peer_tickers
         ):
+            continue
+
+        # Guard 5 (wk29 whose-number): the value's immediate antecedent is a
+        # competing metric (market cap / enterprise value), so it is not net
+        # debt even though "net debt" appears later in the sentence.
+        if _is_competing_metric_prefixed(claim.match_text, claim.value_raw):
+            continue
+
+        # Guard 6 (wk29 financing-flow): "net debt-issuance proceeds" is a
+        # financing cash flow, not a net-debt position.
+        if _FINANCING_FLOW_RE.search(window):
             continue
 
         # Find closest canonical derivation

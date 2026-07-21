@@ -26,6 +26,16 @@ _MSFT_NET_DEBT_JSON = {
 }
 
 
+def _with_file(claims, fname):
+    """Rebuild frozen NetDebtClaim(s) with `file` set (mirrors research_validation)."""
+    from tradingagents.validators.net_debt_validator import NetDebtClaim
+    return [NetDebtClaim(
+        label=c.label, is_cash=c.is_cash, value_raw=c.value_raw,
+        value_dollars=c.value_dollars, file=fname,
+        line_no=c.line_no, match_text=c.match_text,
+    ) for c in claims]
+
+
 def _write_net_debt(tmp_path, data=_MSFT_NET_DEBT_JSON):
     p = tmp_path / "raw" / "net_debt.json"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -1328,3 +1338,97 @@ def test_phase_9_2_position_claim_next_to_outlay_still_extracted():
     claims = extract_net_debt_claims(
         "ORCL holds $8.16B net cash; outlay for capex was $47.7B.")
     assert [(c.value_raw, c.is_cash) for c in claims] == [("$8.16B", True)]
+
+
+# --- wk29 cadence (2026-07-17): whose-number / wrong-kind-of-number FPs -------
+# Five net-debt false positives in one batch, all where a dollar figure near
+# "net debt" was NOT the subject's net-debt position. See the wk29 memory.
+
+# TXN-style: real net debt $10.50B; the report also cites market cap $258.53B
+# right beside "net debt" inside an EV bridge.
+_TXN_NET_DEBT_JSON = {
+    "trade_date": "2026-07-17", "financial_currency": "USD",
+    "net_debt": 10_500_000_000.0, "net_debt_source": "yfinance",
+    "total_debt": 14_050_000_000.0, "long_term_debt": 12_050_000_000.0,
+    "current_debt": 2_000_000_000.0, "capital_lease_obligations": 0.0,
+    "cash_and_equivalents": 3_550_000_000.0, "short_term_investments": None,
+    "other_short_term_investments": None,
+    "cash_plus_short_term_investments": 3_550_000_000.0, "unavailable": False,
+}
+
+# MARA-style: real net debt $1.90B; market cap $4.45B cited beside "net debt".
+_MARA_NET_DEBT_JSON = {
+    "trade_date": "2026-07-17", "financial_currency": "USD",
+    "net_debt": 1_900_000_000.0, "net_debt_source": "yfinance",
+    "total_debt": 2_463_960_000.0, "long_term_debt": 2_463_960_000.0,
+    "current_debt": 0.0, "capital_lease_obligations": 0.0,
+    "cash_and_equivalents": 563_960_000.0, "short_term_investments": None,
+    "other_short_term_investments": None,
+    "cash_plus_short_term_investments": 563_960_000.0, "unavailable": False,
+}
+
+
+def test_wk29_skips_txn_market_cap_beside_net_debt(tmp_path):
+    """TXN 2026-07-17: 'market cap $258.53B + net debt $10.50B' — the $258.53B
+    is market cap, not net debt. Must not flag it; the real $10.50B validates."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd = _write_net_debt(tmp_path, data=_TXN_NET_DEBT_JSON)
+    text = "Enterprise value is $269.03B (market cap $258.53B + net debt $10.50B)."
+    claims = _with_file(extract_net_debt_claims(text), "decision_executive.md")
+    viols = validate_net_debt_claims(claims, nd, main_ticker="TXN")
+    flagged = {v.claimed_value for v in viols}
+    assert not any("258" in f for f in flagged), (
+        f"market-cap $258.53B must not be flagged as net debt; got {flagged}"
+    )
+
+
+def test_wk29_skips_mara_market_cap_beside_net_debt(tmp_path):
+    """MARA 2026-07-17: 'market cap of only $4.45B and net debt of $1.90B'."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd = _write_net_debt(tmp_path, data=_MARA_NET_DEBT_JSON)
+    text = ("MARA carries $4.00B of original convertible-note face value against "
+            "a market cap of only $4.45B and net debt of $1.90B.")
+    claims = _with_file(extract_net_debt_claims(text), "analyst_fundamentals.md")
+    viols = validate_net_debt_claims(claims, nd, main_ticker="MARA")
+    flagged = {v.claimed_value for v in viols}
+    assert not any("4.45" in f for f in flagged), (
+        f"market-cap $4.45B must not be flagged as net debt; got {flagged}"
+    )
+
+
+def test_wk29_market_cap_guard_still_flags_real_fabricated_net_debt(tmp_path):
+    """Defense: a fabricated net-debt figure NOT preceded by a competing
+    metric label must still be flagged (guard must not over-suppress)."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    nd = _write_net_debt(tmp_path, data=_TXN_NET_DEBT_JSON)
+    text = "The balance sheet shows a net debt of $258.53B, a solvency red flag."
+    claims = _with_file(extract_net_debt_claims(text), "decision.md")
+    viols = validate_net_debt_claims(claims, nd, main_ticker="TXN")
+    assert any("258" in v.claimed_value for v in viols), (
+        "fabricated $258.53B net debt (no competing-metric prefix) must still flag"
+    )
+
+
+def test_wk29_skips_orcl_net_debt_grew_yoy_delta():
+    """ORCL 2026-07-17: 'net debt grew $16.47B in one year' — $16.47B is a
+    YoY change, not a position. 'grew' was missing from the delta-bridge set."""
+    from tradingagents.validators import extract_net_debt_claims
+    text = "Net debt/EBITDA of 3.22x is genuine; net debt grew $16.47B in one year."
+    claims = extract_net_debt_claims(text)
+    assert not any(abs(c.value_dollars - 16.47e9) < 1e6 for c in claims), (
+        f"$16.47B YoY delta ('grew') must not extract; got {[c.value_dollars for c in claims]}"
+    )
+
+
+def test_wk29_skips_googl_net_debt_issuance_financing_flow(tmp_path):
+    """GOOGL 2026-07-17: '$31.4B of net debt-issuance proceeds' — a financing
+    cash flow, not a net-debt position."""
+    from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
+    from tests.test_net_debt_validator import _MSFT_NET_DEBT_JSON
+    nd = _write_net_debt(tmp_path)
+    text = "The release shows Q1 alone brought in $31.4B of net debt-issuance proceeds."
+    claims = _with_file(extract_net_debt_claims(text), "analyst_fundamentals.md")
+    viols = validate_net_debt_claims(claims, nd, main_ticker="GOOGL")
+    assert not any("31.4" in v.claimed_value for v in viols), (
+        f"net debt-issuance financing flow must not be flagged; got {[v.claimed_value for v in viols]}"
+    )
