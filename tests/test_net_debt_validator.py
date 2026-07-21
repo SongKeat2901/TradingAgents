@@ -1455,10 +1455,15 @@ def test_wk29_skips_echo_contractual_obligations(tmp_path):
     total, not the net-debt position."""
     from tradingagents.validators import extract_net_debt_claims, validate_net_debt_claims
     nd = _write_net_debt(tmp_path, data=_TXN_NET_DEBT_JSON)
-    text = ("The debt-maturity-ladder table shows $7.28B of long-term debt "
-            "obligations maturing in fiscal-year 2026, against a total 2026 "
-            "contractual-obligations figure (debt + interest + leases) of $13.21B "
-            "versus net debt.")
+    # Verbatim ECHO 2026-07-17 analyst_fundamentals.md — the flagged $13.21B is
+    # a PARENTHETICAL restatement of "$13,213,574 thousand", so the "of $"
+    # introducer is separated from $13.21B by another dollar figure.
+    text = ("- Against that: the filing's own debt-maturity-ladder table (10-K, "
+            "verbatim) shows **$7,279,749 thousand ($7.28B) of long-term debt "
+            "obligations maturing in fiscal-year 2026 alone**, against a total 2026 "
+            "contractual-obligations figure (debt + interest + leases + purchase "
+            "obligations) of **$13,213,574 thousand ($13.21B)** — and the pm_brief's "
+            "own Net debt block shows only $1.52B of cash + short-term investments.")
     claims = _with_file(extract_net_debt_claims(text), "analyst_fundamentals.md")
     viols = validate_net_debt_claims(claims, nd, main_ticker="ECHO")
     assert not any("13.21" in v.claimed_value for v in viols), (

@@ -159,14 +159,20 @@ _FUNDING_GAP_TAIL_RE = re.compile(
 # Descriptor ... "of" immediately before the value. Requires an UNAMBIGUOUS
 # obligations-total phrase ("contractual obligations", "obligations figure/
 # total/table/schedule") — NOT bare "maturing"/"maturity", which appears near
-# legitimate net-debt positions ("$5B maturing in 2026 … net debt of $99B")
-# and would over-suppress. The [^$]*? tolerates a parenthetical breakdown
-# between the descriptor and the introducing "of $"; the trailing "\bof\s+$"
-# keeps it precise (value must be introduced by that obligations total).
-_OBLIGATIONS_PREFIX_RE = re.compile(
-    r"(?:contractual[- ]obligation"
-    r"|obligations?\s+(?:figure|total|table|schedule))"
-    r"[^$]*?\bof\s+$",
+# legitimate net-debt positions ("$5B maturing in 2026 … net debt of $99B").
+# The phrase need only appear in the prefix window; a parenthetical restatement
+# ("figure (...) of $13,213,574 thousand ($13.21B)") separates it from the
+# value by another $ figure, so an "of $"-anchored form would miss it.
+_OBLIGATIONS_PHRASE_RE = re.compile(
+    r"contractual[- ]obligation"
+    r"|obligations?\s+(?:figure|total|table|schedule)",
+    re.IGNORECASE,
+)
+# Protects a genuine net-debt position that happens to sit after an
+# obligations phrase: when "net debt/cash" is the value's IMMEDIATE antecedent
+# ("… net debt of $20B"), the value is a position and must still be validated.
+_NET_POSITION_IMMEDIATE_RE = re.compile(
+    r"net\s+(?:debt|cash)\b[^$]{0,18}$",
     re.IGNORECASE,
 )
 
@@ -180,8 +186,11 @@ def _is_non_position_descriptor(match_text: str, value_raw: str) -> bool:
     tail = match_text[pos + len(value_raw):]
     if _FUNDING_GAP_TAIL_RE.search(tail):
         return True
-    prefix = match_text[max(0, pos - 120): pos]
-    return bool(_OBLIGATIONS_PREFIX_RE.search(prefix))
+    prefix = match_text[max(0, pos - 160): pos]
+    return bool(
+        _OBLIGATIONS_PHRASE_RE.search(prefix)
+        and not _NET_POSITION_IMMEDIATE_RE.search(prefix)
+    )
 
 
 def _context_window(match_text: str, value_raw: str) -> str:
