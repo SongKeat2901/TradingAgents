@@ -157,6 +157,20 @@ _PREPOSITIONAL_DELTA = re.compile(
 )
 
 
+# Phase 7.1 v4 (GOOGL 2026-07-17 fix): when a date is IMMEDIATELY preceded by
+# its own close — "closed at $370.92 on 2026-07-15" — that date's close is
+# stated to its LEFT, so binding it to the NEXT (rightward) close is a cross-
+# pairing. The real GOOGL prose ("closed at $370.92 on 2026-07-15 — … — then …
+# close at $354.46 on 2026-07-16") is correct; the extractor paired 07-15 with
+# the 07-16 close $354.46 and falsely flagged. Skip a date whose close-on-left
+# form precedes it.
+_CLOSE_ON_LEFT_OF_DATE = re.compile(
+    r"clos(?:e|ed|es|ing)\s+(?:at\s+|was\s+|near\s+|to\s+)?"
+    r"\$[\d,]+(?:\.\d+)?\s+(?:on|as\s+of)\s+$",
+    re.IGNORECASE,
+)
+
+
 def extract_date_close_claims(text: str, anchor_year: int = 2026) -> list[DateCloseClaim]:
     """Scan markdown text for `<DATE> ... close $X.XX` patterns.
 
@@ -196,6 +210,13 @@ def extract_date_close_claims(text: str, anchor_year: int = 2026) -> list[DateCl
             # ("three consecutive closes at $5.82–$5.89") — is not a single
             # date's close. The range/list endpoint must not be bound to a date.
             if re.match(r"\s*(?:[–—/]|-\s*\$|to)\s*\$?\d", tail):
+                continue
+
+            # Phase 7.1 v4: skip a date whose own close is stated immediately
+            # to its LEFT ("closed at $X on <date>") — its close is not the
+            # rightward one this pattern is about to bind.
+            date_start = m.start("date")
+            if _CLOSE_ON_LEFT_OF_DATE.search(text[max(0, date_start - 45):date_start]):
                 continue
 
             date_raw = m.group("date")

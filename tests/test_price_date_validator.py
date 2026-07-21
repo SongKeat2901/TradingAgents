@@ -298,3 +298,30 @@ def test_full_pipeline_against_coin_decision_excerpt(tmp_path):
         f"validator must catch the COIN 2026-05-08 $206.50 fabrication; "
         f"got violations: {violations}"
     )
+
+
+def test_wk29_skips_googl_close_stated_to_left_of_date():
+    """GOOGL 2026-07-17: 'closed at $370.92 on 2026-07-15 — … — then … close at
+    $354.46 on 2026-07-16'. The extractor cross-paired 2026-07-15 with $354.46
+    (the 07-16 close). 07-15's own close ($370.92) is stated to its LEFT, so a
+    rightward pairing is wrong and must not extract."""
+    from tradingagents.validators import extract_date_close_claims
+    text = ("GOOGL closed at $370.92 on 2026-07-15 — effectively pinned on top of "
+            "the 50-DMA — then gapped through it to close at $354.46 on 2026-07-16 "
+            "on volume.")
+    claims = extract_date_close_claims(text)
+    assert not any(c.date_iso == "2026-07-15" and abs(c.price - 354.46) < 0.01
+                   for c in claims), (
+        f"07-15 must not be cross-paired with the 07-16 close $354.46; got "
+        f"{[(c.date_iso, c.price) for c in claims]}"
+    )
+
+
+def test_wk29_close_left_guard_still_extracts_real_date_before_close():
+    """Defense: a genuine 'on <date> ... close $X' (date before close, no close
+    to the left) is still extracted for verification."""
+    from tradingagents.validators import extract_date_close_claims
+    text = "On 2026-07-15 the stock printed a fresh high and close $999.00."
+    claims = extract_date_close_claims(text)
+    assert any(c.date_iso == "2026-07-15" and abs(c.price - 999.0) < 0.01
+               for c in claims), "a real date-before-close claim must still extract"
