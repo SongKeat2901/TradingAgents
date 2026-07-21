@@ -40,6 +40,10 @@ from tradingagents.validators.net_debt_validator import (
     extract_net_debt_claims,
     validate_net_debt_claims,
 )
+from tradingagents.validators.price_history_validator import (
+    PriceHistoryViolation,
+    validate_price_history,
+)
 
 __all__ = [
     "DateCloseClaim",
@@ -56,4 +60,6 @@ __all__ = [
     "NetDebtViolation",
     "extract_net_debt_claims",
     "validate_net_debt_claims",
+    "PriceHistoryViolation",
+    "validate_price_history",
 ]

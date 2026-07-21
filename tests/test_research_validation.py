@@ -12,10 +12,17 @@ def _setup_clean_run(tmp_path):
     rd = tmp_path / "run"
     raw = rd / "raw"
     raw.mkdir(parents=True)
+    # >= the price-history floor (20 bars): 18 padding sessions in April,
+    # then the two canonical May rows the price-date tests reference.
+    _pad = "".join(
+        f"2026-04-{d:02d},190.0,192.0,188.0,191.0,5000000,0.0,0.0\n"
+        for d in range(1, 19)
+    )
     (raw / "prices.json").write_text(json.dumps({
         "ohlcv": (
             "Date,Open,High,Low,Close,Volume,Dividends,Stock Splits\n"
-            "2026-05-06,195.78,198.5,193.25,197.96,7764900,0.0,0.0\n"
+            + _pad
+            + "2026-05-06,195.78,198.5,193.25,197.96,7764900,0.0,0.0\n"
             "2026-05-07,196.24,198.15,190.32,192.96,8641932,0.0,0.0\n"
         )
     }), encoding="utf-8")

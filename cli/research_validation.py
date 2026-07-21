@@ -81,6 +81,7 @@ def _collect_violations(
         validate_date_close_claims,
         validate_net_debt_claims,
         validate_peer_metrics,
+        validate_price_history,
     )
     from tradingagents.validators.claim_extractor import DateCloseClaim
     from tradingagents.validators.net_debt_validator import NetDebtClaim
@@ -171,9 +172,15 @@ def _collect_violations(
     else:
         scenario_violations = []
 
+    # Phase 7.6 (wk29): price-history sufficiency — a fetch stub (renamed/
+    # delisted ticker) yields degenerate MAs + setup class that no other
+    # validator catches because raw/ itself is the corruption.
+    price_history_violations = validate_price_history(prices_json, ticker=main_ticker)
+
     return {
         "run_dir": rd,
         "files_scanned": files_present,
+        "price_history_violations": price_history_violations,
         "price_date_claims": price_date_claims,
         "quote_claims": quote_claims,
         "net_debt_claims": net_debt_claims,
@@ -217,6 +224,7 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
         + sum(1 for v in raw["net_debt_violations"] if _is_blocking(v))
         + sum(1 for v in raw["scenario_violations"] if _is_blocking(v))
         + sum(1 for v in raw["filing_attribution_violations"] if _is_blocking(v))
+        + sum(1 for v in raw["price_history_violations"] if _is_blocking(v))
     )
 
     return {
@@ -254,6 +262,9 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
         "phase_9_filing_attribution": {
             "violations": [_ser(v) for v in raw["filing_attribution_violations"]],
         },
+        "phase_7_6_price_history": {
+            "violations": [_ser(v) for v in raw["price_history_violations"]],
+        },
         "total_violations": (
             len(raw["price_date_violations"])
             + len(raw["quote_violations"])
@@ -261,6 +272,7 @@ def run_phase_7_validators(run_dir: str | Path, anchor_year: int = 2026) -> dict
             + len(raw["net_debt_violations"])
             + len(raw["scenario_violations"])
             + len(raw["filing_attribution_violations"])
+            + len(raw["price_history_violations"])
         ),
         "blocking_violations": blocking_total,
     }
