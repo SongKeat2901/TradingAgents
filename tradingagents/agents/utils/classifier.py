@@ -24,6 +24,11 @@ import statistics
 from typing import Any
 
 
+# A pullback deeper than this (percent below the 50-DMA) is EXTENDED rather
+# than UPTREND, even when spot is still above the 200-DMA in bull alignment.
+_EXTENDED_GAP_50_PCT = 10.0
+
+
 _INDETERMINATE = {
     "setup_class": "INDETERMINATE",
     "gap_to_50dma_pct": None,
@@ -144,6 +149,13 @@ def _compute_asymmetry(
     elif setup_class == "UPTREND":
         upside = max(recent_30_high, spot_200dma * 1.05)
         downside = spot_50dma
+    elif setup_class == "EXTENDED":
+        # Between the MAs: reclaiming the 50-DMA is the upside, the 200-DMA
+        # is the support that still has to hold.
+        upside, downside = spot_50dma, spot_200dma
+    elif setup_class == "ROLLOVER":
+        # Below both MAs; the 200-DMA is the nearest overhead reclaim.
+        upside, downside = spot_200dma, ytd_low
     elif setup_class == "BREAKOUT":
         upside = recent_30_high * 1.08
         downside = spot_50dma
@@ -241,6 +253,10 @@ def compute_classification(reference: dict, ohlcv_csv: str, history_window: int 
         setup = "CONSOLIDATION"
         rationale = f"Spot near both MAs (gap-50: {gap_50:+.1f}%, gap-200: {gap_200:+.1f}%); 10-day range tight (< 1.5× ATR-14)."
         vol_signal = "below_average"
+    elif spot > ma200 and bull_aligned and gap_50 <= -_EXTENDED_GAP_50_PCT:
+        setup = "EXTENDED"
+        rationale = f"Spot {abs(gap_50):.1f}% below 50-DMA but still {abs(gap_200):.1f}% above 200-DMA with bull MA alignment; extended pullback, not a healthy uptrend."
+        vol_signal = "normal"
     elif spot > ma200 and bull_aligned:
         setup = "UPTREND"
         rationale = f"Spot {abs(gap_200):.1f}% above 200-DMA with bull MA alignment (50-DMA above 200-DMA)."
@@ -248,6 +264,10 @@ def compute_classification(reference: dict, ohlcv_csv: str, history_window: int 
     elif spot < ma200 and bear_aligned:
         setup = "DOWNTREND"
         rationale = f"Spot {abs(gap_200):.1f}% below 200-DMA with bear MA alignment (50-DMA below 200-DMA); no breakdown/capitulation trigger."
+        vol_signal = "normal"
+    elif spot < ma50 and spot < ma200 and bull_aligned:
+        setup = "ROLLOVER"
+        rationale = f"Spot below both MAs (gap-50: {gap_50:+.1f}%, gap-200: {gap_200:+.1f}%) while 50-DMA is still above 200-DMA; breakdown ahead of a death cross."
         vol_signal = "normal"
     else:
         return dict(_INDETERMINATE) | {"rationale": "No rule matched; spot/MA configuration is ambiguous."}

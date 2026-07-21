@@ -281,3 +281,101 @@ def test_classification_keys_present_even_when_no_volume_profile():
     assert "broken_level" in out
     assert "broken_level_type" in out
     assert "volume_confirmed" in out
+
+
+# --- wk30 cadence findings: two uncovered spot/MA configurations -------------
+# Both surfaced on the 2026-07-17 batch. See the audit in
+# docs/superpowers/specs/ — ECHO/MARA/RKLB fell through every rule to
+# INDETERMINATE, and 8 tickers well below their 50-DMA were labelled UPTREND.
+
+
+def test_rollover_below_both_mas_before_death_cross():
+    """ROLLOVER: spot below both MAs while 50-DMA is still above the 200-DMA.
+
+    The pre-death-cross breakdown. Real case: ECHO on 2026-07-17 (spot 92.00,
+    50-DMA 114.79, 200-DMA 105.12) previously returned INDETERMINATE because
+    DOWNTREND additionally required bear alignment.
+    """
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    rows = _flat_history(spot=92.0, days=100)
+    ref = _ref(
+        reference_price=92.0,
+        spot_50dma=114.79,
+        spot_200dma=105.12,
+        ytd_high=147.25,
+        ytd_low=89.15,
+        atr_14=5.9,
+    )
+    out = compute_classification(ref, _ohlcv(rows))
+    assert out["setup_class"] == "ROLLOVER"
+    assert out["gap_to_50dma_pct"] == pytest.approx(-19.85, abs=0.1)
+    assert out["gap_to_200dma_pct"] == pytest.approx(-12.48, abs=0.1)
+    assert out["ma_alignment"] == "bullish_aligned"
+    # asymmetry must be populated, not null
+    assert out["upside_target"] == pytest.approx(105.12, abs=0.01)
+    assert out["downside_target"] == pytest.approx(89.15, abs=0.01)
+    assert out["reward_risk_ratio"] is not None
+
+
+def test_extended_pullback_far_below_50dma_is_not_uptrend():
+    """EXTENDED: above the 200-DMA with bull alignment, but far below the 50-DMA.
+
+    Real case: AAOI on 2026-07-17 (spot 102.40, 50-DMA 159.80, 200-DMA 86.60)
+    was labelled UPTREND while sitting 35.9% below its 50-DMA, because the
+    UPTREND rule never consulted the 50-DMA.
+    """
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    rows = _flat_history(spot=102.40, days=100)
+    ref = _ref(
+        reference_price=102.40,
+        spot_50dma=159.80,
+        spot_200dma=86.60,
+        ytd_high=180.0,
+        ytd_low=80.0,
+        atr_14=6.0,
+    )
+    out = compute_classification(ref, _ohlcv(rows))
+    assert out["setup_class"] == "EXTENDED"
+    assert out["gap_to_50dma_pct"] == pytest.approx(-35.92, abs=0.1)
+    # reclaiming the 50-DMA is the upside; the 200-DMA is the support below
+    assert out["upside_target"] == pytest.approx(159.80, abs=0.01)
+    assert out["downside_target"] == pytest.approx(86.60, abs=0.01)
+
+
+def test_healthy_uptrend_near_50dma_still_classifies_as_uptrend():
+    """Regression guard: a genuine uptrend must not be reclassified as EXTENDED.
+
+    Real case: AAPL on 2026-07-17 (spot 333.70, 50-DMA 302.60, 200-DMA 273.90).
+    """
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    rows = _flat_history(spot=333.70, days=100)
+    ref = _ref(
+        reference_price=333.70,
+        spot_50dma=302.60,
+        spot_200dma=273.90,
+        ytd_high=350.0,
+        ytd_low=240.0,
+        atr_14=6.0,
+    )
+    out = compute_classification(ref, _ohlcv(rows))
+    assert out["setup_class"] == "UPTREND"
+
+
+def test_extended_threshold_boundary_at_10pct_below_50dma():
+    """The UPTREND/EXTENDED split sits at 10% below the 50-DMA."""
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    ma50, ma200 = 100.0, 80.0
+    # 9% below the 50-DMA — still a pullback within the uptrend
+    out_shallow = compute_classification(
+        _ref(91.0, ma50, ma200, 120.0, 70.0, 3.0), _ohlcv(_flat_history(spot=91.0, days=100)),
+    )
+    assert out_shallow["setup_class"] == "UPTREND"
+    # 11% below — extended
+    out_deep = compute_classification(
+        _ref(89.0, ma50, ma200, 120.0, 70.0, 3.0), _ohlcv(_flat_history(spot=89.0, days=100)),
+    )
+    assert out_deep["setup_class"] == "EXTENDED"
