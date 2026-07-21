@@ -1113,3 +1113,33 @@ def test_phase_9_2_known_gap_slash_listing_consumed(tmp_path):
         "GOOGL 27.51x TTM valuation / op margin 99.9% per raw/peer_ratios.json.",
         "analyst_fundamentals.md", pr, pe, main_ticker="ORCL")
     assert not any(v.claimed_value == "99.9%" for v in violations)
+
+
+def test_wk29_skips_mara_negative_ebitda_sign_annotation(tmp_path):
+    """MARA 2026-07-17: '... n/m — TTM EBITDA -$745.1M ≤ 0 ...' — the value is
+    a sign-condition annotation explaining why a ND/EBITDA ratio is n/m, not a
+    precise peer figure. It bound to RIOT (actual −$326.7M) and falsely flagged."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_peer_data(tmp_path)
+    text = ("| Net debt / EBITDA | (n/m) | 24.22x | (n/m) | n/m — RIOT TTM EBITDA "
+            "-$745.1M ≤ 0 (only CIFR has positive TTM EBITDA, $166M) |")
+    v = validate_peer_metrics(text, "analyst_fundamentals.md",
+                              raw / "peer_ratios.json", raw / "peers.json",
+                              main_ticker="MARA")
+    assert not any("745" in x.claimed_value for x in v), (
+        f"'≤ 0' sign annotation must not be flagged as a peer metric; got "
+        f"{[(x.ticker, x.metric, x.claimed_value) for x in v]}"
+    )
+
+
+def test_wk29_sign_annotation_guard_still_flags_real_wrong_ebitda(tmp_path):
+    """Defense: a wrong RIOT EBITDA NOT characterized as ≤0 still flags."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_peer_data(tmp_path)
+    text = "RIOT TTM EBITDA -$745.1M per raw/peer_ratios.json."
+    v = validate_peer_metrics(text, "analyst_fundamentals.md",
+                              raw / "peer_ratios.json", raw / "peers.json",
+                              main_ticker="MARA")
+    assert any("745" in x.claimed_value for x in v), (
+        "a wrong RIOT TTM EBITDA (not a ≤0 annotation) must still flag"
+    )

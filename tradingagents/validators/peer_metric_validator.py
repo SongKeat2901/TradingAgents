@@ -549,6 +549,18 @@ def validate_peer_metrics(
             continue
         seen_keys.add(key)
 
+        # wk29 (MARA 2026-07-17): a value characterized as a SIGN condition —
+        # "TTM EBITDA -$745.1M ≤ 0" — is a not-meaningful annotation explaining
+        # why a ND/EBITDA ratio is n/m, not a precise peer figure to verify. It
+        # bound to a nearby peer ticker (RIOT) and falsely flagged. Skip when
+        # the value is immediately followed by a ≤0 / <0 / ≥0 / >0 comparator.
+        _pos = match_text.find(value_raw)
+        if _pos >= 0 and re.match(
+            r"\s*(?:≤|≥|<|>|<=|>=)\s*0(?!\.[1-9])",
+            match_text[_pos + len(value_raw):],
+        ):
+            continue
+
         # Skip if the metric name doesn't roughly match a known schema —
         # avoids flagging benign prose like "RIOT spent capex ~12% of revenue"
         # when the metric phrasing is too vague to bind reliably.
