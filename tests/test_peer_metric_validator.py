@@ -1143,3 +1143,65 @@ def test_wk29_sign_annotation_guard_still_flags_real_wrong_ebitda(tmp_path):
     assert any("745" in x.claimed_value for x in v), (
         "a wrong RIOT TTM EBITDA (not a ≤0 annotation) must still flag"
     )
+
+
+def _write_googl_peer_data(tmp_path):
+    """Real GOOGL wk30 peer ratios from the 2026-07-23 run."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    peer_ratios = {
+        "trade_date": "2026-07-23",
+        "_unavailable": [],
+        "META": {"net_debt": 35_322_000_000, "ttm_ebitda": 109_308_002_304,
+                 "nd_ebitda": 0.32, "latest_quarter_op_margin": 40.6},
+        "MSFT": {"net_debt": 8_157_000_000, "ttm_ebitda": 184_457_003_008,
+                 "nd_ebitda": 0.04, "latest_quarter_op_margin": 46.3},
+        "AMZN": {"net_debt": 17_258_000_000, "ttm_ebitda": 155_860_992_000,
+                 "nd_ebitda": 0.11, "latest_quarter_op_margin": 13.1},
+    }
+    peers = {"META": {"ticker": "META"}, "MSFT": {"ticker": "MSFT"},
+             "AMZN": {"ticker": "AMZN"}}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+    return raw
+
+
+def test_wk30_respectively_list_binds_values_positionally_googl(tmp_path):
+    """wk30 (GOOGL 2026-07-23) FP: an N-ticker/N-value list closed by
+    'respectively' maps positionally, but the nearest-ticker binder gave
+    AMZN (last named) the FIRST value 0.32x and flagged it against its
+    actual 0.11. All three cited values are correct. Verbatim match_text."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_googl_peer_data(tmp_path)
+    text = (
+        "Peer net debt (pm_brief peer-ratios table, verbatim): **META's net debt "
+        "of $35.32B**, **MSFT's net debt of $8.16B**, **AMZN's net debt of "
+        "$17.26B**. All three peers carry small, investment-grade-scale net debt "
+        "loads relative to their EBITDA (ND/EBITDA 0.32x, 0.04x, and 0.11x "
+        "respectively)."
+    )
+    v = validate_peer_metrics(text, "analyst_fundamentals.md",
+                              raw / "peer_ratios.json", raw / "peers.json",
+                              main_ticker="GOOGL")
+    assert v == [], (
+        "a 'respectively' list whose values are all correct must not flag; got "
+        f"{[(x.ticker, x.metric, x.claimed_value, x.actual_value) for x in v]}"
+    )
+
+
+def test_wk30_respectively_list_still_flags_a_wrong_value(tmp_path):
+    """Defense against over-suppression: with MSFT's slot wrong (0.99x vs
+    actual 0.04), the guard must still flag it — and attribute it to MSFT,
+    not to whichever ticker happens to be nearest."""
+    from tradingagents.validators import validate_peer_metrics
+    raw = _write_googl_peer_data(tmp_path)
+    text = (
+        "All three peers carry small net debt loads relative to their EBITDA: "
+        "META, MSFT, and AMZN show ND/EBITDA 0.32x, 0.99x, and 0.11x respectively."
+    )
+    v = validate_peer_metrics(text, "analyst_fundamentals.md",
+                              raw / "peer_ratios.json", raw / "peers.json",
+                              main_ticker="GOOGL")
+    assert len(v) == 1, f"expected exactly 1 violation, got {[(x.ticker, x.claimed_value) for x in v]}"
+    assert v[0].ticker == "MSFT", f"must attribute to MSFT, got {v[0].ticker}"
+    assert "0.99" in v[0].claimed_value

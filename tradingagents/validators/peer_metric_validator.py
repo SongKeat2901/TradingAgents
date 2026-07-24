@@ -94,6 +94,34 @@ def _discloses_fx_conversion(text: str | None) -> bool:
     issuer-currency peer_ratios.json cell)."""
     return bool(text) and bool(_FX_CONVERSION_RE.search(text))
 
+
+# wk30 (GOOGL 2026-07-23): a value run continued by `, X, and Y` and closed
+# by "respectively" — the list maps positionally onto the tickers named
+# before it, NOT onto the nearest one.
+_RESP_VALUE_RE = re.compile(
+    r"\s*(?:,|,?\s*and)\s*([~≈]?[-−]?\$?[\d.,]+\s*[%x×BM]?)"
+)
+_RESP_TAIL_RE = re.compile(r"[\s,]*respectively\b", re.IGNORECASE)
+
+
+def _respectively_continuation(
+    text: str, pos: int
+) -> list[tuple[str, int, int]] | None:
+    """From `pos` (just past a matched value), consume a `, X, and Y` run of
+    further values. Return their (value, start, end) spans iff the run is
+    closed by "respectively"; None when the construct isn't present."""
+    spans: list[tuple[str, int, int]] = []
+    p = pos
+    while True:
+        m = _RESP_VALUE_RE.match(text, p)
+        if not m:
+            break
+        spans.append((m.group(1).strip(), m.start(1), m.end(1)))
+        p = m.end()
+    if not spans or not _RESP_TAIL_RE.match(text, p):
+        return None
+    return spans
+
 # Metrics that are NOT in peer_ratios.json — citing them as if they were
 # is a fabricated source attribution.
 _NON_VERIFIABLE_METRICS = {
@@ -359,6 +387,40 @@ def iter_peer_metric_spans(
         ticker_matches = list(ticker_re.finditer(lookback_text))
         if not ticker_matches:
             continue
+
+        # wk30 (GOOGL 2026-07-23 fix): "respectively" positional list.
+        # "META, MSFT, and AMZN show ND/EBITDA 0.32x, 0.04x, and 0.11x
+        # respectively" — the value run maps positionally onto the tickers
+        # named before it, NOT onto the nearest one. The nearest-ticker
+        # binder gave AMZN (last named) the FIRST value 0.32x and flagged it
+        # against AMZN's actual 0.11. When the matched value is continued by
+        # a `, X, and Y` run closed by "respectively", and the distinct
+        # tickers in lookback number exactly the values, emit one claim per
+        # positional (ticker, value) pair and skip the single-binding path.
+        cont = _respectively_continuation(text, mv.end("value"))
+        if cont is not None:
+            values = [
+                (mv.group("value"), mv.start("value"), mv.end("value"))
+            ] + cont
+            ordered: list[str] = []
+            for t in ticker_matches:
+                tu = t.group("t").upper()
+                if tu not in ordered:
+                    ordered.append(tu)
+            if len(ordered) == len(values):
+                base_line = _line_no(text, mv.start())
+                _ls = text.rfind("\n", 0, mv.start()) + 1
+                _le = text.find("\n", mv.end())
+                if _le == -1:
+                    _le = len(text)
+                match_text = text[_ls:_le].strip()
+                for tk, (val, vs, ve) in zip(ordered, values):
+                    if main_upper and tk == main_upper:
+                        continue  # subject figures validated by 6.4 blocks
+                    results.append((
+                        tk, mv.group("metric"), val, base_line, match_text, vs, ve,
+                    ))
+                continue
 
         # Phase 9.2 (ORCL 2026-07-01 fix): consumed-comparator guard.
         # A ticker mention immediately followed by its OWN inline value —
