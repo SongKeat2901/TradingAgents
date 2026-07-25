@@ -376,7 +376,22 @@ RELEASE_EXCERPT_KEYWORDS = (
     "chief financial officer",
     "remaining performance obligation",
     "financing",
+    # wk30 (GOOGL 2026-07-23): the OI&E note disclosing that a non-cash gain
+    # on equity securities inflated headline EPS (GOOGL: $6.26 of the $9.11
+    # was the equity-securities mark) sits near the END of a table-heavy
+    # release — past the content truncation cut. Without a keyword it was
+    # surfaced by NO layer and the "beat" read as real, masking a slight
+    # operating MISS. "per common share by" lands the EPS-impact sentence;
+    # placed BEFORE "capital expenditure" so its excerpt window claims the
+    # OI&E→free-cash-flow region first (one window spans the equity-gain
+    # note AND the FCF reconciliation, incl. GOOGL's −$5,855M FCF), rather
+    # than being deduped by the capex window that starts just past $6.26.
+    "per common share by",
     "capital expenditure",
+    # General OI&E equity-mark signal (any issuer carrying big equity stakes);
+    # complements the specific EPS-impact phrase above. BEFORE the greedy
+    # "expect" catch-all so the shared char budget can't starve it.
+    "equity securities",
     "expect",  # expects / expected to grow / expectations
 )
 

@@ -403,3 +403,57 @@ def test_researcher_release_fetch_raising_is_fail_open(tmp_path, monkeypatch):
     brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
     assert "## Latest earnings release (SEC 8-K Ex-99.1) — unavailable" in brief
     assert "edgar exploded" in brief
+
+
+# ---------- wk30 (GOOGL 2026-07-23): EPS-quality bridge past the 18k cut ----
+
+def _googl_q2_release_text():
+    from pathlib import Path
+    return (Path(__file__).parent / "fixtures"
+            / "googl_q2_2026_release_ex991.txt").read_text(encoding="utf-8")
+
+
+def test_wk30_googl_eps_bridge_surfaced_past_truncation():
+    """GOOGL Q2-2026: $6.26 of the $9.11 EPS was a non-cash equity-securities
+    gain. That OI&E disclosure sits at char ~20004 — past the 18k content cut —
+    and no release keyword covered it, so NO layer flagged the EPS mirage.
+    The excerpt mechanism (full-text, pre-truncation) must surface it."""
+    from tradingagents.agents.utils.sec_edgar import (
+        extract_keyword_excerpts, RELEASE_EXCERPT_KEYWORDS)
+    text = _googl_q2_release_text()
+    # precondition: the bridge really is beyond the default content cut
+    assert text.find("6.26") > 18_000
+    exc = extract_keyword_excerpts(
+        text, RELEASE_EXCERPT_KEYWORDS,
+        before=800, after=1400, max_per_keyword=3, min_gap=1500,
+        max_total_chars=14_000,
+    )
+    joined = "\n".join(e["text"] for e in exc)
+    assert "equity securities" in joined.lower(), "equity-gain note not surfaced"
+    assert "6.26" in joined, "the $6.26 EPS-bridge figure must be in an excerpt"
+
+
+def test_wk30_googl_fcf_reconciliation_still_surfaced():
+    """Regression: the negative-FCF story (−$5,855M) must stay captured — it was
+    already surfaced via 'capital expenditure' and the fix must not starve it."""
+    from tradingagents.agents.utils.sec_edgar import (
+        extract_keyword_excerpts, RELEASE_EXCERPT_KEYWORDS)
+    text = _googl_q2_release_text()
+    exc = extract_keyword_excerpts(
+        text, RELEASE_EXCERPT_KEYWORDS,
+        before=800, after=1400, max_per_keyword=3, min_gap=1500,
+        max_total_chars=14_000,
+    )
+    joined = "\n".join(e["text"] for e in exc)
+    assert "free cash flow" in joined.lower()
+    assert "5,855" in joined
+
+
+def test_wk30_equity_securities_keyword_present_and_before_expect():
+    """The new keyword must sit BEFORE the greedy 'expect' catch-all so the
+    shared char budget doesn't starve it (same ordering contract as the
+    officer-quote keywords)."""
+    from tradingagents.agents.utils.sec_edgar import RELEASE_EXCERPT_KEYWORDS
+    order = list(RELEASE_EXCERPT_KEYWORDS)
+    assert "equity securities" in order
+    assert order.index("equity securities") < order.index("expect")
