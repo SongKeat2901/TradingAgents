@@ -138,17 +138,19 @@ def compute_net_debt(financials_data: dict[str, Any]) -> dict[str, Any]:
 
     net_debt_yf = _col0(rows, _NET_DEBT_ROW)
 
-    # If yfinance didn't compute Net Debt for this ticker, fall back to
-    # Total Debt − (Cash + STI). Surface the source so the LLM can cite
-    # appropriately.
+    # Headline = comprehensive Total Debt − (Cash + STI). yfinance's own Net
+    # Debt row mixes definitions (ex-lease debt minus cash-only: MSFT wk31
+    # printed "Net Debt $19.36B" while the comprehensive position was net CASH
+    # $19.83B), so it is only a fallback when the cash cells are missing; the
+    # row is preserved separately for disclosure.
     net_debt: float | None
     net_debt_source: str | None
-    if net_debt_yf is not None:
-        net_debt = net_debt_yf
-        net_debt_source = "yfinance"
-    elif total_debt is not None and cash_plus_sti is not None:
+    if total_debt is not None and cash_plus_sti is not None:
         net_debt = total_debt - cash_plus_sti
         net_debt_source = "computed"
+    elif net_debt_yf is not None:
+        net_debt = net_debt_yf
+        net_debt_source = "yfinance"
     else:
         net_debt = None
         net_debt_source = None
@@ -166,6 +168,7 @@ def compute_net_debt(financials_data: dict[str, Any]) -> dict[str, Any]:
         "financial_currency": fin_ccy,
         "net_debt": net_debt,
         "net_debt_source": net_debt_source,
+        "net_debt_yfinance_row": net_debt_yf,
         "total_debt": total_debt,
         "long_term_debt": _col0(rows, _LT_DEBT_ROW),
         "current_debt": _col0(rows, _CURRENT_DEBT_ROW),
@@ -237,7 +240,9 @@ def format_net_debt_block(net_debt: dict[str, Any]) -> str:
     # cell table — render as "Net Cash" with the positive magnitude when
     # the underlying value is negative, so the table reads coherently
     # rather than `Net Debt | $-4.08B`.
-    yf_nd = net_debt.get("net_debt") if net_debt.get("net_debt_source") == "yfinance" else None
+    yf_nd = net_debt.get("net_debt_yfinance_row")
+    if yf_nd is None and net_debt.get("net_debt_source") == "yfinance":
+        yf_nd = net_debt.get("net_debt")  # legacy dicts without the dedicated field
     if yf_nd is None:
         yf_label = "Net Debt (yfinance row)"
         yf_display = _fmt_b(None)

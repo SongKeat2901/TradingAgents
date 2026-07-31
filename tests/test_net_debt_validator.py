@@ -1514,3 +1514,32 @@ def test_wk29_skips_mu_financing_net_cash_negative_flow(tmp_path):
             f"financing net cash-negative $10.646B must not flag; got "
             f"{[v.claimed_value for v in viols]} in {text!r}"
         )
+
+
+def test_yfinance_row_still_accepted_when_headline_is_computed(tmp_path):
+    """New-style net_debt.json (headline = computed comprehensive, yfinance row
+    in net_debt_yfinance_row): a report citing the row's magnitude must not
+    flag — it is a traceable raw cell, not a fabricated figure."""
+    import json as _json
+    from tradingagents.validators import extract_net_debt_claims
+    from tradingagents.validators.net_debt_validator import validate_net_debt_claims
+
+    nd = {
+        "trade_date": "2026-07-30", "as_of_quarter": "2026-06-30",
+        "financial_currency": "USD",
+        "net_debt": -50_000_000_000.0, "net_debt_source": "computed",
+        "net_debt_yfinance_row": 4_200_000_000.0,
+        "total_debt": 10_000_000_000.0, "long_term_debt": 9_000_000_000.0,
+        "current_debt": 1_000_000_000.0, "capital_lease_obligations": 2_000_000_000.0,
+        "cash_and_equivalents": 2_000_000_000.0,
+        "cash_plus_short_term_investments": 60_000_000_000.0,
+        "unavailable": False,
+    }
+    p = tmp_path / "net_debt.json"; p.write_text(_json.dumps(nd))
+    text = "yfinance's Net Debt row shows net debt of $4.20B for the quarter."
+    claims = [type(c)(**{**c.__dict__, "file": "decision.md"})
+              for c in extract_net_debt_claims(text)]
+    assert claims, "fixture text must yield a net-debt claim"
+    v = validate_net_debt_claims(claims, p)
+    mats = [x for x in v if x.severity == "MATERIAL"]
+    assert mats == [], [(x.claimed_value, x.match_text) for x in mats]

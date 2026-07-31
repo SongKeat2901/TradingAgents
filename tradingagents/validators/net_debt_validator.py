@@ -605,7 +605,7 @@ def _build_canonical_derivations(net_debt: dict) -> list[tuple[str, float]]:
     cl = _f("capital_lease_obligations")
     cash = _f("cash_and_equivalents")
     cash_sti = _f("cash_plus_short_term_investments") or cash
-    nd_yf = _f("net_debt")
+    nd_yf = _f("net_debt_yfinance_row") or _f("net_debt")
 
     candidates: list[tuple[str, float]] = []
 

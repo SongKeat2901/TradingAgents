@@ -35,14 +35,17 @@ _APA_BS = (
 )
 
 
-def test_compute_net_debt_extracts_yfinance_row_when_present():
+def test_compute_net_debt_extracts_all_cells_and_preserves_yfinance_row():
     from tradingagents.agents.utils.net_debt import compute_net_debt
     out = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": _MSTR_BS})
 
     assert out["unavailable"] is False
     assert out["as_of_quarter"] == "2025-12-31"
-    assert out["net_debt"] == 5_888_685_000.0
-    assert out["net_debt_source"] == "yfinance"
+    # Headline is the comprehensive computation; the yfinance row (ex-lease
+    # debt minus cash-only definitions) is preserved as a separate cell.
+    assert out["net_debt"] == 8_236_290_000.0 - 2_301_470_000.0
+    assert out["net_debt_source"] == "computed"
+    assert out["net_debt_yfinance_row"] == 5_888_685_000.0
     assert out["total_debt"] == 8_236_290_000.0
     assert out["long_term_debt"] == 8_158_842_000.0
     assert out["current_debt"] == 31_313_000.0
@@ -131,8 +134,10 @@ def test_format_net_debt_block_renders_authoritative_cells_for_mstr():
     assert "trade_date 2026-05-06" in block
     assert "quarter ending 2025-12-31" in block
     # Authoritative Net Debt line — the single number to cite
-    assert "Authoritative Net Debt: $5.89B" in block
-    assert "source: yfinance" in block
+    assert "Authoritative Net Debt: $5.93B" in block
+    assert "source: computed" in block
+    # yfinance's own row stays visible in the cell table for disclosure
+    assert "| Net Debt (yfinance row) | $5.89B |" in block
     # Cells that anchored APA's fabricated math — Total Debt $4.59B and
     # similar must render verbatim.
     assert "$8.24B" in block  # MSTR Total Debt
@@ -151,7 +156,7 @@ def test_format_net_debt_block_renders_apa_cells_correctly():
     nd = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": _APA_BS})
     block = format_net_debt_block(nd)
 
-    assert "Authoritative Net Debt: $3.98B" in block
+    assert "Authoritative Net Debt: $4.07B" in block
     assert "$4.59B" in block  # Total Debt — the cell APA's report fabricated
     assert "$516M" in block  # Cash And Cash Equivalents (sub-1B → M scale)
     # Capital Lease Obligations — APA has $97M, must render as $97M
@@ -358,3 +363,55 @@ def test_format_net_debt_block_forbids_net_cash_re_derivation():
     assert "Authoritative Net Cash" in block
     assert "do NOT add long-term or non-current marketable securities" in block
     assert "do NOT subtract only long-term debt" in block
+
+
+def test_compute_net_debt_prefers_computed_comprehensive_over_yfinance_row():
+    """Headline net_debt = Total Debt − (Cash + STI) even when yfinance's Net
+    Debt row is present. The row mixes definitions (ex-lease debt minus
+    cash-only: MSFT wk31 printed "Net Debt $19.36B" while the comprehensive
+    position was net CASH $19.83B). The row is preserved separately in
+    net_debt_yfinance_row for disclosure."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt
+
+    out = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": _MSTR_BS})
+    assert out["net_debt"] == 8_236_290_000.0 - 2_301_470_000.0
+    assert out["net_debt_source"] == "computed"
+    assert out["net_debt_yfinance_row"] == 5_888_685_000.0
+
+
+def test_compute_net_debt_falls_back_to_yfinance_row_when_cash_missing():
+    """Without a Cash + STI cell the comprehensive figure can't be computed;
+    fall back to the yfinance Net Debt row."""
+    from tradingagents.agents.utils.net_debt import compute_net_debt
+
+    bs = (
+        ",2025-12-31\n"
+        "Net Debt,5888685000.0\n"
+        "Total Debt,8236290000.0\n"
+    )
+    out = compute_net_debt({"trade_date": "2026-05-06", "balance_sheet": bs})
+    assert out["unavailable"] is False
+    assert out["net_debt"] == 5_888_685_000.0
+    assert out["net_debt_source"] == "yfinance"
+
+
+def test_format_net_debt_block_shows_row_from_dedicated_field():
+    """The cell table's yfinance-row line must come from net_debt_yfinance_row
+    when the headline is computed — both figures stay visible."""
+    from tradingagents.agents.utils.net_debt import format_net_debt_block
+
+    nd = {
+        "trade_date": "2026-07-30", "as_of_quarter": "2026-06-30",
+        "net_debt": -19_825_000_000.0, "net_debt_source": "computed",
+        "net_debt_yfinance_row": 19_359_000_000.0,
+        "total_debt": 56_826_000_000.0, "long_term_debt": 31_067_000_000.0,
+        "current_debt": 9_227_000_000.0, "capital_lease_obligations": 16_532_000_000.0,
+        "cash_and_equivalents": 20_935_000_000.0,
+        "short_term_investments": None, "other_short_term_investments": 55_716_000_000.0,
+        "cash_plus_short_term_investments": 76_651_000_000.0,
+        "unavailable": False, "unavailable_reason": None,
+    }
+    block = format_net_debt_block(nd)
+    assert "Authoritative Net Cash: $19.8" in block
+    assert "source: computed" in block
+    assert "| Net Debt (yfinance row) | $19.36B |" in block

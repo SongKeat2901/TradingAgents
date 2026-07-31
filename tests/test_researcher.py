@@ -359,13 +359,14 @@ def test_researcher_writes_net_debt_json_and_appends_block(tmp_path, monkeypatch
     assert nd_path.exists()
     nd = json.loads(nd_path.read_text())
     assert nd["unavailable"] is False
-    assert nd["net_debt"] == 5_888_685_000.0
-    assert nd["net_debt_source"] == "yfinance"
+    assert nd["net_debt"] == 8_236_290_000.0 - 2_301_470_000.0
+    assert nd["net_debt_source"] == "computed"
+    assert nd["net_debt_yfinance_row"] == 5_888_685_000.0
     assert nd["total_debt"] == 8_236_290_000.0
 
     brief = (raw / "pm_brief.md").read_text(encoding="utf-8")
     assert "## Net debt" in brief
-    assert "Authoritative Net Debt: $5.89B" in brief
+    assert "Authoritative Net Debt: $5.93B" in brief
     assert "$8.24B" in brief  # Total Debt cell — verbatim
     # Net-debt block must follow the peer-ratios block.
     assert brief.rfind("## Net debt") > brief.rfind("## Peer ratios")
