@@ -156,6 +156,11 @@ def _compute_asymmetry(
     elif setup_class == "ROLLOVER":
         # Below both MAs; the 200-DMA is the nearest overhead reclaim.
         upside, downside = spot_200dma, ytd_low
+    elif setup_class == "RECLAIM":
+        # Above both MAs pre-golden-cross: the YTD high is the overhead
+        # objective; the reclaimed 200-DMA is the support that must hold.
+        upside = max(ytd_high, recent_30_high)
+        downside = spot_200dma
     elif setup_class == "BREAKOUT":
         upside = recent_30_high * 1.08
         downside = spot_50dma
@@ -176,7 +181,7 @@ def _compute_asymmetry(
 
 def compute_classification(reference: dict, ohlcv_csv: str, history_window: int = 90,
                            volume_profile: dict | None = None) -> dict[str, Any]:
-    """Apply the 6-class rule engine in priority order; return classification dict.
+    """Apply the setup-class rule engine in priority order; return classification dict.
 
     Required reference keys: reference_price, spot_50dma, spot_200dma,
     ytd_high, ytd_low, atr_14. If any is None, returns INDETERMINATE.
@@ -214,21 +219,26 @@ def compute_classification(reference: dict, ohlcv_csv: str, history_window: int 
     prev_close = rows[-2][4] if len(rows) >= 2 else last_close
     atr_multiples = _move_in_atr_multiples(last_close, prev_close, atr)
     big_move = atr_multiples > 1.5
+    down_move = last_close < prev_close
 
     broken_level: float | None = None
     broken_level_type: str | None = None
 
     # Rule priority (first match wins):
-    # CAPITULATION > BREAKDOWN > BREAKOUT > CONSOLIDATION > UPTREND > DOWNTREND
+    # CAPITULATION > BREAKDOWN > BREAKOUT > CONSOLIDATION > RECLAIM > EXTENDED
+    # > UPTREND > DOWNTREND > ROLLOVER
     #
     # CONSOLIDATION is checked before DOWNTREND so that tight-range near-MA
     # setups are not swallowed by the bear-alignment catch-all.
     # BREAKOUT is checked before CONSOLIDATION so a fresh golden-cross with
     # volume is not mislabelled as tight-range consolidation.
+    # CAPITULATION is down-moves only — a high-volume up-spike with bear MA
+    # alignment is a RECLAIM (above both MAs) or stays DOWNTREND (below the
+    # 200-DMA), never a selling climax.
 
-    if top_decile_vol and big_move and bear_aligned:
+    if top_decile_vol and big_move and bear_aligned and down_move:
         setup = "CAPITULATION"
-        rationale = f"Top-decile volume ({last_volume:.0f}) on a {atr_multiples:.1f}× ATR move; 50-DMA below 200-DMA (bear alignment)."
+        rationale = f"Top-decile volume ({last_volume:.0f}) on a {atr_multiples:.1f}× ATR down-move; 50-DMA below 200-DMA (bear alignment)."
         vol_signal = "capitulation"
     elif spot < ma50 and bear_aligned and gap_200 < -8.0 and last_volume > 1.5 * avg_50d_volume:
         setup = "BREAKDOWN"
@@ -253,6 +263,14 @@ def compute_classification(reference: dict, ohlcv_csv: str, history_window: int 
         setup = "CONSOLIDATION"
         rationale = f"Spot near both MAs (gap-50: {gap_50:+.1f}%, gap-200: {gap_200:+.1f}%); 10-day range tight (< 1.5× ATR-14)."
         vol_signal = "below_average"
+    elif spot > ma200 and bear_aligned:
+        setup = "RECLAIM"
+        if top_decile_vol and big_move:
+            rationale = f"Spot {abs(gap_200):.1f}% above 200-DMA on top-decile volume ({last_volume:.0f}) and a {atr_multiples:.1f}× ATR up-move while 50-DMA is still below 200-DMA; recovery ahead of a golden cross."
+            vol_signal = "reclaim_volume"
+        else:
+            rationale = f"Spot {abs(gap_200):.1f}% above 200-DMA while 50-DMA is still below 200-DMA; recovery ahead of a golden cross."
+            vol_signal = "normal"
     elif spot > ma200 and bull_aligned and gap_50 <= -_EXTENDED_GAP_50_PCT:
         setup = "EXTENDED"
         rationale = f"Spot {abs(gap_50):.1f}% below 50-DMA but still {abs(gap_200):.1f}% above 200-DMA with bull MA alignment; extended pullback, not a healthy uptrend."

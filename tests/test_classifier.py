@@ -379,3 +379,90 @@ def test_extended_threshold_boundary_at_10pct_below_50dma():
         _ref(89.0, ma50, ma200, 120.0, 70.0, 3.0), _ohlcv(_flat_history(spot=89.0, days=100)),
     )
     assert out_deep["setup_class"] == "EXTENDED"
+
+
+def test_capitulation_requires_a_down_move():
+    """A huge UP-day on top-decile volume must not print CAPITULATION.
+
+    MSFT 2026-07-30: +15.5% post-earnings gap through both MAs on 109M shares
+    was classified CAPITULATION because the ATR-multiple check is direction-blind.
+    """
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    rows = _flat_history(spot=390.0, days=100, vol=25_000_000)
+    rows[-1] = ("2026-05-01", 438.5, 458.7, 432.4, 451.1, 109_000_000)
+    ref = _ref(
+        reference_price=451.1,
+        spot_50dma=398.4,
+        spot_200dma=432.5,
+        ytd_high=487.5,
+        ytd_low=349.2,
+        atr_14=14.0,
+    )
+    out = compute_classification(ref, _ohlcv(rows))
+    assert out["setup_class"] != "CAPITULATION"
+
+
+def test_reclaim_above_both_mas_with_bear_alignment():
+    """RECLAIM: spot above BOTH MAs while 50-DMA is still below 200-DMA.
+
+    Mirror image of ROLLOVER — recovery ahead of a golden cross. Upside anchors
+    to the YTD high; the reclaimed 200-DMA is the support that must hold, so
+    reward/risk is computed from levels on the correct sides of spot.
+    """
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    rows = _flat_history(spot=390.0, days=100, vol=25_000_000)
+    rows[-1] = ("2026-05-01", 438.5, 458.7, 432.4, 451.1, 109_000_000)
+    ref = _ref(
+        reference_price=451.1,
+        spot_50dma=398.4,
+        spot_200dma=432.5,
+        ytd_high=487.5,
+        ytd_low=349.2,
+        atr_14=14.0,
+    )
+    out = compute_classification(ref, _ohlcv(rows))
+    assert out["setup_class"] == "RECLAIM"
+    assert out["recent_volume_signal"] == "reclaim_volume"
+    assert out["upside_target"] == 487.5
+    assert out["downside_target"] == 432.5
+    assert out["upside_pct"] > 0
+    assert out["reward_risk_ratio"] > 0
+
+
+def test_reclaim_is_a_configuration_not_a_volume_event():
+    """A quiet session above both MAs with bear alignment is still RECLAIM."""
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    rows = _flat_history(spot=451.1, days=100, vol=25_000_000)
+    ref = _ref(
+        reference_price=451.1,
+        spot_50dma=398.4,
+        spot_200dma=432.5,
+        ytd_high=487.5,
+        ytd_low=349.2,
+        atr_14=8.0,
+    )
+    out = compute_classification(ref, _ohlcv(rows))
+    assert out["setup_class"] == "RECLAIM"
+    assert out["recent_volume_signal"] == "normal"
+
+
+def test_up_spike_below_200dma_stays_downtrend():
+    """Defense: a big up-day that fails to reclaim the 200-DMA is DOWNTREND,
+    neither CAPITULATION (wrong direction) nor RECLAIM (200-DMA not cleared)."""
+    from tradingagents.agents.utils.classifier import compute_classification
+
+    rows = _flat_history(spot=390.0, days=100, vol=25_000_000)
+    rows[-1] = ("2026-05-01", 392.0, 421.0, 390.0, 420.0, 109_000_000)
+    ref = _ref(
+        reference_price=420.0,
+        spot_50dma=398.4,
+        spot_200dma=432.5,
+        ytd_high=487.5,
+        ytd_low=349.2,
+        atr_14=14.0,
+    )
+    out = compute_classification(ref, _ohlcv(rows))
+    assert out["setup_class"] == "DOWNTREND"
