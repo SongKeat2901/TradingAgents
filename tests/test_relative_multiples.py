@@ -72,3 +72,18 @@ def test_forward_pe_none_when_diluted_shares_missing():
     del fin["diluted_shares"]
     m = compute_relative_multiples(fin, market_cap=100e9, net_debt=8e9, peers=_PEERS, forward_eps=6.0)
     assert m["subject"]["p_e_fwd"] is None
+
+
+def test_p_fcf_prefers_ttm_quarterly_sum_over_info_blob():
+    """P/FCF must divide by the TTM quarterly FCF sum when the parser provides
+    it; the info-blob "Free Cash Flow" is Yahoo's levered figure and overstates
+    the multiple (MSFT wk31: 90.54x printed vs ~50x true)."""
+    fin = dict(_FIN, fcf_ttm=50e9)
+    m = compute_relative_multiples(fin, market_cap=100e9, net_debt=8e9, peers=_PEERS, forward_eps=6.0)
+    assert m["subject"]["p_fcf"] == 2.0
+
+
+def test_p_fcf_falls_back_to_info_blob_when_no_ttm():
+    fin = dict(_FIN, fcf_ttm=None)
+    m = compute_relative_multiples(fin, market_cap=100e9, net_debt=8e9, peers=_PEERS, forward_eps=6.0)
+    assert m["subject"]["p_fcf"] == round(100e9 / 9e9, 2)

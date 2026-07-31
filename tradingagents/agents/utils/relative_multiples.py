@@ -76,7 +76,7 @@ def compute_relative_multiples(
         "p_e_fwd": p_e_fwd,
         "p_b": _r(_div(market_cap, fin.get("total_equity"))),
         "p_s": _r(_div(market_cap, fin.get("revenue_ttm"))),
-        "p_fcf": _r(_div(market_cap, fin.get("fcf"))),
+        "p_fcf": _r(_div(market_cap, fin.get("fcf_ttm") if fin.get("fcf_ttm") is not None else fin.get("fcf"))),
     }
 
     peers = peers or {}

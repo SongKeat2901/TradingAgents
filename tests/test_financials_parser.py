@@ -167,3 +167,26 @@ def test_annual_series_absent_is_empty():
          "balance_sheet_annual": "", "income_statement_annual": "", "cashflow_annual": ""}
     a = parse_financials(b)["annual_series"]
     assert a["revenue"] == [] and a["fcf"] == []
+
+
+def test_fcf_ttm_from_quarterly_free_cash_flow_row():
+    """fcf_ttm sums the last 4 quarterly Free Cash Flow values — NOT the
+    info-blob "Free Cash Flow" (Yahoo's levered figure; for MSFT wk31 the blob
+    said $37B against a true TTM of $67B, printing P/FCF 90.54x instead of ~50x)."""
+    cf = (
+        "# Cash Flow\n\n"
+        ",2026-03-31,2025-12-31,2025-09-30,2025-06-30\n"
+        "Free Cash Flow,4000000000,3000000000,2000000000,1000000000\n"
+        "Operating Cash Flow,3000000000,2800000000,2600000000,2400000000\n"
+        "Capital Expenditure,-500000000,-500000000,-500000000,-500000000\n"
+    )
+    out = parse_financials(dict(_BUNDLE, cashflow=cf))
+    assert out["fcf_ttm"] == 10000000000.0
+    assert out["fcf"] == 9000000000.0  # info-blob value untouched
+
+
+def test_fcf_ttm_derived_from_ocf_and_capex_when_no_fcf_row():
+    """Without an explicit Free Cash Flow row, fcf_ttm = TTM OCF + TTM capex
+    (capex is negative in yfinance)."""
+    out = parse_financials(_BUNDLE)
+    assert out["fcf_ttm"] == 10800000000.0 - 2000000000.0

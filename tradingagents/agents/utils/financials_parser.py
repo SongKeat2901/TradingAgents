@@ -62,6 +62,19 @@ def _fcf_series(cf_rows: dict):
     return cfo or []
 
 
+def _fcf_ttm(cf_rows: dict):
+    """TTM free cash flow from the quarterly cash-flow statement: the explicit
+    Free Cash Flow row when present, else TTM OCF + TTM capex (capex negative)."""
+    fcf = _ttm(cf_rows, "Free Cash Flow")
+    if fcf is not None:
+        return fcf
+    cfo = _ttm(cf_rows, "Operating Cash Flow", "Cash Flow From Continuing Operating Activities")
+    capex = _ttm(cf_rows, "Capital Expenditure")
+    if cfo is not None and capex is not None:
+        return cfo + capex
+    return None
+
+
 def _avg2(rows: dict, *aliases: str):
     """Average of col0 and col1 (turnover average balance); col0 alone if only one; else None."""
     for a in aliases:
@@ -122,7 +135,12 @@ def parse_financials(financials: Any) -> dict[str, Any]:
         "ebit_ttm": _ttm(is_, "Operating Income", "EBIT"),
         "ebitda": fund.get("ebitda"),  # already TTM, from yfinance info
         "net_income": fund.get("net_income"),
+        # NOTE: "fcf" is the fundamentals-blob "Free Cash Flow" (Yahoo's levered
+        # figure — for MSFT wk31 it was $37B against a true TTM of $67B).
+        # "fcf_ttm" below is the trailing-twelve-month sum from the quarterly
+        # cash-flow statement; ratio blocks must prefer it.
         "fcf": fund.get("fcf"),
+        "fcf_ttm": _fcf_ttm(cf),
         "eps": fund.get("eps"),
         "forward_eps": fund.get("forward_eps"),
         "diluted_shares": fund.get("diluted_shares"),
