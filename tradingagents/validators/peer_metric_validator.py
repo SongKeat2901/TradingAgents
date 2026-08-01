@@ -667,6 +667,22 @@ def validate_peer_metrics(
             # cell, so the unit mismatch is not a fabrication. Skip.
             if verifiable_field == "net_debt" and _discloses_fx_conversion(match_text):
                 continue
+            # wk31 (AAPL 2026-07-31): a DOLLAR-magnitude value matching a
+            # DIFFERENT peer's same-metric cell is a traceable misbind, not
+            # a fabrication — the consumed-comparator walk-back lands on the
+            # wrong ticker when one mention owns several values ("SONY's
+            # 0.05x ... (cite Net Debt $105.65B ...)" bound SONY's cell to
+            # GOOGL). Same philosophy as the subject-figure guard above.
+            # Magnitudes only: raw-dollar cells are high-entropy so a match
+            # is meaningful; small ratios cluster (LITE's claimed 1.9x sits
+            # within 5% of COHR's true 1.89x) and must still flag.
+            if kind in ("billions", "millions") and any(
+                isinstance(od, dict) and not od.get("unavailable")
+                and od.get(verifiable_field) is not None
+                and _values_match(claimed_val, float(od[verifiable_field]), kind)
+                for ot, od in peer_ratios.items() if ot != ticker
+            ):
+                continue
             if not _values_match(claimed_val, float(actual), kind):
                 violations.append(PeerMetricViolation(
                     severity="MATERIAL",

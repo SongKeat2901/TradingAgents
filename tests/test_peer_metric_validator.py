@@ -1205,3 +1205,41 @@ def test_wk30_respectively_list_still_flags_a_wrong_value(tmp_path):
     assert len(v) == 1, f"expected exactly 1 violation, got {[(x.ticker, x.claimed_value) for x in v]}"
     assert v[0].ticker == "MSFT", f"must attribute to MSFT, got {v[0].ticker}"
     assert "0.99" in v[0].claimed_value
+
+
+def test_value_matching_another_peers_cell_is_misbind_not_fabrication(tmp_path):
+    """AAPL wk31 FP: 'SONY's 0.05x is a JPY-scale-denominator artifact (cite
+    Net Debt $105.65B ...)' — SONY's mention is consumed by its own 0.05x, so
+    the walk-back bound $105.65B to GOOGL and flagged it against GOOGL's
+    $42.25B. The value IS SONY's raw cell verbatim: a claim that exactly
+    matches a DIFFERENT peer's same-metric cell is a traceable misbind
+    (attribution ambiguity), never a fabrication — do not flag."""
+    import json
+    from tradingagents.validators.peer_metric_validator import validate_peer_metrics
+    raw = tmp_path
+    peer_ratios = {
+        "SONY": {"net_debt": 105_648_000_000.0, "ttm_ebitda": 1_970_010_000_000.0},
+        "GOOGL": {"net_debt": 42_254_000_000.0, "ttm_ebitda": 173_160_000_000.0},
+        "MSFT": {"net_debt": 19_359_000_000.0, "ttm_ebitda": 184_457_000_000.0},
+    }
+    peers = {t: {"ticker": t} for t in peer_ratios}
+    (raw / "peer_ratios.json").write_text(json.dumps(peer_ratios), encoding="utf-8")
+    (raw / "peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    text = (
+        "**(4) SONY ND/EBITDA and GOOGL P/E inversion (QC Item 16).** Resolved "
+        "inline in the Inputs peer block: SONY's 0.05x is a JPY-scale-denominator "
+        "artifact (cite Net Debt $105.65B and EBITDA $1970.01B separately, not "
+        "the ratio); GOOGL's forward > TTM inversion is a genuine source-cell "
+        "characteristic, cited verbatim, with forward 24.17x used as the "
+        "comparable figure."
+    )
+    violations = validate_peer_metrics(
+        text, "decision.md", raw / "peer_ratios.json", raw / "peers.json",
+    )
+    nd_vios = [v for v in violations
+               if v.type == "wrong_peer_metric" and "net debt" in v.metric.lower()]
+    assert nd_vios == [], (
+        f"$105.65B matches SONY's net_debt cell verbatim — misbind, not "
+        f"fabrication: {[(v.ticker, v.claimed_value) for v in nd_vios]}"
+    )
