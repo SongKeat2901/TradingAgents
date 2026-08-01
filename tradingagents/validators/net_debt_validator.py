@@ -466,6 +466,14 @@ def _to_dollars(value: str, unit: str | None) -> float | None:
     return num
 
 
+# `$X[BM]–` immediately before a value → that value is a range's upper
+# endpoint, not a standalone net-debt magnitude (STM wk31: `$5.3B–$10.4B
+# net debt` describing a peer set).
+_RANGE_PREFIX_RE = re.compile(
+    r"\$\s*[\d.,]+\s*(?:[BMK]|bn|billion|million|thousand)?\s*[–—-]\s*\$?\s*$",
+    re.IGNORECASE,
+)
+
 _DELTA_COMPARATORS_RE = re.compile(
     # Comparator words/patterns that, when they immediately follow the $X
     # value, mean the value is a DELTA, period-over-period change, or a
@@ -552,6 +560,16 @@ def extract_net_debt_claims(text: str) -> list[NetDebtClaim]:
             # or a range endpoint marker (`-6B`), it's not a magnitude.
             tail = text[m.end():m.end() + 20]
             if _DELTA_COMPARATORS_RE.match(tail):
+                continue
+
+            # Range upper-endpoint guard (STM wk31): `$5.3B–$10.4B net debt`
+            # — the tail check above catches the LOWER endpoint form
+            # (`$5-6B`), but when the label follows the range the extracted
+            # value is the UPPER endpoint, marked by `$X[BM]–` immediately
+            # before it. A range is never the subject's single authoritative
+            # position (it is peer-set prose).
+            head = text[max(0, m.start("value") - 24):m.start("value")]
+            if _RANGE_PREFIX_RE.search(head):
                 continue
 
             # Phase 8.1 delta-bridge guard: if the captured bridge contains

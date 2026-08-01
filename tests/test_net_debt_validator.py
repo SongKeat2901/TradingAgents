@@ -1543,3 +1543,28 @@ def test_yfinance_row_still_accepted_when_headline_is_computed(tmp_path):
     v = validate_net_debt_claims(claims, p)
     mats = [x for x in v if x.severity == "MATERIAL"]
     assert mats == [], [(x.claimed_value, x.match_text) for x in mats]
+
+
+def test_range_upper_endpoint_is_not_a_net_debt_claim():
+    """STM wk31 FP: '$2.01B net cash — the only net-cash sheet in a peer set
+    carrying $5.3B–$10.4B net debt' — $10.4B is the UPPER endpoint of a
+    peer-set range. The tail guard already skips the lower endpoint form
+    ('$5-6B'); the upper endpoint (amount+dash BEFORE the value) must be
+    skipped too."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    text = (
+        "- The \"cash burn\" framing is falsified: four straight years of "
+        "declining capex, Altman Z″ 5.68 (Safe), 13.15x interest coverage, and "
+        "**$2.01B net cash — the only net-cash sheet in a peer set carrying "
+        "$5.3B–$10.4B net debt.** STM is a net creditor."
+    )
+    claims = extract_net_debt_claims(text)
+    cash = [c for c in claims if c.is_cash and abs(c.value_dollars - 2.01e9) < 1e3]
+    debt_range = [c for c in claims
+                  if abs(c.value_dollars - 5.3e9) < 1e3 or abs(c.value_dollars - 10.4e9) < 1e3]
+    assert cash, "the genuine $2.01B net-cash claim must still extract"
+    assert debt_range == [], (
+        f"range endpoints extracted as net-debt claims: "
+        f"{[(c.value_raw, c.label) for c in debt_range]}"
+    )
