@@ -253,6 +253,40 @@ Other prices (article quotes, intraday) must carry an explicit time/source quali
     )
 
 
+# Deterministic pm_brief.md sections injected verbatim into the PM prompt.
+# wk31 cadence audits (TXN/AMKR/STM/MSFT): the PM disclaimed blocks it was
+# never shown — the old 4-header slice missed "## Net cash" (the net-debt
+# section's label for net-cash-positive tickers) and predated the Phase-1
+# Accounting-ratios / Relative-multiples / Intrinsic-value blocks entirely,
+# so the PM called their cells "not supplied this run" (and, under QC
+# pressure, escalated to a fabricated filesystem-search attestation).
+_PM_BRIEF_SECTION_HEADERS = (
+    "## Peer ratios",
+    "## Net debt",
+    "## Net cash",
+    "## Intrinsic value",
+    "## Accounting ratios",
+    "## Relative valuation multiples",
+    "## 12-month scenario probabilities",
+    "## Liquidity / Volume profile",
+)
+
+
+def _slice_pm_brief_sections(brief: str) -> str:
+    """Slice each listed ## section by header until the next top-level
+    heading; return them joined (empty string when none present)."""
+    sections: list[str] = []
+    for header in _PM_BRIEF_SECTION_HEADERS:
+        idx = brief.find(header)
+        if idx < 0:
+            continue
+        next_idx = brief.find("\n## ", idx + len(header))
+        if next_idx < 0:
+            next_idx = len(brief)
+        sections.append(brief[idx:next_idx].rstrip())
+    return "\n\n".join(sections)
+
+
 def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
@@ -344,27 +378,14 @@ def create_portfolio_manager(llm):
             if pm_brief_path.exists():
                 try:
                     brief = pm_brief_path.read_text(encoding="utf-8")
-                    # Slice each ## section by header until the next top-level
-                    # heading. researcher.py writes them in order: peer ratios,
-                    # net debt, latest session, liquidity/volume profile,
-                    # then 12-month scenario probabilities.
-                    sections: list[str] = []
-                    for header in ("## Peer ratios", "## Net debt",
-                                   "## 12-month scenario probabilities",
-                                   "## Liquidity / Volume profile"):
-                        idx = brief.find(header)
-                        if idx < 0:
-                            continue
-                        # Find the next "## " header after this one, or EOF
-                        next_idx = brief.find("\n## ", idx + len(header))
-                        if next_idx < 0:
-                            next_idx = len(brief)
-                        sections.append(brief[idx:next_idx].rstrip())
+                    sliced = _slice_pm_brief_sections(brief)
+                    sections = [sliced] if sliced else []
                     if sections:
                         peer_ratios_block = (
-                            "\n\n**AUTHORITATIVE PEER RATIOS + NET DEBT + "
-                            "LIQUIDITY LEVELS + 12-MONTH SCENARIO PROBABILITIES "
-                            "— USE THESE VALUES VERBATIM:**\n\n"
+                            "\n\n**AUTHORITATIVE PEER RATIOS + NET DEBT/CASH + "
+                            "INTRINSIC VALUE + ACCOUNTING RATIOS + RELATIVE "
+                            "MULTIPLES + LIQUIDITY LEVELS + 12-MONTH SCENARIO "
+                            "PROBABILITIES — USE THESE VALUES VERBATIM:**\n\n"
                             "These tables are computed in Python from "
                             "`raw/peers.json`, `raw/financials.json`, "
                             "`raw/volume_profile.json`, and "
@@ -372,9 +393,15 @@ def create_portfolio_manager(llm):
                             "They are the canonical source for every peer ratio "
                             "(TTM P/E, Forward P/E, op margin, capex/revenue, "
                             "net debt, TTM EBITDA, ND/EBITDA), the subject "
-                            "ticker's net debt, volume-profile liquidity levels, "
-                            "and the 12-month scenario targets with their "
-                            "first-barrier-touch probabilities. "
+                            "ticker's net debt/cash, intrinsic-value anchors, "
+                            "accounting ratios (ROE/ROIC/margins), relative "
+                            "valuation multiples (incl. P/FCF), volume-profile "
+                            "liquidity levels, and the 12-month scenario targets "
+                            "with their first-barrier-touch probabilities. "
+                            "Every section present above IS supplied this run — "
+                            "never claim a cell or block is missing without "
+                            "checking these sections, and NEVER assert a "
+                            "filesystem search you cannot perform. "
                             "Analyst transcripts and the RM/trader plans "
                             "may have paraphrased these values imprecisely "
                             "(rounded, recalled from training, or carried "
