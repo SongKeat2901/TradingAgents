@@ -76,11 +76,21 @@ _re_ev2 = re.compile(r"EV vs spot.*?=\s*\*{0,2}([+\-−]?\d+\.?\d*)\s*%", re.S)
 # 5. verbatim EV parenthetical: `(+1.10% from spot $92.00)` (ECHO — Expected Value
 #    line lacks the colon _re_ev needs; match the highly-specific "% from spot").
 _re_ev3 = re.compile(r"\(\s*\*{0,2}([+\-−]?\d+\.?\d*)\s*%\*{0,2}\s+from\s+spot", re.S)
+# 6. wk31 (NOW): EV line "**$115.388, or +3.74% from spot $111.23**" has no
+#    parenthesis, and the heading is "Expected Value calculation ...:" (no
+#    colon right after "Value"), so _re_ev/_re_ev3 both miss — _re_ev3 then
+#    grabbed the p50 cross-check "($107.97 (−2.93% from spot)" two lines
+#    down. Anchor to the segment right after the heading and take the FIRST
+#    "% from spot" there, parenthesised or not.
+_re_ev4 = re.compile(r"\*{0,2}([+\-−]?\d+\.?\d*)\s*%\*{0,2}\s+from\s+spot")
 _re_name = re.compile(r"^Name:\s*(.+)$", re.M)
 
 
 def _ev_pct(dec, price):
-    m = _re_ev.search(dec) or _re_ev2.search(dec) or _re_ev3.search(dec)
+    m = _re_ev.search(dec) or _re_ev2.search(dec)
+    if not m and "Expected Value" in dec:
+        m = _re_ev4.search(dec[dec.find("Expected Value"):][:600])
+    m = m or _re_ev3.search(dec)
     if m:
         return float(m.group(1).replace("−", "-"))
     seg = dec[dec.find("Expected Value"):][:600] if "Expected Value" in dec else ""
