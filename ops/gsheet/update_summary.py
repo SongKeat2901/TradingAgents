@@ -80,23 +80,26 @@ _re_ev3 = re.compile(r"\(\s*\*{0,2}([+\-−]?\d+\.?\d*)\s*%\*{0,2}\s+from\s+spot
 #    parenthesis, and the heading is "Expected Value calculation ...:" (no
 #    colon right after "Value"), so _re_ev/_re_ev3 both miss — _re_ev3 then
 #    grabbed the p50 cross-check "($107.97 (−2.93% from spot)" two lines
-#    down. Anchor to the segment right after the heading and take the FIRST
-#    "% from spot" there, parenthesised or not.
+#    down. Within the post-heading segment, race the anchored "% from spot"
+#    against the bolded-EV-percent heuristic and take whichever appears
+#    FIRST: NOW's "% from spot" precedes its p50 cross-check; MRVL's bolded
+#    "**+16.18%" precedes its "(p50 terminal +31.9% from spot)"; ECHO's
+#    "(+1.10% from spot" precedes the bolded 60% Bull probability.
 _re_ev4 = re.compile(r"\*{0,2}([+\-−]?\d+\.?\d*)\s*%\*{0,2}\s+from\s+spot")
+_re_ev_bold = re.compile(r"\*\*\s*([+\-−]?\d+\.?\d*)\s*%")  # bolded EV percent (MRVL)
 _re_name = re.compile(r"^Name:\s*(.+)$", re.M)
 
 
 def _ev_pct(dec, price):
     m = _re_ev.search(dec) or _re_ev2.search(dec)
     if not m and "Expected Value" in dec:
-        m = _re_ev4.search(dec[dec.find("Expected Value"):][:600])
+        seg = dec[dec.find("Expected Value"):][:600]
+        cands = [x for x in (_re_ev4.search(seg), _re_ev_bold.search(seg)) if x]
+        if cands:
+            m = min(cands, key=lambda x: x.start())
     m = m or _re_ev3.search(dec)
     if m:
         return float(m.group(1).replace("−", "-"))
-    seg = dec[dec.find("Expected Value"):][:600] if "Expected Value" in dec else ""
-    mp = re.search(r"\*\*\s*([+\-−]?\d+\.?\d*)\s*%", seg)  # bolded EV percent (MRVL)
-    if mp:
-        return float(mp.group(1).replace("−", "-"))
     md = re.search(r"\*\*\$([\d,]+\.?\d*)", seg)  # bolded EV dollar -> % from price
     if md and price:
         return round((float(md.group(1).replace(",", "")) - price) / price * 100, 2)
