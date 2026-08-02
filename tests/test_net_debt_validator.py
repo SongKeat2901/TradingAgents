@@ -1568,3 +1568,26 @@ def test_range_upper_endpoint_is_not_a_net_debt_claim():
         f"range endpoints extracted as net-debt claims: "
         f"{[(c.value_raw, c.label) for c in debt_range]}"
     )
+
+
+def test_range_lower_endpoint_before_bridge_is_not_a_claim():
+    """STM wk31 rerun FP: 'peers carrying $6–10B net debt' extracted a $6.00
+    (raw dollars!) net-debt claim — the existing tail guard checks after the
+    WHOLE match (which ends at the label), so a VALUE_FIRST match that bridges
+    over '–10B' never sees the range marker. The check must run at the end of
+    the VALUE itself."""
+    from tradingagents.validators import extract_net_debt_claims
+
+    text = (
+        "| Balance sheet | **Bull — decisively** | **$2.01B net cash** vs. "
+        "peers carrying $6–10B net debt; Altman Z″ 5.68 (Safe); 2.91x cash "
+        "coverage."
+    )
+    claims = extract_net_debt_claims(text)
+    cash = [c for c in claims if c.is_cash and abs(c.value_dollars - 2.01e9) < 1e3]
+    range_vals = [c for c in claims if c.value_dollars < 1e9]
+    assert cash, "the genuine $2.01B net-cash claim must still extract"
+    assert range_vals == [], (
+        f"range lower-endpoint extracted as claim: "
+        f"{[(c.value_raw, c.value_dollars) for c in range_vals]}"
+    )

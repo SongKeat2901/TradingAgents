@@ -562,14 +562,18 @@ def extract_net_debt_claims(text: str) -> list[NetDebtClaim]:
             if _DELTA_COMPARATORS_RE.match(tail):
                 continue
 
-            # Range upper-endpoint guard (STM wk31): `$5.3B–$10.4B net debt`
-            # — the tail check above catches the LOWER endpoint form
-            # (`$5-6B`), but when the label follows the range the extracted
-            # value is the UPPER endpoint, marked by `$X[BM]–` immediately
-            # before it. A range is never the subject's single authoritative
-            # position (it is peer-set prose).
+            # Range endpoint guards (STM wk31): a range is never the
+            # subject's single authoritative position (it is peer-set
+            # prose). Upper endpoint: `$5.3B–$10.4B net debt` — the value
+            # is preceded by `$X[BM]–`. Lower endpoint: `$6–10B net debt`
+            # — the value itself is followed by `–10B`; the Phase-7.12
+            # tail check above misses this because it runs at the end of
+            # the WHOLE match (the label), not the end of the value.
             head = text[max(0, m.start("value") - 24):m.start("value")]
             if _RANGE_PREFIX_RE.search(head):
+                continue
+            value_end = m.end("unit") if m.group("unit") else m.end("value")
+            if re.match(r"\s*[–—-]\s*\$?\d", text[value_end:value_end + 10]):
                 continue
 
             # Phase 8.1 delta-bridge guard: if the captured bridge contains
